@@ -3,7 +3,7 @@ import type { loomStoredOutput } from "../types";
 
 function getStatusKind(output: loomStoredOutput): "success" | "warning" | "failure" {
   if (output.result.success) {
-    return output.result.stderr.trim() ? "warning" : "success";
+    return output.result.stderr.trim() || output.result.warning?.trim() ? "warning" : "success";
   }
 
   return "failure";
@@ -36,10 +36,13 @@ export function renderOutputPanel(panel: HTMLElement, output: loomStoredOutput):
   if (output.result.stdout.trim()) {
     createStream(body, "Stdout", output.result.stdout);
   }
+  if (output.result.warning?.trim()) {
+    createStream(body, "Warning", output.result.warning);
+  }
   if (output.result.stderr.trim()) {
     createStream(body, "Stderr", output.result.stderr);
   }
-  if (!output.result.stdout.trim() && !output.result.stderr.trim()) {
+  if (!output.result.stdout.trim() && !output.result.warning?.trim() && !output.result.stderr.trim()) {
     const empty = body.createDiv({ cls: "loom-output-empty" });
     empty.setText("No output");
   }

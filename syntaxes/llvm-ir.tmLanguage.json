@@ -1,0 +1,532 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LLVM IR",
+  "scopeName": "source.llvm",
+  "fileTypes": [
+    "ll"
+  ],
+  "firstLineMatch": "^\\s*(;\\s*ModuleID\\s*=|source_filename\\s*=|target\\s+(datalayout|triple)\\s*=|define\\b|declare\\b)",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#metadata-blocks"
+    },
+    {
+      "include": "#function-signatures"
+    },
+    {
+      "include": "#label-definitions"
+    },
+    {
+      "include": "#type-definitions"
+    },
+    {
+      "include": "#metadata"
+    },
+    {
+      "include": "#attributes"
+    },
+    {
+      "include": "#comdat"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.llvm",
+          "match": ";.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "storage.modifier.c-string.llvm",
+          "match": "\\bc(?=\")"
+        },
+        {
+          "name": "string.quoted.double.llvm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.llvm",
+              "match": "\\\\([\\\\\"'abfnrtv]|[0-9A-Fa-f]{2})"
+            }
+          ]
+        }
+      ]
+    },
+    "metadata-blocks": {
+      "patterns": [
+        {
+          "name": "meta.metadata.node.llvm",
+          "begin": "!\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.block.begin.llvm"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.block.end.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#metadata"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        }
+      ]
+    },
+    "function-signatures": {
+      "patterns": [
+        {
+          "name": "meta.function.definition.llvm",
+          "begin": "^(\\s*)(define|declare)\\b",
+          "beginCaptures": {
+            "2": {
+              "name": "storage.type.function.llvm"
+            }
+          },
+          "end": "(\\{)?\\s*$",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.begin.brace.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#attributes"
+            },
+            {
+              "include": "#types"
+            },
+            {
+              "name": "support.function.intrinsic.llvm",
+              "match": "@llvm\\.[A-Za-z$._0-9]+"
+            },
+            {
+              "name": "entity.name.function.llvm",
+              "match": "@[A-Za-z$._-][A-Za-z$._0-9-]*(?=\\s*\\()"
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        }
+      ]
+    },
+    "label-definitions": {
+      "patterns": [
+        {
+          "name": "entity.name.label.llvm",
+          "match": "^(\\s*)(?:([A-Za-z$._-][A-Za-z$._0-9-]*|\\d+)|(%[A-Za-z$._-][A-Za-z$._0-9-]*|%\\d+))(:)"
+        }
+      ]
+    },
+    "type-definitions": {
+      "patterns": [
+        {
+          "name": "meta.type.definition.llvm",
+          "match": "^(\\s*)(%[A-Za-z$._-][A-Za-z$._0-9-]*)(\\s*=\\s*)(type|opaque)\\b",
+          "captures": {
+            "2": {
+              "name": "entity.name.type.llvm"
+            },
+            "3": {
+              "name": "keyword.operator.assignment.llvm"
+            },
+            "4": {
+              "name": "storage.type.definition.llvm"
+            }
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.metadata.llvm",
+          "match": "![A-Za-z$._-][A-Za-z$._0-9-]*"
+        },
+        {
+          "name": "constant.numeric.metadata.llvm",
+          "match": "!\\d+\\b"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "storage.modifier.attribute-group.llvm",
+          "match": "#\\d+\\b"
+        },
+        {
+          "name": "storage.modifier.attribute.llvm",
+          "match": "\\b(?:alwaysinline|argmemonly|builtin|byref|byval|cold|convergent|dereferenceable(?:_or_null)?|distinct|immarg|inalloca|inreg|mustprogress|nest|noalias|nocallback|nocapture|nofree|noinline|nonlazybind|nonnull|norecurse|noredzone|noreturn|nosync|nounwind|null_pointer_is_valid|optnone|optsize|preallocated|readnone|readonly|returned|returns_twice|sanitize_address|sanitize_hwaddress|sanitize_memory|sanitize_thread|signext|speculatable|sret|ssp|sspreq|sspstrong|swiftasync|swiftself|swifterror|uwtable|willreturn|writeonly|zeroext)\\b"
+        }
+      ]
+    },
+    "comdat": {
+      "patterns": [
+        {
+          "name": "entity.name.section.comdat.llvm",
+          "match": "\\$[A-Za-z$._-][A-Za-z$._0-9-]*"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "support.function.intrinsic.llvm",
+          "match": "@llvm\\.[A-Za-z$._0-9]+"
+        },
+        {
+          "name": "variable.other.global.llvm",
+          "match": "@[A-Za-z$._-][A-Za-z$._0-9-]*|@\\d+\\b"
+        },
+        {
+          "name": "variable.other.local.llvm",
+          "match": "%[A-Za-z$._-][A-Za-z$._0-9-]*|%\\d+\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.llvm",
+          "match": "%[A-Za-z$._-][A-Za-z$._0-9-]*(?=\\s*=\\s*type\\b)"
+        },
+        {
+          "name": "storage.type.primitive.llvm",
+          "match": "\\b(?:void|label|token|metadata|x86_mmx|x86_amx|half|bfloat|float|double|fp128|x86_fp80|ppc_fp128|ptr)\\b"
+        },
+        {
+          "name": "storage.type.integer.llvm",
+          "match": "\\bi\\d+\\b"
+        },
+        {
+          "name": "storage.type.address-space.llvm",
+          "match": "\\baddrspace\\s*\\(\\s*\\d+\\s*\\)"
+        },
+        {
+          "name": "meta.type.vector.llvm",
+          "begin": "<(?=\\s*(?:vscale\\s+x\\s+)?\\d+\\s+x\\s+)",
+          "end": ">",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.begin.llvm"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.end.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        {
+          "name": "meta.type.array.llvm",
+          "begin": "\\[(?=\\s*\\d+\\s+x\\s+)",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.begin.llvm"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.end.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        {
+          "name": "meta.type.struct.packed.llvm",
+          "begin": "<\\{",
+          "end": "\\}>",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.begin.llvm"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.end.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        {
+          "name": "meta.type.struct.llvm",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.begin.llvm"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.type.end.llvm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.llvm",
+          "match": "\\b(?:true|false|null|none|undef|poison|zeroinitializer)\\b"
+        },
+        {
+          "name": "constant.numeric.hex.float.llvm",
+          "match": "[-+]?0x[0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.llvm",
+          "match": "[-+]?(?:\\d+\\.\\d*|\\.\\d+|\\d+)(?:[eE][-+]?\\d+)\\b"
+        },
+        {
+          "name": "constant.numeric.float.llvm",
+          "match": "[-+]?(?:\\d+\\.\\d*|\\.\\d+)\\b"
+        },
+        {
+          "name": "constant.numeric.integer.llvm",
+          "match": "[-+]?\\d+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.llvm",
+          "match": "\\b(?:ret|br|switch|indirectbr|invoke|callbr|resume|unreachable|cleanupret|catchret|catchswitch)\\b"
+        },
+        {
+          "name": "keyword.declaration.llvm",
+          "match": "\\b(?:define|declare|type|global|constant|alias|ifunc|comdat|attributes|section|gc|prefix|prologue|personality|uselistorder|uselistorder_bb|module|asm|source_filename|target)\\b"
+        },
+        {
+          "name": "keyword.operator.memory.llvm",
+          "match": "\\b(?:alloca|load|store|getelementptr|fence|cmpxchg|atomicrmw|extractvalue|insertvalue|extractelement|insertelement|shufflevector)\\b"
+        },
+        {
+          "name": "keyword.operator.arithmetic.llvm",
+          "match": "\\b(?:add|sub|mul|udiv|sdiv|urem|srem|shl|lshr|ashr|and|or|xor|fneg|fadd|fsub|fmul|fdiv|frem)\\b"
+        },
+        {
+          "name": "keyword.operator.comparison.llvm",
+          "match": "\\b(?:icmp|fcmp)\\b"
+        },
+        {
+          "name": "keyword.operator.cast.llvm",
+          "match": "\\b(?:trunc|zext|sext|fptrunc|fpext|fptoui|fptosi|uitofp|sitofp|ptrtoint|inttoptr|bitcast|addrspacecast)\\b"
+        },
+        {
+          "name": "keyword.operator.other.llvm",
+          "match": "\\b(?:phi|select|freeze|call|landingpad|catchpad|cleanuppad|va_arg)\\b"
+        },
+        {
+          "name": "keyword.operator.assignment.llvm",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.word.llvm",
+          "match": "\\b(?:to|x)\\b"
+        },
+        {
+          "name": "storage.modifier.linkage.llvm",
+          "match": "\\b(?:private|internal|available_externally|linkonce|weak|common|appending|extern_weak|linkonce_odr|weak_odr|external)\\b"
+        },
+        {
+          "name": "storage.modifier.visibility.llvm",
+          "match": "\\b(?:default|hidden|protected)\\b"
+        },
+        {
+          "name": "storage.modifier.storage.llvm",
+          "match": "\\b(?:dllimport|dllexport|dso_local|dso_preemptable|externally_initialized|thread_local|localdynamic|initialexec|localexec|unnamed_addr|local_unnamed_addr)\\b"
+        },
+        {
+          "name": "storage.modifier.atomic.llvm",
+          "match": "\\b(?:atomic|unordered|monotonic|acquire|release|acq_rel|seq_cst|syncscope|volatile|singlethread)\\b"
+        },
+        {
+          "name": "storage.modifier.calling-convention.llvm",
+          "match": "\\b(?:ccc|fastcc|coldcc|webkit_jscc|anyregcc|preserve_mostcc|preserve_allcc|cxx_fast_tlscc|swiftcc|tailcc|cfguard_checkcc|cc\\s+\\d+)\\b"
+        },
+        {
+          "name": "storage.modifier.tail.llvm",
+          "match": "\\b(?:tail|musttail|notail)\\b"
+        },
+        {
+          "name": "storage.modifier.fastmath.llvm",
+          "match": "\\b(?:fast|nnan|ninf|nsz|arcp|contract|afn|reassoc)\\b"
+        },
+        {
+          "name": "storage.modifier.integer-wrap.llvm",
+          "match": "\\b(?:nuw|nsw|exact|inbounds)\\b"
+        },
+        {
+          "name": "constant.language.predicate.llvm",
+          "match": "\\b(?:eq|ne|ugt|uge|ult|ule|sgt|sge|slt|sle|oeq|ogt|oge|olt|ole|one|ord|ueq|ugt|uge|ult|ule|une|uno)\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.colon.llvm",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.separator.comma.llvm",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.dot.llvm",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.definition.parameters.begin.llvm",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.definition.parameters.end.llvm",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.definition.index.begin.llvm",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.definition.index.end.llvm",
+          "match": "\\]"
+        },
+        {
+          "name": "punctuation.section.block.begin.brace.llvm",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.block.end.brace.llvm",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.definition.angle.begin.llvm",
+          "match": "<"
+        },
+        {
+          "name": "punctuation.definition.angle.end.llvm",
+          "match": ">"
+        },
+        {
+          "name": "keyword.operator.asterisk.llvm",
+          "match": "\\*"
+        },
+        {
+          "name": "punctuation.definition.ellipsis.llvm",
+          "match": "\\.\\.\\."
+        }
+      ]
+    }
+  }
+}

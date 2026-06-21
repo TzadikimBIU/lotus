@@ -10,8 +10,8 @@ export class LlvmRunner implements loomRunner {
     return block.language === "llvm-ir" && Boolean(settings.llvmInterpreterExecutable.trim());
   }
 
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
-    return runTempFileProcess({
+  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+    const result = await runTempFileProcess({
       runnerId: this.id,
       runnerName: this.displayName,
       executable: settings.llvmInterpreterExecutable.trim(),
@@ -22,5 +22,20 @@ export class LlvmRunner implements loomRunner {
       timeoutMs: Math.max(context.timeoutMs, 30_000),
       signal: context.signal,
     });
+
+    if (!result.timedOut && !result.cancelled && result.exitCode != null && !result.stderr.trim()) {
+      if (result.exitCode !== 0) {
+        result.success = true;
+        result.warning = `Program returned i32 ${result.exitCode}. Under lli, that becomes the process exit status.`;
+      }
+
+      if (!result.stdout.trim()) {
+        result.stdout = result.exitCode === 0
+          ? "LLVM program exited with code 0."
+          : `LLVM program returned i32 ${result.exitCode}.\nUse stdout in the IR itself if you want printable program output.`;
+      }
+    }
+
+    return result;
   }
 }

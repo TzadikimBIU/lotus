@@ -183,6 +183,89 @@
   margin-top: 0.5rem;
 }
 
+.loom-llvm-code .loom-llvm-comment,
+.cm-line .loom-llvm-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.loom-llvm-code .loom-llvm-string,
+.cm-line .loom-llvm-string {
+  color: var(--color-green);
+}
+
+.loom-llvm-code .loom-llvm-string-prefix,
+.loom-llvm-code .loom-llvm-type,
+.cm-line .loom-llvm-string-prefix,
+.cm-line .loom-llvm-type {
+  color: var(--color-cyan);
+}
+
+.loom-llvm-code .loom-llvm-keyword-control,
+.loom-llvm-code .loom-llvm-keyword-declaration,
+.loom-llvm-code .loom-llvm-keyword-memory,
+.loom-llvm-code .loom-llvm-keyword-arithmetic,
+.loom-llvm-code .loom-llvm-keyword-comparison,
+.loom-llvm-code .loom-llvm-keyword-cast,
+.loom-llvm-code .loom-llvm-keyword-other,
+.cm-line .loom-llvm-keyword-control,
+.cm-line .loom-llvm-keyword-declaration,
+.cm-line .loom-llvm-keyword-memory,
+.cm-line .loom-llvm-keyword-arithmetic,
+.cm-line .loom-llvm-keyword-comparison,
+.cm-line .loom-llvm-keyword-cast,
+.cm-line .loom-llvm-keyword-other {
+  color: var(--color-red);
+  font-weight: 600;
+}
+
+.loom-llvm-code .loom-llvm-keyword-modifier,
+.loom-llvm-code .loom-llvm-attribute,
+.loom-llvm-code .loom-llvm-attribute-group,
+.cm-line .loom-llvm-keyword-modifier,
+.cm-line .loom-llvm-attribute,
+.cm-line .loom-llvm-attribute-group {
+  color: var(--color-orange);
+}
+
+.loom-llvm-code .loom-llvm-global,
+.loom-llvm-code .loom-llvm-intrinsic,
+.cm-line .loom-llvm-global,
+.cm-line .loom-llvm-intrinsic {
+  color: var(--color-blue);
+}
+
+.loom-llvm-code .loom-llvm-local,
+.cm-line .loom-llvm-local {
+  color: var(--color-purple);
+}
+
+.loom-llvm-code .loom-llvm-label,
+.loom-llvm-code .loom-llvm-comdat,
+.loom-llvm-code .loom-llvm-metadata,
+.cm-line .loom-llvm-label,
+.cm-line .loom-llvm-comdat,
+.cm-line .loom-llvm-metadata {
+  color: var(--color-pink);
+}
+
+.loom-llvm-code .loom-llvm-number,
+.loom-llvm-code .loom-llvm-predicate,
+.cm-line .loom-llvm-number,
+.cm-line .loom-llvm-predicate {
+  color: var(--color-yellow);
+}
+
+.loom-llvm-code .loom-llvm-constant,
+.cm-line .loom-llvm-constant {
+  color: var(--color-accent);
+}
+
+.loom-llvm-code .loom-llvm-punctuation,
+.cm-line .loom-llvm-punctuation {
+  color: var(--text-muted);
+}
+
 @keyframes loom-spin {
   from {
     transform: rotate(0deg);

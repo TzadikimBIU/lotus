@@ -3,7 +3,7 @@ import { setIcon } from "obsidian";
 export interface loomToolbarHandlers {
   onRun: () => void;
   onCopy: () => void;
-  onClear: () => void;
+  onRemove: () => void;
   onToggleOutput: () => void;
 }
 
@@ -18,7 +18,7 @@ export function createCodeBlockToolbar(
 
   toolbar.appendChild(createButton("Run block", isRunning ? "loader-circle" : "play", handlers.onRun, isRunning));
   toolbar.appendChild(createButton("Copy code", "copy", handlers.onCopy, false));
-  toolbar.appendChild(createButton("Clear output", "trash-2", handlers.onClear, false));
+  toolbar.appendChild(createButton("Remove snippet", "trash-2", handlers.onRemove, false));
   toolbar.appendChild(createButton("Toggle output", "panel-bottom-open", handlers.onToggleOutput, false));
 
   return toolbar;

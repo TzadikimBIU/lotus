@@ -11,6 +11,7 @@ import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import { dirname } from "path";
 import { loomContainerRunner } from "./execution/containerRunner";
+import { addLlvmDecorations, highlightLlvmElement } from "./llvmHighlight";
 import { findBlockAtLine, getSupportedLanguageAliases, parseMarkdownCodeBlocks } from "./parser";
 import { NodeRunner } from "./runners/node";
 import { CustomLanguageRunner } from "./runners/custom";
@@ -154,6 +155,7 @@ export default class loomPlugin extends Plugin {
   private readonly outputListeners = new Map<string, Set<() => void>>();
   private statusBarItemEl!: HTMLElement;
   private editorViews = new Set<EditorView>();
+  private lastMarkdownFilePath: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -161,6 +163,7 @@ export default class loomPlugin extends Plugin {
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
     this.app.workspace.onLayoutReady(() => {
+      this.lastMarkdownFilePath = this.getActiveMarkdownFile()?.path ?? this.lastMarkdownFilePath;
       void this.enforceSourceModeForActiveView();
     });
 
@@ -219,6 +222,7 @@ export default class loomPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
+        this.lastMarkdownFilePath = file?.path ?? this.lastMarkdownFilePath;
         this.refreshAllViews();
         void this.enforceSourceModeForActiveView();
         if (file && this.settings.autoRunOnFileOpen) {
@@ -238,6 +242,7 @@ export default class loomPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
+        this.lastMarkdownFilePath = this.getActiveMarkdownFile()?.path ?? this.lastMarkdownFilePath;
         void this.enforceSourceModeForActiveView();
       }),
     );
@@ -295,11 +300,7 @@ export default class loomPlugin extends Plugin {
           new Notice("Clipboard write failed.");
         }
       },
-      onClear: () => {
-        this.outputs.delete(block.id);
-        void this.removeManagedOutputBlock(block.filePath, block.id);
-        this.notifyOutputChanged(block.id);
-      },
+      onRemove: () => void this.removeSnippetById(block.id),
       onToggleOutput: () => {
         const output = this.outputs.get(block.id);
         if (!output) {
@@ -336,6 +337,46 @@ export default class loomPlugin extends Plugin {
     await this.runBlock(file, block);
   }
 
+  async removeSnippetById(blockId: string): Promise<void> {
+    const block = this.findActiveBlockById(blockId);
+    if (!block) {
+      return;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(block.filePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    this.running.get(blockId)?.abort();
+    this.running.delete(blockId);
+    this.outputs.delete(blockId);
+
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split(/\r?\n/);
+      const blocks = parseMarkdownCodeBlocks(file.path, content, this.settings);
+      const currentBlock = blocks.find((candidate) => candidate.id === blockId);
+      if (!currentBlock) {
+        return content;
+      }
+
+      const managedRange = this.findManagedOutputRange(lines, blockId);
+      const removalStart = currentBlock.startLine;
+      const removalEnd = managedRange ? managedRange.end : currentBlock.endLine;
+      lines.splice(removalStart, removalEnd - removalStart + 1);
+
+      while (removalStart < lines.length - 1 && lines[removalStart] === "" && lines[removalStart + 1] === "") {
+        lines.splice(removalStart, 1);
+      }
+
+      return lines.join("\n");
+    });
+
+    this.notifyOutputChanged(blockId);
+    this.updateStatusBar();
+    new Notice("loom snippet removed.");
+  }
+
   async runAllBlocksInFile(file: TFile): Promise<void> {
     const source = await this.app.vault.cachedRead(file);
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
@@ -364,6 +405,7 @@ export default class loomPlugin extends Plugin {
   }
 
   async runBlock(file: TFile, block: loomCodeBlock): Promise<void> {
+    this.lastMarkdownFilePath = file.path;
     if (this.running.has(block.id)) {
       new Notice("This loom block is already running.");
       return;
@@ -509,8 +551,6 @@ export default class loomPlugin extends Plugin {
         continue;
       }
 
-      // Skip aliases containing characters that are invalid in CSS selectors (like '+')
-      // to prevent Obsidian's internal querySelectorAll from crashing (e.g. during PDF export).
       if (/[^a-zA-Z0-9_-]/.test(normalizedAlias)) {
         continue;
       }
@@ -531,14 +571,12 @@ export default class loomPlugin extends Plugin {
           const lineStart = section.lineStart;
           block = blocks.find((candidate) => candidate.startLine === lineStart && candidate.content === source);
         } else {
-          // Fallback for print/export context where getSectionInfo is null
           block = blocks.find((candidate) => candidate.content === source);
         }
         if (!block) {
           return;
         }
 
-        // If pre is missing (Reading Mode / print context), render the code block element
         let pre = el.querySelector("pre") as HTMLElement | null;
         if (!pre) {
           pre = el.createEl("pre");
@@ -546,6 +584,11 @@ export default class loomPlugin extends Plugin {
           const code = pre.createEl("code");
           code.addClass(`language-${normalizedAlias}`);
           code.setText(source);
+        }
+
+        if (block.language === "llvm-ir") {
+          const code = (pre.querySelector("code") as HTMLElement | null) ?? pre;
+          highlightLlvmElement(code, source);
         }
 
         ctx.addChild(new loomToolbarRenderChild(el, this, block, pre));
@@ -578,6 +621,10 @@ export default class loomPlugin extends Plugin {
   private getActiveMarkdownFile(): TFile | null {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     return view?.file ?? null;
+  }
+
+  private getCurrentEditorFilePath(): string | null {
+    return this.getActiveMarkdownFile()?.path ?? this.lastMarkdownFilePath;
   }
 
   async enforceSourceModeForActiveView(): Promise<void> {
@@ -659,14 +706,13 @@ export default class loomPlugin extends Plugin {
         }
 
         private buildDecorations() {
-          const markdownView = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-          const file = markdownView?.file;
-          if (!file) {
+          const filePath = plugin.getCurrentEditorFilePath();
+          if (!filePath) {
             return Decoration.none;
           }
 
           const source = this.view.state.doc.toString();
-          const blocks = parseMarkdownCodeBlocks(file.path, source, plugin.settings);
+          const blocks = parseMarkdownCodeBlocks(filePath, source, plugin.settings);
           const builder = new RangeSetBuilder<Decoration>();
 
           for (const block of blocks) {
@@ -690,6 +736,10 @@ export default class loomPlugin extends Plugin {
                   side: 1,
                 }),
               );
+            }
+
+            if (block.language === "llvm-ir") {
+              addLlvmDecorations(builder, this.view, block);
             }
           }
 
@@ -748,6 +798,7 @@ export default class loomPlugin extends Plugin {
       `duration=${result.durationMs}ms`,
       `timestamp=${result.finishedAt}`,
       result.stdout ? `stdout:\n${result.stdout}` : "",
+      result.warning ? `warning:\n${result.warning}` : "",
       result.stderr ? `stderr:\n${result.stderr}` : "",
     ]
       .filter(Boolean)
