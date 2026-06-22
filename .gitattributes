@@ -1,2 +1,3 @@
 # Normalize line endings to LF on commit to prevent Windows/WSL conflicts
 * text=auto eol=lf
+main.js linguist-generated=true
