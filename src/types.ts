@@ -10,10 +10,19 @@ export interface loomCodeBlock {
   languageAlias: string;
   sourceLanguage: string;
   content: string;
+  sourceReference?: loomSourceReference;
   startLine: number;
   endLine: number;
   fenceStart: number;
   fenceEnd: number;
+}
+
+export interface loomSourceReference {
+  filePath: string;
+  lineStart?: number;
+  lineEnd?: number;
+  symbolName?: string;
+  traceDependencies: boolean;
 }
 
 export interface loomRunContext {

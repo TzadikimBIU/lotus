@@ -1,5 +1,5 @@
 import { shortHash } from "./utils/hash";
-import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings } from "./types";
+import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings, loomSourceReference } from "./types";
 
 const LANGUAGE_ALIASES: Record<string, loomNormalizedLanguage> = {
   python: "python",
@@ -50,7 +50,7 @@ const LANGUAGE_ALIASES: Record<string, loomNormalizedLanguage> = {
 
 const OUTPUT_START = /^<!--\s*loom:output:start\s+id=([a-f0-9]+)\s*-->$/i;
 const OUTPUT_END = /^<!--\s*loom:output:end\s*-->$/i;
-const FENCE_START = /^(```+|~~~+)\s*([^\s`]*)?.*$/;
+const FENCE_START = /^(```+|~~~+)\s*([^\s`]*)?(.*)$/;
 
 export function normalizeLanguage(rawLanguage: string, settings?: loomPluginSettings): loomNormalizedLanguage | null {
   const normalized = rawLanguage.trim().toLowerCase();
@@ -103,6 +103,7 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
     const fenceIndent = getLeadingWhitespace(line);
     const fenceToken = fenceMatch[1];
     const sourceLanguage = (fenceMatch[2] ?? "").trim();
+    const sourceReference = parseSourceReference(fenceMatch[3] ?? "");
     const language = normalizeLanguage(sourceLanguage, settings);
 
     let endLine = i;
@@ -128,7 +129,8 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
 
     ordinal += 1;
     const content = contentLines.join("\n");
-    const contentHash = shortHash(content);
+    const referenceHash = sourceReference ? `:${JSON.stringify(sourceReference)}` : "";
+    const contentHash = shortHash(`${content}${referenceHash}`);
     const id = shortHash(`${filePath}:${ordinal}:${language}:${contentHash}`);
 
     blocks.push({
@@ -139,6 +141,7 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
       languageAlias: sourceLanguage.toLowerCase(),
       sourceLanguage,
       content,
+      sourceReference,
       startLine,
       endLine,
       fenceStart: 0,
@@ -154,6 +157,50 @@ function parseAliasList(value: string): string[] {
     .split(",")
     .map((alias) => alias.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function parseSourceReference(infoTail: string): loomSourceReference | undefined {
+  const attrs = parseInfoAttributes(infoTail);
+  const filePath = attrs["loom-file"] ?? attrs.file ?? attrs.src ?? attrs.source;
+  if (!filePath) {
+    return undefined;
+  }
+
+  const lines = attrs["loom-lines"] ?? attrs.lines ?? attrs.line;
+  const lineRange = lines ? parseLineRange(lines) : null;
+  const symbolName = attrs["loom-symbol"] ?? attrs.symbol ?? attrs.fn ?? attrs.function;
+  const traceValue = attrs["loom-deps"] ?? attrs.deps ?? attrs.trace;
+
+  return {
+    filePath,
+    lineStart: lineRange?.start,
+    lineEnd: lineRange?.end,
+    symbolName,
+    traceDependencies: traceValue == null ? true : !["0", "false", "no", "off"].includes(traceValue.toLowerCase()),
+  };
+}
+
+function parseInfoAttributes(input: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const pattern = /([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(input)) != null) {
+    attrs[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? "";
+  }
+  return attrs;
+}
+
+function parseLineRange(value: string): { start: number; end: number } | null {
+  const match = value.trim().match(/^L?(\d+)(?:\s*[-:]\s*L?(\d+))?$/i);
+  if (!match) {
+    return null;
+  }
+  const start = Number.parseInt(match[1], 10);
+  const end = Number.parseInt(match[2] ?? match[1], 10);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end < start) {
+    return null;
+  }
+  return { start, end };
 }
 
 export function findBlockAtLine(blocks: loomCodeBlock[], line: number): loomCodeBlock | null {

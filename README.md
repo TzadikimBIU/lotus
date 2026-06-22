@@ -87,6 +87,22 @@ hello
 
 The parser skips these regions and generated output blocks are never executed
 
+## Partial source extraction
+
+loom can run part of another file while keeping the call site in your note. Add source attributes to the fence info string:
+
+````markdown
+```python loom-file="lib/calculus.py" loom-symbol=derivative
+print(derivative(lambda x: x * x, 3))
+```
+````
+
+Paths that start with `/` are read from the vault root. Other paths are read relative to the note.
+
+Use `loom-lines=L10-L30` for a line range, or `loom-symbol=name` for a function, class, or similar definition. Add `loom-deps=false` when you only want the selected slice.
+
+By default, loom also pulls in imports, includes, and referenced definitions that it can identify. The code in the note is appended after the extracted source, so it can call the function or run a small harness.
+
 ## Container execution
 
 Notes can opt into container or VM execution with frontmatter:
