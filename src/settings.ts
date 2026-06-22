@@ -585,6 +585,22 @@ class EditContainerGroupModal extends Modal {
         });
     }
 
+    if (this.configObj.runtime === "wsl") {
+      if (!this.configObj.wsl) {
+        this.configObj.wsl = {};
+      }
+      new Setting(containerEl)
+        .setName("Use Interactive Shell")
+        .setDesc("Use interactive login shell flags (-i -l) to ensure ~/.bashrc initialization works (e.g., for NVM).")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.configObj.wsl.interactive ?? false)
+            .onChange((val) => {
+              this.configObj.wsl.interactive = val;
+            });
+        });
+    }
+
     // Conditional QEMU Settings
     if (this.configObj.runtime === "qemu") {
       if (!this.configObj.qemu) {

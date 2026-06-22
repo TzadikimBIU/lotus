@@ -59,10 +59,15 @@ interface loomCustomRuntimeConfig {
   healthCheck?: loomCommandExpectation;
 }
 
+interface loomWslConfig {
+  interactive?: boolean;
+}
+
 interface loomContainerConfig {
   runtime: loomContainerRuntime;
   executable?: string;
   image?: string;
+  wsl?: loomWslConfig;
   healthCheck?: loomCommandExpectation;
   qemu?: loomQemuConfig;
   custom?: loomCustomRuntimeConfig;
@@ -375,7 +380,8 @@ export class loomContainerRunner {
       throw new Error("WSL command is empty.");
     }
 
-    const wslArgs = ["bash", "-l", "-c", `cd "${wslGroupPath.replaceAll('"', '\\"')}" && ${command}`];
+    const shellFlags = config.wsl?.interactive ? ["-i", "-l", "-c"] : ["-l", "-c"];
+    const wslArgs = ["bash", ...shellFlags, `cd "${wslGroupPath.replaceAll('"', '\\"')}" && ${command}`];
     if (config.image?.trim()) {
       wslArgs.unshift("-d", config.image.trim());
     }
@@ -482,6 +488,7 @@ export class loomContainerRunner {
       runtime?: unknown;
       executable?: unknown;
       image?: unknown;
+      wsl?: unknown;
       healthCheck?: unknown;
       qemu?: unknown;
       custom?: unknown;
@@ -521,6 +528,7 @@ export class loomContainerRunner {
       runtime,
       executable: typeof data.executable === "string" && data.executable.trim() ? data.executable.trim() : undefined,
       image: typeof data.image === "string" ? data.image : undefined,
+      wsl: this.readWslConfig(data.wsl),
       healthCheck: this.readHealthCheck(data.healthCheck, "Container config healthCheck"),
       qemu: this.readQemuConfig(data.qemu),
       custom: this.readCustomConfig(data.custom),
@@ -536,6 +544,19 @@ export class loomContainerRunner {
       return value;
     }
     throw new Error("Container config runtime must be docker, podman, qemu, custom, or wsl.");
+  }
+
+  private readWslConfig(value: unknown): loomWslConfig | undefined {
+    if (value == null) {
+      return undefined;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Container config wsl must be an object.");
+    }
+    const data = value as { interactive?: unknown };
+    return {
+      interactive: data.interactive === true,
+    };
   }
 
   private readQemuConfig(value: unknown): loomQemuConfig | undefined {
