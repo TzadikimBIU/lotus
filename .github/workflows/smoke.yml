@@ -9,6 +9,10 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        container: [none, docker-test, podman-test]
 
     steps:
       - uses: actions/checkout@v4
@@ -32,33 +36,17 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Run native smoke tests (Minimal, Systems, Proofs, eBPF, Full)
-        env:
-          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - name: Configure container environment
+        if: matrix.container != 'none'
         run: |
-          # Run non-sudo native tests
-          npm run smoke -- --profile minimal --require-pdf --require-all
-          npm run smoke -- --profile systems --require-pdf --require-all
-          npm run smoke -- --profile proofs --require-pdf --require-all
-          
-          # Run sudo native tests
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile ebpf --require-pdf --require-all
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile full --require-pdf --require-all
-          
-          # Backup native artifacts to prevent overwrite
-          mkdir -p .loom/artifacts-backup/native
-          mv .loom/artifacts/smoke/* .loom/artifacts-backup/native/
-
-      - name: Run Docker container smoke tests (Minimal, Systems)
-        env:
-          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-        run: |
-          # 1. Reset vault and configure for docker-test
-          git checkout -B vault origin/vault
-          mkdir -p .obsidian/plugins/loom/containers/docker-test
-          cat > .obsidian/plugins/loom/containers/docker-test/config.json <<JSON
+          git checkout vault
+          group="${{ matrix.container }}"
+          runtime="${group%-test}"
+          group_dir=".obsidian/plugins/loom/containers/${group}"
+          mkdir -p "${group_dir}"
+          cat > "${group_dir}/config.json" <<JSON
           {
-            "runtime": "docker",
+            "runtime": "${runtime}",
             "image": "docker.io/library/python:3.12-bookworm",
             "elevation": {
               "mode": "default"
@@ -72,71 +60,45 @@ jobs:
             }
           }
           JSON
-          printf -- "---\nloom-execution: docker-test\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
+          printf -- "---\nloom-execution: ${{ matrix.container }}\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
           mv temp_suite.md "Smoke Suite.md"
           
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add "Smoke Suite.md" .obsidian/plugins/loom/containers/docker-test/config.json
-          git commit -m "Configure docker-test vault"
+          git add "Smoke Suite.md" "${group_dir}/config.json"
+          git commit -m "Configure container smoke fixture"
           git checkout -f -
-          
-          # 2. Pull Docker image
-          sudo docker pull docker.io/library/python:3.12-bookworm
-          
-          # 3. Run Docker tests
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile minimal --require-pdf --require-all
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile systems --require-pdf --require-all
-          
-          # Backup docker artifacts to prevent overwrite
-          mkdir -p .loom/artifacts-backup/docker
-          mv .loom/artifacts/smoke/* .loom/artifacts-backup/docker/
 
-      - name: Run Podman container smoke tests (Minimal, Systems)
+      - name: Pull container image
+        if: matrix.container != 'none'
+        run: |
+          runtime="${{ matrix.container }}"
+          sudo "${runtime%-test}" pull docker.io/library/python:3.12-bookworm
+
+      - name: Run smoke tests
         env:
           LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
-          # 1. Reset vault and configure for podman-test
-          git checkout -B vault origin/vault
-          mkdir -p .obsidian/plugins/loom/containers/podman-test
-          cat > .obsidian/plugins/loom/containers/podman-test/config.json <<JSON
-          {
-            "runtime": "podman",
-            "image": "docker.io/library/python:3.12-bookworm",
-            "elevation": {
-              "mode": "default"
-            },
-            "languages": {
-              "shell": { "useDefault": true },
-              "sh": { "useDefault": true },
-              "python": { "useDefault": true },
-              "c": { "useDefault": true },
-              "cpp": { "useDefault": true }
-            }
-          }
-          JSON
-          printf -- "---\nloom-execution: podman-test\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
-          mv temp_suite.md "Smoke Suite.md"
-          
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add "Smoke Suite.md" .obsidian/plugins/loom/containers/podman-test/config.json
-          git commit -m "Configure podman-test vault"
-          git checkout -f -
-          
-          # 2. Pull Podman image
-          sudo podman pull docker.io/library/python:3.12-bookworm
-          
-          # 3. Run Podman tests
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile minimal --require-pdf --require-all
-          sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile systems --require-pdf --require-all
-          
-          # Backup podman artifacts
-          mkdir -p .loom/artifacts-backup/podman
-          mv .loom/artifacts/smoke/* .loom/artifacts-backup/podman/
+          if [ "${{ matrix.container }}" = "none" ]; then
+            # Run non-sudo native profiles
+            npm run smoke -- --profile minimal --require-pdf --require-all
+            npm run smoke -- --profile systems --require-pdf --require-all
+            npm run smoke -- --profile proofs --require-pdf --require-all
+            
+            # Run sudo native profiles
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile ebpf --require-pdf --require-all
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile full --require-pdf --require-all
+          else
+            # Run all profiles sequentially in the target container environment
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile minimal --require-pdf --require-all
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile systems --require-pdf --require-all
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile proofs --require-pdf --require-all
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile ebpf --require-pdf --require-all
+            sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile full --require-pdf --require-all
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loom-smoke-linux-artifacts
-          path: .loom/artifacts-backup/
+          name: loom-smoke-${{ matrix.container }}
+          path: .loom/artifacts/smoke/
