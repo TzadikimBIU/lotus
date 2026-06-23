@@ -1,52 +1,6 @@
 import { shortHash } from "./utils/hash";
+import { areCustomLanguagesEnabled, getEnabledLanguageAliasMap } from "./languagePackages";
 import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings, loomSourceReference } from "./types";
-
-const LANGUAGE_ALIASES: Record<string, loomNormalizedLanguage> = {
-  python: "python",
-  py: "python",
-  javascript: "javascript",
-  js: "javascript",
-  typescript: "typescript",
-  ts: "typescript",
-  ocaml: "ocaml",
-  ml: "ocaml",
-  c: "c",
-  h: "c",
-  cpp: "cpp",
-  cxx: "cpp",
-  cc: "cpp",
-  "c++": "cpp",
-  shell: "shell",
-  sh: "shell",
-  bash: "shell",
-  zsh: "shell",
-  ruby: "ruby",
-  rb: "ruby",
-  perl: "perl",
-  pl: "perl",
-  lua: "lua",
-  php: "php",
-  go: "go",
-  golang: "go",
-  rust: "rust",
-  rs: "rust",
-  haskell: "haskell",
-  hs: "haskell",
-  java: "java",
-  llvm: "llvm-ir",
-  llvmir: "llvm-ir",
-  "llvm-ir": "llvm-ir",
-  ll: "llvm-ir",
-  lean: "lean",
-  lean4: "lean",
-  coq: "coq",
-  v: "coq",
-  smt: "smtlib",
-  smt2: "smtlib",
-  smtlib: "smtlib",
-  "smt-lib": "smtlib",
-  z3: "smtlib",
-};
 
 const OUTPUT_START = /^<!--\s*loom:output:start\s+id=([a-f0-9]+)\s*-->$/i;
 const OUTPUT_END = /^<!--\s*loom:output:end\s*-->$/i;
@@ -55,22 +9,40 @@ const FENCE_START = /^(```+|~~~+)\s*([^\s`]*)?(.*)$/;
 export function normalizeLanguage(rawLanguage: string, settings?: loomPluginSettings): loomNormalizedLanguage | null {
   const normalized = rawLanguage.trim().toLowerCase();
 
-  for (const language of settings?.customLanguages ?? []) {
-    const name = language.name.trim().toLowerCase();
-    const aliases = parseAliasList(language.aliases);
-    if (name && (name === normalized || aliases.includes(normalized))) {
-      return language.name.trim();
+  if (!settings) {
+    return null;
+  }
+
+  if (areCustomLanguagesEnabled(settings)) {
+    for (const language of settings.customLanguages ?? []) {
+      const name = language.name.trim().toLowerCase();
+      const aliases = parseAliasList(language.aliases);
+      if (name && (name === normalized || aliases.includes(normalized))) {
+        return language.name.trim();
+      }
     }
   }
 
-  return LANGUAGE_ALIASES[normalized] ?? null;
+  const aliases = getEnabledLanguageAliasMap(settings);
+  return aliases[normalized] ?? null;
 }
 
 export function getSupportedLanguageAliases(settings?: loomPluginSettings): string[] {
+  if (!settings) {
+    return [];
+  }
+
+  const customAliases = areCustomLanguagesEnabled(settings)
+    ? (settings.customLanguages ?? []).flatMap((language) => {
+    const name = language.name.trim().toLowerCase();
+      return [name, ...parseAliasList(language.aliases)];
+    })
+    : [];
+
   return [
-    ...Object.keys(LANGUAGE_ALIASES),
-    ...(settings?.customLanguages ?? []).flatMap((language) => [language.name, ...parseAliasList(language.aliases)]),
-  ].map((alias) => alias.toLowerCase());
+    ...Object.keys(getEnabledLanguageAliasMap(settings)),
+    ...customAliases,
+  ].map((alias) => alias.toLowerCase()).filter(Boolean);
 }
 
 export function parseMarkdownCodeBlocks(filePath: string, source: string, settings?: loomPluginSettings): loomCodeBlock[] {
@@ -103,7 +75,9 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
     const fenceIndent = getLeadingWhitespace(line);
     const fenceToken = fenceMatch[1];
     const sourceLanguage = (fenceMatch[2] ?? "").trim();
-    const sourceReference = parseSourceReference(fenceMatch[3] ?? "");
+    const infoAttributes = parseInfoAttributes(fenceMatch[3] ?? "");
+    const sourceReference = parseSourceReference(infoAttributes);
+    const executionContext = parseExecutionContext(infoAttributes);
     const language = normalizeLanguage(sourceLanguage, settings);
 
     let endLine = i;
@@ -130,7 +104,9 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
     ordinal += 1;
     const content = contentLines.join("\n");
     const referenceHash = sourceReference ? `:${JSON.stringify(sourceReference)}` : "";
-    const contentHash = shortHash(`${content}${referenceHash}`);
+    const executionHash = executionContextHasValues(executionContext) ? `:${JSON.stringify(executionContext)}` : "";
+    const attributeHash = Object.keys(infoAttributes).length ? `:${JSON.stringify(infoAttributes)}` : "";
+    const contentHash = shortHash(`${content}${referenceHash}${executionHash}${attributeHash}`);
     const id = shortHash(`${filePath}:${ordinal}:${language}:${contentHash}`);
 
     blocks.push({
@@ -141,7 +117,9 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
       languageAlias: sourceLanguage.toLowerCase(),
       sourceLanguage,
       content,
+      attributes: infoAttributes,
       sourceReference,
+      executionContext,
       startLine,
       endLine,
       fenceStart: 0,
@@ -152,6 +130,10 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
   return blocks;
 }
 
+function executionContextHasValues(context: ReturnType<typeof parseExecutionContext>): boolean {
+  return Boolean(context.containerGroup || context.disableContainer || context.workingDirectory || context.timeoutMs);
+}
+
 function parseAliasList(value: string): string[] {
   return value
     .split(",")
@@ -159,8 +141,7 @@ function parseAliasList(value: string): string[] {
     .filter(Boolean);
 }
 
-function parseSourceReference(infoTail: string): loomSourceReference | undefined {
-  const attrs = parseInfoAttributes(infoTail);
+function parseSourceReference(attrs: Record<string, string>): loomSourceReference | undefined {
   const filePath = attrs["loom-file"] ?? attrs.file ?? attrs.src ?? attrs.source;
   if (!filePath) {
     return undefined;
@@ -170,6 +151,16 @@ function parseSourceReference(infoTail: string): loomSourceReference | undefined
   const lineRange = lines ? parseLineRange(lines) : null;
   const symbolName = attrs["loom-symbol"] ?? attrs.symbol ?? attrs.fn ?? attrs.function;
   const traceValue = attrs["loom-deps"] ?? attrs.deps ?? attrs.trace;
+  const callExpression = attrs["loom-call"] ?? attrs.call;
+  const callArgs = attrs["loom-args"] ?? attrs.args;
+  const printValue = attrs["loom-print"] ?? attrs.print;
+  const call = callExpression != null || callArgs != null
+    ? {
+      expression: normalizeBooleanAttribute(callExpression) === "true" ? undefined : callExpression,
+      args: callArgs,
+      print: printValue == null ? true : !["0", "false", "no", "off"].includes(printValue.toLowerCase()),
+    }
+    : undefined;
 
   return {
     filePath,
@@ -177,7 +168,35 @@ function parseSourceReference(infoTail: string): loomSourceReference | undefined
     lineEnd: lineRange?.end,
     symbolName,
     traceDependencies: traceValue == null ? true : !["0", "false", "no", "off"].includes(traceValue.toLowerCase()),
+    call,
   };
+}
+
+function parseExecutionContext(attrs: Record<string, string>) {
+  const container = attrs["loom-container"] ?? attrs.container;
+  const timeout = attrs["loom-timeout"] ?? attrs.timeout;
+  const workingDirectory = attrs["loom-cwd"] ?? attrs.cwd ?? attrs["working-directory"];
+  const timeoutMs = timeout ? parsePositiveInteger(timeout) : undefined;
+
+  return {
+    containerGroup: container && !isDisabledValue(container) ? container : undefined,
+    disableContainer: container ? isDisabledValue(container) : undefined,
+    workingDirectory,
+    timeoutMs,
+  };
+}
+
+function parsePositiveInteger(value: string): number | undefined {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function isDisabledValue(value: string): boolean {
+  return ["0", "false", "no", "off", "none", "native"].includes(value.trim().toLowerCase());
+}
+
+function normalizeBooleanAttribute(value: string | undefined): string | undefined {
+  return value == null ? undefined : value.trim().toLowerCase();
 }
 
 function parseInfoAttributes(input: string): Record<string, string> {

@@ -1,0 +1,42 @@
+name: smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - minimal
+          - systems
+          - proofs
+          - ebpf
+          - full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+      - run: sudo apt-get update && sudo apt-get install -y clang llvm bpftrace z3
+      - run: git fetch origin vault:vault
+      - run: npm ci --legacy-peer-deps
+      - run: npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
+        if: matrix.profile != 'ebpf' && matrix.profile != 'full'
+        env:
+          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - run: sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
+        if: matrix.profile == 'ebpf' || matrix.profile == 'full'
+        env:
+          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loom-smoke-${{ matrix.profile }}
+          path: .loom/artifacts/smoke/${{ matrix.profile }}

@@ -5,7 +5,10 @@
   "main": "main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:matrix": "npm run smoke -- --profile minimal && npm run smoke -- --profile systems && npm run smoke -- --profile proofs && npm run smoke -- --profile ebpf && npm run smoke -- --profile full",
+    "smoke:pdf": "node scripts/smoke.mjs --require-pdf"
   },
   "devDependencies": {
     "@codemirror/language": "^6.10.8",

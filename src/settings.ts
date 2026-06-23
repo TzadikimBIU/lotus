@@ -1,41 +1,9 @@
 import { App, Modal, Notice, PluginSettingTab, Setting, normalizePath } from "obsidian";
 import type loomPlugin from "./main";
+import { BUILT_IN_LANGUAGE_PACKAGES, CUSTOM_LANGUAGE_PACKAGE_ID, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
 import type { loomCustomLanguage, loomPluginSettings } from "./types";
 
-export const DEFAULT_SETTINGS: loomPluginSettings = {
-  enableLocalExecution: false,
-  hasAcknowledgedExecutionRisk: false,
-  preserveSourceMode: true,
-  defaultTimeoutMs: 8000,
-  workingDirectory: "",
-  pythonExecutable: "python3",
-  nodeExecutable: "node",
-  typescriptMode: "ts-node",
-  typescriptTranspilerExecutable: "ts-node",
-  ocamlMode: "ocaml",
-  ocamlExecutable: "ocaml",
-  cExecutable: "gcc",
-  cppExecutable: "g++",
-  shellExecutable: "bash",
-  rubyExecutable: "ruby",
-  perlExecutable: "perl",
-  luaExecutable: "lua",
-  phpExecutable: "php",
-  goExecutable: "go",
-  rustExecutable: "rustc",
-  haskellExecutable: "runghc",
-  javaCompilerExecutable: "",
-  javaExecutable: "java",
-  llvmInterpreterExecutable: "lli",
-  leanExecutable: "lean",
-  coqExecutable: "coqc",
-  smtExecutable: "z3",
-  writeOutputToNote: false,
-  autoRunOnFileOpen: false,
-  customLanguages: [],
-  pdfExportMode: "both",
-  defaultContainerGroup: "",
-};
+export { DEFAULT_SETTINGS } from "./defaultSettings";
 
 export class loomSettingTab extends PluginSettingTab {
   constructor(private readonly loomPlugin: loomPlugin) {
@@ -49,6 +17,7 @@ export class loomSettingTab extends PluginSettingTab {
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
 
     this.renderGeneralSettings(this.createSection(containerEl, "General Settings", true));
+    this.renderLanguagePackages(this.createSection(containerEl, "Language Packages"));
     this.renderBuiltInRuntimes(this.createSection(containerEl, "Built-in Runtimes"));
     this.renderCustomLanguages(this.createSection(containerEl, "Custom Languages"));
     void this.renderContainerGroups(this.createSection(containerEl, "Containerization Groups"));
@@ -134,6 +103,31 @@ export class loomSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Extracted source preview")
+      .setDesc("Choose how loom shows the materialized source for blocks that use loom-file.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("collapsed", "Collapsed")
+          .addOption("expanded", "Expanded")
+          .addOption("hidden", "Hidden")
+          .setValue(this.loomPlugin.settings.extractedSourcePreviewMode || "collapsed")
+          .onChange(async (value) => {
+            this.loomPlugin.settings.extractedSourcePreviewMode = value as "collapsed" | "expanded" | "hidden";
+            await this.loomPlugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Show capability metadata")
+      .setDesc("Show symbol, dependency, and harness capability metadata in extracted source preview headers.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.loomPlugin.settings.showLanguageCapabilityMetadata ?? true).onChange(async (value) => {
+          this.loomPlugin.settings.showLanguageCapabilityMetadata = value;
+          await this.loomPlugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
       .setName("PDF export mode")
       .setDesc("Choose what to include when exporting notes containing loom code blocks to PDF.")
       .addDropdown((dropdown) =>
@@ -150,57 +144,167 @@ export class loomSettingTab extends PluginSettingTab {
   }
 
   private renderBuiltInRuntimes(containerEl: HTMLElement): void {
-    this.addTextSetting(containerEl, "Python executable", "Path or command name for Python.", "pythonExecutable");
-    this.addTextSetting(containerEl, "Node executable", "Path or command name for JavaScript execution.", "nodeExecutable");
+    if (this.isRuntimeLanguageEnabled("python")) {
+      this.addTextSetting(containerEl, "Python executable", "Path or command name for Python.", "pythonExecutable");
+    }
+    if (this.isRuntimeLanguageEnabled("javascript")) {
+      this.addTextSetting(containerEl, "Node executable", "Path or command name for JavaScript execution.", "nodeExecutable");
+    }
 
-    new Setting(containerEl)
-      .setName("TypeScript runner mode")
-      .setDesc("Use ts-node or tsx for TypeScript blocks.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("ts-node", "ts-node")
-          .addOption("tsx", "tsx")
-          .setValue(this.loomPlugin.settings.typescriptMode)
-          .onChange(async (value) => {
-            this.loomPlugin.settings.typescriptMode = value as "ts-node" | "tsx";
+    if (this.isRuntimeLanguageEnabled("typescript")) {
+      new Setting(containerEl)
+        .setName("TypeScript runner mode")
+        .setDesc("Use ts-node or tsx for TypeScript blocks.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("ts-node", "ts-node")
+            .addOption("tsx", "tsx")
+            .setValue(this.loomPlugin.settings.typescriptMode)
+            .onChange(async (value) => {
+              this.loomPlugin.settings.typescriptMode = value as "ts-node" | "tsx";
+              await this.loomPlugin.saveSettings();
+            }),
+        );
+
+      this.addTextSetting(containerEl, "TypeScript transpiler executable", "Command or path for ts-node or tsx.", "typescriptTranspilerExecutable");
+    }
+
+    if (this.isRuntimeLanguageEnabled("ocaml")) {
+      new Setting(containerEl)
+        .setName("OCaml mode")
+        .setDesc("Choose between the OCaml toplevel, ocamlc compilation, or dune exec.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("ocaml", "ocaml")
+            .addOption("ocamlc", "ocamlc")
+            .addOption("dune", "dune")
+            .setValue(this.loomPlugin.settings.ocamlMode)
+            .onChange(async (value) => {
+              this.loomPlugin.settings.ocamlMode = value as "ocaml" | "ocamlc" | "dune";
+              await this.loomPlugin.saveSettings();
+            }),
+        );
+
+      this.addTextSetting(containerEl, "OCaml executable", "Command or path for ocaml, ocamlc, or dune depending on the selected mode.", "ocamlExecutable");
+    }
+
+    this.addRuntimeTextSetting(containerEl, ["c"], "C compiler", "Command or path for compiling C blocks.", "cExecutable");
+    this.addRuntimeTextSetting(containerEl, ["cpp"], "C++ compiler", "Command or path for compiling C++ blocks.", "cppExecutable");
+    this.addRuntimeTextSetting(containerEl, ["shell"], "Shell executable", "Command or path for Shell, Bash, and sh blocks.", "shellExecutable");
+    this.addRuntimeTextSetting(containerEl, ["ruby"], "Ruby executable", "Command or path for Ruby blocks.", "rubyExecutable");
+    this.addRuntimeTextSetting(containerEl, ["perl"], "Perl executable", "Command or path for Perl blocks.", "perlExecutable");
+    this.addRuntimeTextSetting(containerEl, ["lua"], "Lua executable", "Command or path for Lua blocks.", "luaExecutable");
+    this.addRuntimeTextSetting(containerEl, ["php"], "PHP executable", "Command or path for PHP blocks.", "phpExecutable");
+    this.addRuntimeTextSetting(containerEl, ["go"], "Go executable", "Command or path for Go blocks.", "goExecutable");
+    this.addRuntimeTextSetting(containerEl, ["rust"], "Rust compiler", "Command or path for compiling Rust blocks.", "rustExecutable");
+    this.addRuntimeTextSetting(containerEl, ["haskell"], "Haskell executable", "Command or path for Haskell blocks. Defaults to runghc.", "haskellExecutable");
+    if (this.isRuntimeLanguageEnabled("java")) {
+      this.addTextSetting(containerEl, "Java compiler", "Optional command or path for javac. Leave empty to use Java source-file mode.", "javaCompilerExecutable");
+      this.addTextSetting(containerEl, "Java executable", "Command or path for running compiled Java blocks.", "javaExecutable");
+    }
+    this.addRuntimeTextSetting(containerEl, ["llvm-ir"], "LLVM IR interpreter", "Command or path for running LLVM IR blocks with lli.", "llvmInterpreterExecutable");
+    if (this.isRuntimeLanguageEnabled("ebpf-c")) {
+      this.addTextSetting(containerEl, "eBPF clang executable", "Command or path for clang with BPF target support.", "ebpfClangExecutable");
+      this.addTextSetting(containerEl, "eBPF bpftool executable", "Command or path for bpftool verifier and load operations.", "ebpfBpftoolExecutable");
+      this.addTextSetting(containerEl, "eBPF object inspector", "Command or path for llvm-objdump. Leave empty to skip object section inspection.", "ebpfLlvmObjdumpExecutable");
+      this.addTextSetting(containerEl, "eBPF include paths", "Comma-separated include directories passed to clang with -I.", "ebpfIncludePaths");
+      new Setting(containerEl)
+        .setName("Allow eBPF kernel load")
+        .setDesc("Required before any block can use loom-ebpf-mode=load. Compile-only mode stays available without this.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.loomPlugin.settings.ebpfAllowKernelLoad).onChange(async (value) => {
+            this.loomPlugin.settings.ebpfAllowKernelLoad = value;
             await this.loomPlugin.saveSettings();
           }),
-      );
+        );
+    }
+    this.addRuntimeTextSetting(containerEl, ["bpftrace"], "bpftrace executable", "Command or path for bpftrace scripts.", "bpftraceExecutable");
+    this.addRuntimeTextSetting(containerEl, ["lean"], "Lean executable", "Command or path for checking Lean blocks.", "leanExecutable");
+    this.addRuntimeTextSetting(containerEl, ["coq"], "Coq executable", "Command or path for checking Coq blocks with coqc.", "coqExecutable");
+    this.addRuntimeTextSetting(containerEl, ["smtlib"], "SMT solver", "Command or path for SMT-LIB blocks. Defaults to z3.", "smtExecutable");
+  }
 
-    this.addTextSetting(containerEl, "TypeScript transpiler executable", "Command or path for ts-node or tsx.", "typescriptTranspilerExecutable");
+  private addRuntimeTextSetting<K extends keyof loomPluginSettings>(containerEl: HTMLElement, languageIds: string[], name: string, description: string, key: K): void {
+    if (languageIds.some((languageId) => this.isRuntimeLanguageEnabled(languageId))) {
+      this.addTextSetting(containerEl, name, description, key);
+    }
+  }
+
+  private isRuntimeLanguageEnabled(languageId: string): boolean {
+    return isLanguageEnabled(languageId, this.loomPlugin.settings);
+  }
+
+  private renderLanguagePackages(containerEl: HTMLElement): void {
+    normalizeLanguageConfiguration(this.loomPlugin.settings);
+
+    for (const pack of BUILT_IN_LANGUAGE_PACKAGES) {
+      const packEl = containerEl.createEl("details", { cls: "loom-language-package" });
+      packEl.open = this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id);
+      packEl.createEl("summary", { text: pack.displayName });
+      packEl.createEl("p", { text: pack.description, cls: "setting-item-description" });
+
+      new Setting(packEl)
+        .setName("Enable package")
+        .setDesc("Disable this to remove the package languages from parsing, command menus, and runners for this vault.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id)).onChange(async (value) => {
+            this.setEnabledValue(this.loomPlugin.settings.enabledLanguagePacks, pack.id, value);
+            for (const language of pack.languages) {
+              this.setEnabledValue(this.loomPlugin.settings.enabledLanguages, language.id, value);
+            }
+            await this.loomPlugin.saveSettings();
+            this.display();
+          }),
+        );
+
+      const packageEnabled = this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id);
+      for (const language of pack.languages) {
+        new Setting(packEl)
+          .setName(language.displayName)
+          .setDesc(`Aliases: ${language.aliases.join(", ")}`)
+          .addToggle((toggle) =>
+            toggle
+              .setDisabled(!packageEnabled)
+              .setValue(packageEnabled && this.loomPlugin.settings.enabledLanguages.includes(language.id))
+              .onChange(async (value) => {
+                this.setEnabledValue(this.loomPlugin.settings.enabledLanguages, language.id, value);
+                await this.loomPlugin.saveSettings();
+              }),
+          );
+      }
+    }
 
     new Setting(containerEl)
-      .setName("OCaml mode")
-      .setDesc("Choose between the OCaml toplevel, ocamlc compilation, or dune exec.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("ocaml", "ocaml")
-          .addOption("ocamlc", "ocamlc")
-          .addOption("dune", "dune")
-          .setValue(this.loomPlugin.settings.ocamlMode)
-          .onChange(async (value) => {
-            this.loomPlugin.settings.ocamlMode = value as "ocaml" | "ocamlc" | "dune";
-            await this.loomPlugin.saveSettings();
-          }),
+      .setName("Custom languages")
+      .setDesc("Enable user-defined languages from the Custom Languages section.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.loomPlugin.settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID)).onChange(async (value) => {
+          this.setEnabledValue(this.loomPlugin.settings.enabledLanguagePacks, CUSTOM_LANGUAGE_PACKAGE_ID, value);
+          await this.loomPlugin.saveSettings();
+          this.display();
+        }),
       );
 
-    this.addTextSetting(containerEl, "OCaml executable", "Command or path for ocaml, ocamlc, or dune depending on the selected mode.", "ocamlExecutable");
-    this.addTextSetting(containerEl, "C compiler", "Command or path for compiling C blocks.", "cExecutable");
-    this.addTextSetting(containerEl, "C++ compiler", "Command or path for compiling C++ blocks.", "cppExecutable");
-    this.addTextSetting(containerEl, "Shell executable", "Command or path for Shell, Bash, and sh blocks.", "shellExecutable");
-    this.addTextSetting(containerEl, "Ruby executable", "Command or path for Ruby blocks.", "rubyExecutable");
-    this.addTextSetting(containerEl, "Perl executable", "Command or path for Perl blocks.", "perlExecutable");
-    this.addTextSetting(containerEl, "Lua executable", "Command or path for Lua blocks.", "luaExecutable");
-    this.addTextSetting(containerEl, "PHP executable", "Command or path for PHP blocks.", "phpExecutable");
-    this.addTextSetting(containerEl, "Go executable", "Command or path for Go blocks.", "goExecutable");
-    this.addTextSetting(containerEl, "Rust compiler", "Command or path for compiling Rust blocks.", "rustExecutable");
-    this.addTextSetting(containerEl, "Haskell executable", "Command or path for Haskell blocks. Defaults to runghc.", "haskellExecutable");
-    this.addTextSetting(containerEl, "Java compiler", "Optional command or path for javac. Leave empty to use Java source-file mode.", "javaCompilerExecutable");
-    this.addTextSetting(containerEl, "Java executable", "Command or path for running compiled Java blocks.", "javaExecutable");
-    this.addTextSetting(containerEl, "LLVM IR interpreter", "Command or path for running LLVM IR blocks with lli.", "llvmInterpreterExecutable");
-    this.addTextSetting(containerEl, "Lean executable", "Command or path for checking Lean blocks.", "leanExecutable");
-    this.addTextSetting(containerEl, "Coq executable", "Command or path for checking Coq blocks with coqc.", "coqExecutable");
-    this.addTextSetting(containerEl, "SMT solver", "Command or path for SMT-LIB blocks. Defaults to z3.", "smtExecutable");
+    new Setting(containerEl)
+      .setName("Reset language packages")
+      .setDesc("Re-enable every built-in package and every built-in language.")
+      .addButton((button) =>
+        button.setButtonText("Reset").onClick(async () => {
+          this.loomPlugin.settings.enabledLanguagePacks = getDefaultLanguagePackIds();
+          this.loomPlugin.settings.enabledLanguages = getDefaultLanguageIds();
+          await this.loomPlugin.saveSettings();
+          this.display();
+        }),
+      );
+  }
+
+  private setEnabledValue(values: string[], id: string, enabled: boolean): void {
+    const index = values.indexOf(id);
+    if (enabled && index < 0) {
+      values.push(id);
+    } else if (!enabled && index >= 0) {
+      values.splice(index, 1);
+    }
   }
 
   private renderCustomLanguages(containerEl: HTMLElement): void {

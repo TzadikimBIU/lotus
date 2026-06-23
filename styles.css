@@ -135,6 +135,37 @@
   font-style: italic;
 }
 
+.loom-source-preview {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.loom-source-preview-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.loom-source-preview-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.loom-source-preview-pre {
+  max-height: 24rem;
+  overflow: auto;
+}
+
 .loom-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -175,6 +206,19 @@
 }
 
 .loom-custom-language > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.loom-language-package {
+  margin: 0.45rem 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.loom-language-package > summary {
   cursor: pointer;
   font-weight: 600;
 }
@@ -341,4 +385,3 @@
   margin-bottom: 0.75rem;
   background: var(--background-primary-alt);
 }
-

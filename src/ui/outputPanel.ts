@@ -42,7 +42,10 @@ export function renderOutputPanel(panel: HTMLElement, output: loomStoredOutput):
   if (output.result.stderr.trim()) {
     createStream(body, "Stderr", output.result.stderr);
   }
-  if (!output.result.stdout.trim() && !output.result.warning?.trim() && !output.result.stderr.trim()) {
+  if (output.sourcePreview?.content.trim()) {
+    createSourcePreview(body, output.sourcePreview);
+  }
+  if (!output.result.stdout.trim() && !output.result.warning?.trim() && !output.result.stderr.trim() && !output.sourcePreview?.content.trim()) {
     const empty = body.createDiv({ cls: "loom-output-empty" });
     empty.setText("No output");
   }
@@ -52,6 +55,29 @@ function createStream(container: HTMLElement, label: string, content: string): v
   const section = container.createDiv({ cls: "loom-output-stream" });
   section.createDiv({ cls: "loom-output-stream-label", text: label });
   section.createEl("pre", { cls: "loom-output-pre", text: content });
+}
+
+function createSourcePreview(container: HTMLElement, preview: NonNullable<loomStoredOutput["sourcePreview"]>): void {
+  const details = container.createEl("details", { cls: "loom-source-preview" });
+  details.open = preview.expanded;
+  const summary = details.createEl("summary", { cls: "loom-source-preview-summary" });
+  summary.createSpan({ text: "Extracted source" });
+  summary.createSpan({ cls: "loom-source-preview-meta", text: formatSourcePreviewMeta(preview) });
+  details.createEl("pre", { cls: "loom-output-pre loom-source-preview-pre", text: preview.content });
+}
+
+function formatSourcePreviewMeta(preview: NonNullable<loomStoredOutput["sourcePreview"]>): string {
+  const capability = preview.capability;
+  if (!capability || !preview.showCapabilityMetadata) {
+    return `${preview.language} · ${preview.description}`;
+  }
+  return [
+    preview.language,
+    preview.description,
+    `symbols:${capability.symbolExtraction}`,
+    `deps:${capability.dependencyTracing}`,
+    `call:${capability.callHarness}`,
+  ].join(" · ");
 }
 
 export function createRunningPanel(): HTMLDivElement {

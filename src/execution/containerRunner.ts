@@ -1124,6 +1124,20 @@ export class loomContainerRunner {
           command: shellCommand(`${settings.cppExecutable.trim() || "g++"} "$1" -o /tmp/loom-cpp && /tmp/loom-cpp`),
           extension: ".cpp",
         };
+      case "ebpf":
+      case "ebpf-c":
+      case "bpf":
+      case "bpf-c":
+        return {
+          command: shellCommand(`${settings.ebpfClangExecutable.trim() || "clang"} -target bpf -O2 -g -Wall "$1" -c -o /tmp/loom-ebpf.o && printf 'compiled /tmp/loom-ebpf.o\\n'`),
+          extension: ".bpf.c",
+        };
+      case "bpftrace":
+      case "bt":
+        return {
+          command: `${settings.bpftraceExecutable.trim() || "bpftrace"} -d {file}`,
+          extension: ".bt",
+        };
       case "rust":
       case "rs":
         return {
