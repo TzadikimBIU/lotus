@@ -2,6 +2,8 @@ name: smoke
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -16,8 +18,21 @@ jobs:
           - proofs
           - ebpf
           - full
+
+        container:
+          - none
+        # include:
+        #   - profile: full
+        #     container: docker-test
+        #   - profile: full
+        #     container: podman-test
+        #   - profile: full
+        #     container: qemu-test
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,6 +41,16 @@ jobs:
         id: setup-chrome
       - run: sudo apt-get update && sudo apt-get install -y clang llvm bpftrace z3
       - run: git fetch origin vault:vault
+      - name: Prepend container to test vault note
+        if: matrix.container != 'none'
+        run: |
+          git checkout vault
+          printf -- "---\nloom-container: ${{ matrix.container }}\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
+          mv temp_suite.md "Smoke Suite.md"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git commit -am "Prepend container frontmatter"
+          git checkout -f -
       - run: npm ci --legacy-peer-deps
       - run: npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
         if: matrix.profile != 'ebpf' && matrix.profile != 'full'
@@ -38,5 +63,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loom-smoke-${{ matrix.profile }}
+          name: loom-smoke-${{ matrix.profile }}-${{ matrix.container }}
           path: .loom/artifacts/smoke/${{ matrix.profile }}

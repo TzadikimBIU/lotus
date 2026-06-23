@@ -74,7 +74,7 @@ async function run(command, commandArgs, options) {
     cwd: options.cwd,
     env: options.env ?? process.env,
     stdio: "inherit",
-    shell: false,
+    shell: process.platform === "win32",
   });
 
   const exitCode = await new Promise((resolve, reject) => {
