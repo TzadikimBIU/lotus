@@ -147,22 +147,46 @@ export class EbpfRunner implements loomRunner {
   private async runBpftrace(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
     const mode = readBpftraceMode(block);
     const extraArgs = readListAttribute(block, "loom-bpftrace-args", "bpftrace-args").flatMap(splitCommandLine);
-    const args = mode === "check"
-      ? ["-d", ...extraArgs, "{file}"]
-      : [...extraArgs, "{file}"];
+    const executable = settings.bpftraceExecutable.trim();
 
-    return withTempSourceFile(".bt", block.content, async ({ tempFile }) =>
-      runProcess({
+    return withTempSourceFile(".bt", block.content, async ({ tempFile }) => {
+      if (mode === "run") {
+        return runProcess({
+          runnerId: `${this.id}:bpftrace:${mode}`,
+          runnerName: "bpftrace",
+          executable,
+          args: [...extraArgs, tempFile],
+          workingDirectory: context.workingDirectory,
+          timeoutMs: Math.max(context.timeoutMs, 30_000),
+          signal: context.signal,
+          stdin: context.stdin,
+        });
+      }
+
+      const result = await runProcess({
         runnerId: `${this.id}:bpftrace:${mode}`,
-        runnerName: mode === "check" ? "bpftrace check" : "bpftrace",
-        executable: settings.bpftraceExecutable.trim(),
-        args: args.map((arg) => arg.replaceAll("{file}", tempFile)),
+        runnerName: "bpftrace check",
+        executable,
+        args: ["--dry-run", ...extraArgs, tempFile],
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
-        stdin: mode === "run" ? context.stdin : undefined,
-      }),
-    );
+      });
+
+      if (!result.success && isUnsupportedBpftraceDryRun(result)) {
+        return runProcess({
+          runnerId: `${this.id}:bpftrace:${mode}:legacy-debug`,
+          runnerName: "bpftrace check",
+          executable,
+          args: ["-d", ...extraArgs, tempFile],
+          workingDirectory: context.workingDirectory,
+          timeoutMs: Math.max(context.timeoutMs, 30_000),
+          signal: context.signal,
+        });
+      }
+
+      return result;
+    });
   }
 }
 
@@ -207,4 +231,13 @@ function appendSection(existing: string, title: string, body: string): string {
     return existing;
   }
   return [existing.trim(), `${title}:\n${content}`].filter(Boolean).join("\n\n");
+}
+
+function isUnsupportedBpftraceDryRun(result: loomRunResult): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return (
+    output.includes("--dry-run") && (output.includes("unrecognized option") || output.includes("unknown option") || output.includes("invalid option"))
+  ) || (
+    output.includes("usage:") && !output.includes("--dry-run")
+  );
 }

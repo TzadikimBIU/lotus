@@ -293,12 +293,14 @@ export default class loomPlugin extends Plugin {
       ...DEFAULT_SETTINGS,
       ...(await this.loadData()),
     };
-    normalizeLanguageConfiguration(this.settings);
+    this.normalizeSettings();
   }
 
   async saveSettings(): Promise<void> {
+    this.normalizeSettings();
     await this.saveData(this.settings);
     this.registerCodeBlockProcessors();
+    this.notifyAllOutputsChanged();
     this.refreshAllViews();
   }
 
@@ -757,6 +759,14 @@ export default class loomPlugin extends Plugin {
     this.refreshAllViews();
   }
 
+  private notifyAllOutputsChanged(): void {
+    for (const listeners of this.outputListeners.values()) {
+      for (const listener of listeners) {
+        listener();
+      }
+    }
+  }
+
   private refreshAllViews(): void {
     this.app.workspace.getLeavesOfType("markdown").forEach((leaf) => {
       const view = leaf.view as MarkdownView;
@@ -767,6 +777,14 @@ export default class loomPlugin extends Plugin {
     for (const editorView of this.editorViews) {
       editorView.dispatch({ effects: loomRefreshEffect.of(undefined) });
     }
+  }
+
+  private normalizeSettings(): void {
+    normalizeLanguageConfiguration(this.settings);
+    this.settings.outputVisibleLines = normalizeNonNegativeInteger(this.settings.outputVisibleLines, DEFAULT_SETTINGS.outputVisibleLines, 2000);
+    this.settings.defaultTimeoutMs = normalizePositiveInteger(this.settings.defaultTimeoutMs, DEFAULT_SETTINGS.defaultTimeoutMs);
+    this.settings.defaultContainerGroup = normalizeStringSetting(this.settings.defaultContainerGroup, DEFAULT_SETTINGS.defaultContainerGroup);
+    this.settings.workingDirectory = normalizeStringSetting(this.settings.workingDirectory, DEFAULT_SETTINGS.workingDirectory);
   }
 
   private getActiveMarkdownFile(): TFile | null {
@@ -1280,4 +1298,21 @@ export default class loomPlugin extends Plugin {
 
 function decodeEscapedAttribute(value: string): string {
   return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function normalizeNonNegativeInteger(value: unknown, fallback: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Math.min(Math.floor(value), max);
+}
+
+function normalizeStringSetting(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }

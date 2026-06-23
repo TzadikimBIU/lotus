@@ -1062,8 +1062,12 @@ export class loomContainerRunner {
           command: `${settings.typescriptTranspilerExecutable.trim() || "ts-node"} {file}`,
           extension: ".ts",
         };
-      case "shell":
       case "sh":
+      case "shell":
+        return {
+          command: "sh {file}",
+          extension: ".sh",
+        };
       case "bash":
         return {
           command: `${settings.shellExecutable.trim() || "bash"} {file}`,
@@ -1142,7 +1146,7 @@ export class loomContainerRunner {
       case "bpftrace":
       case "bt":
         return {
-          command: `${settings.bpftraceExecutable.trim() || "bpftrace"} -d {file}`,
+          command: shellCommand(`if ${settings.bpftraceExecutable.trim() || "bpftrace"} --help 2>&1 | grep -q -- '--dry-run'; then ${settings.bpftraceExecutable.trim() || "bpftrace"} --dry-run "$1"; else ${settings.bpftraceExecutable.trim() || "bpftrace"} -d "$1"; fi`),
           extension: ".bt",
         };
       case "rust":
