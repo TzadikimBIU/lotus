@@ -88,6 +88,7 @@ interface loomCustomRuntimeRequest {
   fileName?: string;
   filePath?: string;
   command?: string;
+  stdin?: string;
   timeoutMs: number;
   config: {
     executable?: string;
@@ -265,6 +266,7 @@ export class loomContainerRunner {
       args: [
         "run",
         "--rm",
+        ...(context.stdin != null ? ["-i"] : []),
         "-v",
         `${groupPath}:/workspace`,
         "-w",
@@ -275,6 +277,7 @@ export class loomContainerRunner {
       workingDirectory: groupPath,
       timeoutMs: context.timeoutMs,
       signal: context.signal,
+      stdin: context.stdin,
     });
   }
 
@@ -310,6 +313,7 @@ export class loomContainerRunner {
         workingDirectory: groupPath,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
       });
     } finally {
       await this.runOptionalCommand(qemu.teardownCommand, groupPath, context.timeoutMs, context.signal, `container:${groupName}:qemu:teardown`, `QEMU ${groupName} teardown`);
@@ -338,6 +342,7 @@ export class loomContainerRunner {
         fileName: tempFileName,
         filePath: tempFilePath,
         command,
+        stdin: context.stdin,
       }),
       context.timeoutMs,
       context.signal,
@@ -354,6 +359,7 @@ export class loomContainerRunner {
           fileName: tempFileName,
           filePath: tempFilePath,
           command,
+          stdin: context.stdin,
         }),
         context.timeoutMs,
         context.signal,
@@ -394,6 +400,7 @@ export class loomContainerRunner {
       workingDirectory: groupPath,
       timeoutMs: context.timeoutMs,
       signal: context.signal,
+      stdin: context.stdin,
     });
   }
 

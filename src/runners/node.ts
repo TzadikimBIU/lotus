@@ -26,6 +26,7 @@ export class NodeRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
       });
     }
 
@@ -42,6 +43,7 @@ export class NodeRunner implements loomRunner {
       workingDirectory: context.workingDirectory,
       timeoutMs: context.timeoutMs,
       signal: context.signal,
+      stdin: context.stdin,
     });
   }
 }

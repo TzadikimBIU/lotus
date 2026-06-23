@@ -42,6 +42,7 @@ export class ManagedCompiledRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
+        stdin: context.stdin,
       });
 
       if (!compileResult.success) {
@@ -71,6 +72,7 @@ export class ManagedCompiledRunner implements loomRunner {
           workingDirectory: context.workingDirectory,
           timeoutMs: Math.max(context.timeoutMs, 30_000),
           signal: context.signal,
+          stdin: context.stdin,
         });
       }
 
@@ -96,6 +98,7 @@ export class ManagedCompiledRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
+        stdin: context.stdin,
       });
     });
   }

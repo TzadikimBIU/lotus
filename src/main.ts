@@ -104,10 +104,10 @@ class loomToolbarRenderChild extends MarkdownRenderChild {
     }
     this.panelContainer = this.containerEl.createDiv({ cls: hostClasses.join(" ") });
 
-    this.plugin.renderOutputInto(this.block.id, this.panelContainer);
+    this.plugin.renderOutputInto(this.block, this.panelContainer);
     this.unregisterOutputListener = this.plugin.registerOutputListener(this.block.id, () => {
       if (this.panelContainer) {
-        this.plugin.renderOutputInto(this.block.id, this.panelContainer);
+        this.plugin.renderOutputInto(this.block, this.panelContainer);
       }
     });
   }
@@ -140,7 +140,7 @@ class loomToolbarWidget extends WidgetType {
 class loomOutputWidget extends WidgetType {
   constructor(
     private readonly plugin: loomPlugin,
-    private readonly blockId: string,
+    private readonly block: loomCodeBlock,
   ) {
     super();
   }
@@ -152,7 +152,7 @@ class loomOutputWidget extends WidgetType {
   toDOM(): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "loom-inline-output-host";
-    this.plugin.renderOutputInto(this.blockId, wrapper);
+    this.plugin.renderOutputInto(this.block, wrapper);
     return wrapper;
   }
 }
@@ -175,6 +175,8 @@ export default class loomPlugin extends Plugin {
   public readonly containerRunner = new loomContainerRunner(this.app, this.manifest.dir ?? ".obsidian/plugins/loom");
   private readonly registeredCodeBlockAliases = new Set<string>();
   private readonly outputs = new Map<string, loomStoredOutput>();
+  private readonly stdinInputs = new Map<string, string>();
+  private readonly stdinPanels = new Set<string>();
   private readonly running = new Map<string, AbortController>();
   private readonly outputListeners = new Map<string, Set<() => void>>();
   private statusBarItemEl!: HTMLElement;
@@ -326,6 +328,14 @@ export default class loomPlugin extends Plugin {
         }
       },
       onRemove: () => void this.removeSnippetById(block.id),
+      onToggleInput: () => {
+        if (this.stdinPanels.has(block.id)) {
+          this.stdinPanels.delete(block.id);
+        } else {
+          this.stdinPanels.add(block.id);
+        }
+        this.notifyOutputChanged(block.id);
+      },
       onToggleOutput: () => {
         const output = this.outputs.get(block.id);
         if (!output) {
@@ -337,8 +347,13 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  renderOutputInto(blockId: string, container: HTMLElement): void {
+  renderOutputInto(block: loomCodeBlock, container: HTMLElement): void {
     container.empty();
+    const blockId = block.id;
+
+    if (this.shouldRenderStdinPanel(block)) {
+      container.appendChild(this.createStdinPanel(block));
+    }
 
     const output = this.outputs.get(blockId);
     if (this.running.has(blockId)) {
@@ -456,11 +471,13 @@ export default class loomPlugin extends Plugin {
     }
 
     const controller = new AbortController();
+    const stdin = await this.resolveBlockStdin(file, block);
     const runContext = {
       file,
       workingDirectory: executionContext.workingDirectory,
       timeoutMs: executionContext.timeoutMs,
       signal: controller.signal,
+      stdin,
     };
     this.running.set(block.id, controller);
     this.notifyOutputChanged(block.id);
@@ -879,13 +896,13 @@ export default class loomPlugin extends Plugin {
               }),
             );
 
-            if (plugin.outputs.has(block.id) || plugin.running.has(block.id)) {
+            if (plugin.outputs.has(block.id) || plugin.running.has(block.id) || plugin.shouldRenderStdinPanel(block)) {
               const endLine = this.view.state.doc.line(block.endLine + 1);
               builder.add(
                 endLine.to,
                 endLine.to,
                 Decoration.widget({
-                  widget: new loomOutputWidget(plugin, block.id),
+                  widget: new loomOutputWidget(plugin, block),
                   side: 1,
                 }),
               );
@@ -1184,4 +1201,83 @@ export default class loomPlugin extends Plugin {
     }
     return null;
   }
+
+  shouldRenderStdinPanel(block: loomCodeBlock): boolean {
+    return this.stdinPanels.has(block.id) || this.hasEnabledStdinAttribute(block);
+  }
+
+  private hasEnabledStdinAttribute(block: loomCodeBlock): boolean {
+    const input = block.attributes["loom-input"] ?? block.attributes.input;
+    if (input && !["0", "false", "no", "off"].includes(input.trim().toLowerCase())) {
+      return true;
+    }
+    return block.attributes["loom-stdin"] != null ||
+      block.attributes.stdin != null ||
+      block.attributes["loom-stdin-file"] != null ||
+      block.attributes["stdin-file"] != null;
+  }
+
+  private createStdinPanel(block: loomCodeBlock): HTMLElement {
+    const panel = document.createElement("div");
+    panel.className = "loom-stdin-panel";
+
+    const header = panel.createDiv({ cls: "loom-stdin-header" });
+    header.createSpan({ text: "stdin" });
+    const actions = header.createDiv({ cls: "loom-stdin-actions" });
+    const runButton = actions.createEl("button", { text: "Run" });
+    const clearButton = actions.createEl("button", { text: "Clear" });
+
+    const textarea = panel.createEl("textarea", { cls: "loom-stdin-input" });
+    textarea.placeholder = this.getStdinPlaceholder(block);
+    textarea.value = this.stdinInputs.get(block.id) ?? block.attributes["loom-stdin"] ?? block.attributes.stdin ?? "";
+    textarea.addEventListener("input", () => {
+      this.stdinInputs.set(block.id, textarea.value);
+    });
+    runButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.stdinInputs.set(block.id, textarea.value);
+      void this.runActiveBlockById(block.id);
+    });
+    clearButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      textarea.value = "";
+      this.stdinInputs.set(block.id, "");
+    });
+
+    return panel;
+  }
+
+  private getStdinPlaceholder(block: loomCodeBlock): string {
+    const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+    return stdinFile ? `stdin file: ${stdinFile}` : "standard input for this block";
+  }
+
+  private async resolveBlockStdin(file: TFile, block: loomCodeBlock): Promise<string | undefined> {
+    if (this.stdinInputs.has(block.id)) {
+      return this.stdinInputs.get(block.id);
+    }
+
+    const inline = block.attributes["loom-stdin"] ?? block.attributes.stdin;
+    if (inline != null) {
+      return decodeEscapedAttribute(inline);
+    }
+
+    const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+    if (!stdinFile?.trim()) {
+      return undefined;
+    }
+
+    const stdinPath = this.resolveReferencedVaultPath(file, stdinFile);
+    const inputFile = this.app.vault.getAbstractFileByPath(stdinPath);
+    if (!(inputFile instanceof TFile)) {
+      throw new Error(`stdin file not found: ${stdinPath}`);
+    }
+    return this.app.vault.cachedRead(inputFile);
+  }
+}
+
+function decodeEscapedAttribute(value: string): string {
+  return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
 }

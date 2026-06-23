@@ -12,6 +12,7 @@ export interface loomProcessSpec {
   workingDirectory: string;
   timeoutMs: number;
   signal: AbortSignal;
+  stdin?: string;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -102,11 +103,22 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
       child = spawn(spec.executable, spec.args, {
         cwd: spec.workingDirectory,
         shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
           ...spec.env,
         },
       });
+      child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE") {
+          reject(error);
+        }
+      });
+      if (spec.stdin != null) {
+        child.stdin?.end(spec.stdin);
+      } else {
+        child.stdin?.destroy();
+      }
 
       const abort = () => {
         cancelled = true;
@@ -191,6 +203,7 @@ export async function runTempFileProcess(spec: loomTempSourceSpec): Promise<loom
       workingDirectory: spec.workingDirectory,
       timeoutMs: spec.timeoutMs,
       signal: spec.signal,
+      stdin: spec.stdin,
       env: expandTemplatedEnv(spec.env, tempFile, tempDir),
     }),
   );

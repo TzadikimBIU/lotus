@@ -21,6 +21,7 @@ export class LlvmRunner implements loomRunner {
       workingDirectory: context.workingDirectory,
       timeoutMs: Math.max(context.timeoutMs, 30_000),
       signal: context.signal,
+      stdin: context.stdin,
     });
 
     if (!result.timedOut && !result.cancelled && result.exitCode != null && !result.stderr.trim()) {

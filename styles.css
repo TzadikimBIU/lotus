@@ -45,6 +45,45 @@
   margin-top: 0.65rem;
 }
 
+.loom-stdin-panel {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
+}
+
+.loom-stdin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.loom-stdin-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.loom-stdin-actions button {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.loom-stdin-input {
+  min-height: 4.5rem;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
 .loom-output-panel {
   margin-top: 0.5rem;
   border-radius: 14px;

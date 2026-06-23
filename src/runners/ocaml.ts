@@ -26,6 +26,7 @@ export class OcamlRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
       });
     }
 
@@ -40,6 +41,7 @@ export class OcamlRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
       });
     }
 
@@ -53,6 +55,7 @@ export class OcamlRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
       });
 
       if (!compileResult.success) {

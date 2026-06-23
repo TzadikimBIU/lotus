@@ -34,6 +34,7 @@ export class NativeCompiledRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
+        stdin: context.stdin,
       });
 
       if (!compileResult.success) {

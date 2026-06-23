@@ -225,6 +225,8 @@ Output panels can also be capped to a visible line window while keeping the full
 
 Blocks can materialise output into vault files with `loom-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and Loom creates missing parent folders. By default the file receives stdout and is replaced on each run. Use `loom-output-file-mode=append`, `loom-output-file-streams=metadata,stdout,stderr,warning`, or `loom-output-file-format=json` when a block needs a different artifact shape
 
+Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per block input buffer and run the block with that buffer. For reproducible notes use `loom-stdin="line one\nline two"` or `loom-stdin-file="inputs/payload.txt"`. `loom-input=true` keeps the input field visible whenever the note renders
+
 ## Partial source extraction
 
 loom can run part of another file while keeping the call site in your note. Add source attributes to the fence info string:

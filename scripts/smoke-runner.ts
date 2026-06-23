@@ -164,6 +164,7 @@ async function runBlock(note: NoteFile, block: loomCodeBlock): Promise<SmokeBloc
     workingDirectory: context.workingDirectory,
     timeoutMs: context.timeoutMs,
     signal: controller.signal,
+    stdin: await resolveBlockStdin(note, block),
   }, settings);
 
   if (sourcePreview) {
@@ -455,6 +456,25 @@ function resolveReferencedVaultPath(notePath: string, referencePath: string): st
   }
   const baseDir = dirname(notePath);
   return normalizeVaultPath(baseDir === "." ? trimmed : `${baseDir}/${trimmed}`);
+}
+
+async function resolveBlockStdin(note: NoteFile, block: loomCodeBlock): Promise<string | undefined> {
+  const inline = block.attributes["loom-stdin"] ?? block.attributes.stdin;
+  if (inline != null) {
+    return decodeEscapedAttribute(inline);
+  }
+
+  const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+  if (!stdinFile?.trim()) {
+    return undefined;
+  }
+
+  const stdinPath = resolveReferencedVaultPath(note.path, stdinFile);
+  return fsReadFile(join(vaultDir, stdinPath), "utf8");
+}
+
+function decodeEscapedAttribute(value: string): string {
+  return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
 }
 
 function resolveVaultLocalPath(value: string, noteDir: string): string {

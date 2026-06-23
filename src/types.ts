@@ -57,6 +57,7 @@ export interface loomRunContext {
   workingDirectory: string;
   timeoutMs: number;
   signal: AbortSignal;
+  stdin?: string;
 }
 
 export interface loomRunResult {

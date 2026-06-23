@@ -160,6 +160,7 @@ export class EbpfRunner implements loomRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
+        stdin: mode === "run" ? context.stdin : undefined,
       }),
     );
   }

@@ -88,6 +88,7 @@ export class InterpretedRunner implements loomRunner {
       workingDirectory: context.workingDirectory,
       timeoutMs: Math.max(context.timeoutMs, spec.minimumTimeoutMs ?? 0),
       signal: context.signal,
+      stdin: context.stdin,
       env: spec.env,
     });
   }
