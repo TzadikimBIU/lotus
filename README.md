@@ -423,7 +423,7 @@ eBPF support follows the normal BPF workflow: compile first, inspect the object,
     <tr>
       <td><code>bpftrace</code></td>
       <td>Checks scripts with bpftrace parse/debug mode by default, then only attaches to live probes when the block asks for run mode</td>
-      <td><code>bpftrace -d</code></td>
+      <td><code>bpftrace --dry-run</code>, falling back to legacy <code>bpftrace -d</code></td>
       <td><code>loom-bpftrace-mode</code>, <code>loom-bpftrace-args</code></td>
     </tr>
   </tbody>
