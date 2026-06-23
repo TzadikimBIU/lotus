@@ -1,0 +1,45 @@
+name: Nightly Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  nightly-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for smoke tests to succeed
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-regexp: '^smoke.*'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 20
+          allowed-conclusions: success
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      - run: npm run build
+
+      - name: Automatic Nightly Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: "nightly"
+          prerelease: true
+          title: "Nightly Build"
+          files: |
+            main.js
+            manifest.json
+            styles.css
