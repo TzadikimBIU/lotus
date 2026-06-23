@@ -6,14 +6,26 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        profile:
+          - minimal
+          - systems
+          - proofs
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-node@v4
         with:
@@ -24,6 +36,7 @@ jobs:
         id: setup-chrome
 
       - name: Install Z3 Prover on Windows Host
+        if: matrix.profile == 'proofs'
         run: choco install z3 -y
 
       # - name: Provision WSL (Ubuntu)
@@ -39,17 +52,15 @@ jobs:
       #     wsl sudo apt-get install -y clang llvm bpftrace z3
 
       - name: Fetch vault branch
-        run: git fetch origin vault:vault
+        run: git fetch --depth=1 origin vault:vault
 
       - run: npm ci --legacy-peer-deps
 
-      - name: Run native smoke tests (Minimal, Systems, Proofs)
+      - name: Run native smoke profile
         shell: powershell
         run: |
           $env:LOOM_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
-          npm run smoke -- --profile minimal
-          npm run smoke -- --profile systems
-          npm run smoke -- --profile proofs
+          npm run smoke -- --profile ${{ matrix.profile }}
 
       # - name: Configure note for WSL container tests
       #   shell: powershell
@@ -73,5 +84,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loom-smoke-windows-artifacts
-          path: .loom/artifacts/smoke/
+          name: loom-smoke-windows-artifacts-${{ matrix.profile }}
+          path: .loom/artifacts/smoke/${{ matrix.profile }}

@@ -6,12 +6,16 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 9
       matrix:
         include:
           - profile: minimal
@@ -36,15 +40,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - uses: browser-actions/setup-chrome@v1
         id: setup-chrome
-      - run: sudo apt-get update && sudo apt-get install -y clang llvm bpftrace z3 podman
-      - run: git fetch origin vault:vault
+      - name: Install smoke toolchain packages
+        if: matrix.profile == 'proofs' || matrix.profile == 'ebpf' || matrix.profile == 'full' || matrix.container == 'podman-test'
+        run: |
+          packages=()
+          if [[ "${{ matrix.profile }}" == "proofs" || "${{ matrix.profile }}" == "full" ]]; then
+            packages+=(z3)
+          fi
+          if [[ "${{ matrix.profile }}" == "ebpf" || "${{ matrix.profile }}" == "full" ]]; then
+            packages+=(clang llvm bpftrace)
+          fi
+          if [[ "${{ matrix.container }}" == "podman-test" ]]; then
+            packages+=(podman)
+          fi
+          sudo apt-get update
+          sudo apt-get install -y "${packages[@]}"
+      - run: git fetch --depth=1 origin vault:vault
       - name: Configure container test vault
         if: matrix.container != 'none'
         run: |
