@@ -1,4 +1,4 @@
-import type { loomNormalizedLanguage, loomPluginSettings } from "./types";
+import type { loomCustomLanguage, loomNormalizedLanguage, loomPluginSettings } from "./types";
 
 export interface loomLanguageDefinition {
   id: loomNormalizedLanguage;
@@ -91,6 +91,9 @@ export function getDefaultLanguageIds(): string[] {
 }
 
 export function normalizeLanguageConfiguration(settings: loomPluginSettings): void {
+  if (!Array.isArray(settings.externalLanguagePacks)) {
+    settings.externalLanguagePacks = [];
+  }
   if (!Array.isArray(settings.enabledLanguagePacks) || !settings.enabledLanguagePacks.length) {
     settings.enabledLanguagePacks = getDefaultLanguagePackIds();
   }
@@ -128,10 +131,27 @@ export function getEnabledLanguageDefinitions(settings: loomPluginSettings): loo
   const enabledPacks = new Set(settings.enabledLanguagePacks);
   const enabledLanguages = new Set(settings.enabledLanguages);
 
-  return BUILT_IN_LANGUAGE_PACKAGES
+  return getAvailableLanguagePackages(settings)
     .filter((pack) => enabledPacks.has(pack.id))
     .flatMap((pack) => pack.languages)
     .filter((language) => enabledLanguages.has(language.id));
+}
+
+export function getAvailableLanguagePackages(settings: loomPluginSettings): loomLanguagePackage[] {
+  normalizeLanguageConfiguration(settings);
+  return [
+    ...BUILT_IN_LANGUAGE_PACKAGES,
+    ...(settings.externalLanguagePacks ?? []).map((pack) => ({
+      id: pack.id,
+      displayName: pack.displayName,
+      description: pack.description,
+      languages: pack.languages.map((language) => ({
+        id: language.name,
+        displayName: language.displayName || language.name,
+        aliases: parseAliasList(language.aliases),
+      })),
+    })),
+  ];
 }
 
 export function getEnabledLanguageAliasMap(settings: loomPluginSettings): Record<string, loomNormalizedLanguage> {
@@ -150,4 +170,34 @@ export function isLanguageEnabled(languageId: loomNormalizedLanguage, settings: 
 export function areCustomLanguagesEnabled(settings: loomPluginSettings): boolean {
   normalizeLanguageConfiguration(settings);
   return settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID);
+}
+
+export function getEnabledCommandLanguages(settings: loomPluginSettings): loomCustomLanguage[] {
+  normalizeLanguageConfiguration(settings);
+  const enabledPacks = new Set(settings.enabledLanguagePacks);
+  const enabledLanguages = new Set(settings.enabledLanguages);
+  const customLanguages = areCustomLanguagesEnabled(settings) ? settings.customLanguages ?? [] : [];
+  const externalLanguages = (settings.externalLanguagePacks ?? [])
+    .filter((pack) => enabledPacks.has(pack.id))
+    .flatMap((pack) => pack.languages)
+    .filter((language) => enabledLanguages.has(language.name));
+
+  return [...customLanguages, ...externalLanguages];
+}
+
+export function findEnabledCommandLanguage(settings: loomPluginSettings, normalizedLanguage: string, sourceAlias?: string): loomCustomLanguage | undefined {
+  const normalized = normalizedLanguage.trim().toLowerCase();
+  const alias = sourceAlias?.trim().toLowerCase();
+  return getEnabledCommandLanguages(settings).find((language) => {
+    const name = language.name.trim().toLowerCase();
+    const aliases = parseAliasList(language.aliases);
+    return name === normalized || aliases.includes(normalized) || Boolean(alias && (name === alias || aliases.includes(alias)));
+  });
+}
+
+function parseAliasList(value?: string): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((alias) => alias.trim().toLowerCase())
+    .filter(Boolean);
 }

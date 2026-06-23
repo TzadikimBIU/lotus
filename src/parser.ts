@@ -1,5 +1,5 @@
 import { shortHash } from "./utils/hash";
-import { areCustomLanguagesEnabled, getEnabledLanguageAliasMap } from "./languagePackages";
+import { findEnabledCommandLanguage, getEnabledCommandLanguages, getEnabledLanguageAliasMap } from "./languagePackages";
 import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings, loomSourceReference } from "./types";
 
 const OUTPUT_START = /^<!--\s*loom:output:start\s+id=([a-f0-9]+)\s*-->$/i;
@@ -13,14 +13,9 @@ export function normalizeLanguage(rawLanguage: string, settings?: loomPluginSett
     return null;
   }
 
-  if (areCustomLanguagesEnabled(settings)) {
-    for (const language of settings.customLanguages ?? []) {
-      const name = language.name.trim().toLowerCase();
-      const aliases = parseAliasList(language.aliases);
-      if (name && (name === normalized || aliases.includes(normalized))) {
-        return language.name.trim();
-      }
-    }
+  const commandLanguage = findEnabledCommandLanguage(settings, normalized);
+  if (commandLanguage) {
+    return commandLanguage.name.trim();
   }
 
   const aliases = getEnabledLanguageAliasMap(settings);
@@ -32,12 +27,11 @@ export function getSupportedLanguageAliases(settings?: loomPluginSettings): stri
     return [];
   }
 
-  const customAliases = areCustomLanguagesEnabled(settings)
-    ? (settings.customLanguages ?? []).flatMap((language) => {
-    const name = language.name.trim().toLowerCase();
+  const customAliases = getEnabledCommandLanguages(settings)
+    .flatMap((language) => {
+      const name = language.name.trim().toLowerCase();
       return [name, ...parseAliasList(language.aliases)];
-    })
-    : [];
+    });
 
   return [
     ...Object.keys(getEnabledLanguageAliasMap(settings)),

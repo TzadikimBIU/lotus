@@ -1,5 +1,5 @@
 import type { loomCodeBlock, loomPluginSettings, loomRunner } from "../types";
-import { areCustomLanguagesEnabled, isLanguageEnabled } from "../languagePackages";
+import { findEnabledCommandLanguage, isLanguageEnabled } from "../languagePackages";
 
 export class loomRunnerRegistry {
   constructor(private readonly runners: loomRunner[]) {}
@@ -19,13 +19,6 @@ export class loomRunnerRegistry {
     if (isLanguageEnabled(block.language, settings)) {
       return true;
     }
-    return areCustomLanguagesEnabled(settings) && settings.customLanguages.some((language) => {
-      const name = language.name.trim().toLowerCase();
-      const aliases = language.aliases
-        .split(",")
-        .map((alias) => alias.trim().toLowerCase())
-        .filter(Boolean);
-      return name === block.language.trim().toLowerCase() || aliases.includes(block.languageAlias.trim().toLowerCase());
-    });
+    return Boolean(findEnabledCommandLanguage(settings, block.language, block.languageAlias));
   }
 }

@@ -5,9 +5,11 @@ import { basename, join, normalize as normalizeFsPath, posix as posixPath } from
 import { spawn } from "child_process";
 import { runProcess } from "./processRunner";
 import { splitCommandLine } from "../utils/command";
+import { findEnabledCommandLanguage } from "../languagePackages";
 import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult } from "../types";
 
 type loomContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "custom";
+type loomContainerElevationMode = "default" | "root";
 
 interface loomContainerLanguageConfig {
   command?: string;
@@ -63,10 +65,16 @@ interface loomWslConfig {
   interactive?: boolean;
 }
 
+interface loomContainerElevationConfig {
+  mode: loomContainerElevationMode;
+  commandPrefix?: string;
+}
+
 interface loomContainerConfig {
   runtime: loomContainerRuntime;
   executable?: string;
   image?: string;
+  elevation: loomContainerElevationConfig;
   wsl?: loomWslConfig;
   healthCheck?: loomCommandExpectation;
   qemu?: loomQemuConfig;
@@ -95,6 +103,7 @@ interface loomCustomRuntimeRequest {
     custom?: loomCustomRuntimeConfig;
     qemu?: loomQemuConfig;
     healthCheck?: loomCommandExpectation;
+    elevation?: loomContainerElevationConfig;
   };
 }
 
@@ -146,6 +155,9 @@ export class loomContainerRunner {
             }
             if (config.runtime === "custom" && config.custom?.executable) {
               pieces.push(`wrapper: ${config.custom.executable}`);
+            }
+            if (config.elevation.mode === "root") {
+              pieces.push(config.elevation.commandPrefix ? `elevation: root via ${config.elevation.commandPrefix}` : "elevation: root");
             }
             const languageCount = Object.keys(config.languages).length;
             pieces.push(`${languageCount} language${languageCount === 1 ? "" : "s"}`);
@@ -216,6 +228,10 @@ export class loomContainerRunner {
         const fallbackMsg = `[Loom] Language '${block.language}' was not declared in container group. Running using default command: ${language.command}`;
         result.warning = result.warning ? `${result.warning}\n${fallbackMsg}` : fallbackMsg;
       }
+      if (config.elevation.mode === "root") {
+        const elevationMsg = `[Loom] Container elevation: root${config.elevation.commandPrefix ? ` via ${config.elevation.commandPrefix}` : ""}.`;
+        result.warning = result.warning ? `${result.warning}\n${elevationMsg}` : elevationMsg;
+      }
       return result;
     } finally {
       await rm(tempFilePath, { force: true });
@@ -271,6 +287,7 @@ export class loomContainerRunner {
         `${groupPath}:/workspace`,
         "-w",
         "/workspace",
+        ...this.ociElevationArgs(config),
         image,
         ...command,
       ],
@@ -296,7 +313,7 @@ export class loomContainerRunner {
 
     try {
       const remoteFile = posixPath.join(qemu.remoteWorkspace, tempFileName);
-      const remoteCommand = language.command!.replaceAll("{file}", shellQuote(remoteFile));
+      const remoteCommand = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", shellQuote(remoteFile)));
       if (!remoteCommand.trim()) {
         throw new Error("QEMU command is empty.");
       }
@@ -331,7 +348,7 @@ export class loomContainerRunner {
     tempFilePath: string,
     context: loomRunContext,
   ): Promise<loomRunResult> {
-    const command = language.command!.replaceAll("{file}", tempFileName);
+    const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
     const result = await this.runCustomWrapper(
       groupName,
       groupPath,
@@ -381,7 +398,7 @@ export class loomContainerRunner {
     context: loomRunContext,
   ): Promise<loomRunResult> {
     const wslGroupPath = this.translateToWslPath(groupPath);
-    const command = language.command!.replaceAll("{file}", tempFileName);
+    const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
     if (!command.trim()) {
       throw new Error("WSL command is empty.");
     }
@@ -499,6 +516,7 @@ export class loomContainerRunner {
       healthCheck?: unknown;
       qemu?: unknown;
       custom?: unknown;
+      elevation?: unknown;
       languages?: unknown;
     };
     const runtime = this.readRuntime(data.runtime);
@@ -535,6 +553,7 @@ export class loomContainerRunner {
       runtime,
       executable: typeof data.executable === "string" && data.executable.trim() ? data.executable.trim() : undefined,
       image: typeof data.image === "string" ? data.image : undefined,
+      elevation: this.readElevationConfig(data.elevation),
       wsl: this.readWslConfig(data.wsl),
       healthCheck: this.readHealthCheck(data.healthCheck, "Container config healthCheck"),
       qemu: this.readQemuConfig(data.qemu),
@@ -563,6 +582,30 @@ export class loomContainerRunner {
     const data = value as { interactive?: unknown };
     return {
       interactive: data.interactive === true,
+    };
+  }
+
+  private readElevationConfig(value: unknown): loomContainerElevationConfig {
+    if (value == null) {
+      return { mode: "default" };
+    }
+    if (typeof value === "string") {
+      if (value === "default" || value === "root") {
+        return { mode: value };
+      }
+      throw new Error("Container config elevation must be default, root, or an object.");
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Container config elevation must be an object.");
+    }
+    const data = value as Record<string, unknown>;
+    const mode = data.mode == null ? "default" : data.mode;
+    if (mode !== "default" && mode !== "root") {
+      throw new Error("Container config elevation.mode must be default or root.");
+    }
+    return {
+      mode,
+      commandPrefix: optionalString(data.commandPrefix),
     };
   }
 
@@ -678,6 +721,15 @@ export class loomContainerRunner {
       return config.executable.trim();
     }
     return config.runtime === "podman" ? "podman" : "docker";
+  }
+
+  private ociElevationArgs(config: loomContainerConfig): string[] {
+    return config.elevation.mode === "root" ? ["--user", "root"] : [];
+  }
+
+  private applyCommandPrefix(config: loomContainerConfig, command: string): string {
+    const prefix = config.elevation.mode === "root" ? config.elevation.commandPrefix?.trim() : "";
+    return prefix ? `${prefix} ${command}` : command;
   }
 
   private async runHealthCheck(
@@ -976,6 +1028,7 @@ export class loomContainerRunner {
         custom: config.custom,
         qemu: config.qemu,
         healthCheck: config.healthCheck,
+        elevation: config.elevation,
       },
       ...extra,
     };
@@ -1030,11 +1083,8 @@ export class loomContainerRunner {
     if (!langId) return null;
     const normalized = langId.toLowerCase().trim();
 
-    // Check custom languages first
-    const custom = settings.customLanguages.find((c) => {
-      const names = [c.name, ...c.aliases.split(",").map((s) => s.trim())].map((n) => n.toLowerCase());
-      return names.includes(normalized);
-    });
+    // Check command-backed languages first, including external language packs.
+    const custom = findEnabledCommandLanguage(settings, normalized);
     if (custom) {
       return {
         command: `${custom.executable} ${custom.args}`.trim(),

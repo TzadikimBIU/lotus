@@ -1,6 +1,6 @@
 import { App, Modal, Notice, PluginSettingTab, Setting, normalizePath } from "obsidian";
 import type loomPlugin from "./main";
-import { BUILT_IN_LANGUAGE_PACKAGES, CUSTOM_LANGUAGE_PACKAGE_ID, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
+import { CUSTOM_LANGUAGE_PACKAGE_ID, getAvailableLanguagePackages, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
 import type { loomCustomLanguage, loomPluginSettings } from "./types";
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
@@ -250,7 +250,7 @@ export class loomSettingTab extends PluginSettingTab {
   private renderLanguagePackages(containerEl: HTMLElement): void {
     normalizeLanguageConfiguration(this.loomPlugin.settings);
 
-    for (const pack of BUILT_IN_LANGUAGE_PACKAGES) {
+    for (const pack of getAvailableLanguagePackages(this.loomPlugin.settings)) {
       const packEl = containerEl.createEl("details", { cls: "loom-language-package" });
       packEl.open = this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id);
       packEl.createEl("summary", { text: pack.displayName });
@@ -286,6 +286,17 @@ export class loomSettingTab extends PluginSettingTab {
           );
       }
     }
+
+    new Setting(containerEl)
+      .setName("Reload external language packs")
+      .setDesc("Load JSON language pack manifests from the plugin language-packs folder.")
+      .addButton((button) =>
+        button.setButtonText("Reload").onClick(async () => {
+          await this.loomPlugin.loadExternalLanguagePacks(true);
+          await this.loomPlugin.saveSettings();
+          this.display();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("Custom languages")
@@ -722,6 +733,45 @@ class EditContainerGroupModal extends Modal {
             .setValue(this.configObj.image || "")
             .onChange((val) => {
               this.configObj.image = val.trim();
+            });
+        });
+    }
+
+    if (!this.configObj.elevation || typeof this.configObj.elevation !== "object") {
+      this.configObj.elevation = { mode: "default" };
+    }
+
+    new Setting(containerEl)
+      .setName("Elevation")
+      .setDesc(
+        this.configObj.runtime === "docker" || this.configObj.runtime === "podman"
+          ? "Run snippets with the image default user, or force root with --user root."
+          : "Keep default privileges, or mark this group as elevated and optionally prefix commands."
+      )
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("default", "Default")
+          .addOption("root", "Root")
+          .setValue(this.configObj.elevation.mode || "default")
+          .onChange((value) => {
+            this.configObj.elevation.mode = value;
+            this.renderActiveTab();
+          });
+      });
+
+    if (
+      this.configObj.elevation.mode === "root" &&
+      (this.configObj.runtime === "qemu" || this.configObj.runtime === "wsl" || this.configObj.runtime === "custom")
+    ) {
+      new Setting(containerEl)
+        .setName("Elevation command prefix")
+        .setDesc("Optional prefix for remote or wrapper commands, for example sudo -n. Loom does not prompt for passwords.")
+        .addText((text) => {
+          text
+            .setPlaceholder("sudo -n")
+            .setValue(this.configObj.elevation.commandPrefix || "")
+            .onChange((val) => {
+              this.configObj.elevation.commandPrefix = val.trim() || undefined;
             });
         });
     }

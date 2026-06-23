@@ -1,5 +1,6 @@
 import { runTempFileProcess } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
+import { findEnabledCommandLanguage } from "../languagePackages";
 import type { loomCodeBlock, loomCustomLanguage, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
 
 export class CustomLanguageRunner implements loomRunner {
@@ -32,15 +33,7 @@ export class CustomLanguageRunner implements loomRunner {
   }
 
   private getCustomLanguage(block: loomCodeBlock, settings: loomPluginSettings): loomCustomLanguage | undefined {
-    const normalized = block.language.trim().toLowerCase();
-    return settings.customLanguages.find((language) => {
-      const name = language.name.trim().toLowerCase();
-      const aliases = language.aliases
-        .split(",")
-        .map((alias) => alias.trim().toLowerCase())
-        .filter(Boolean);
-      return name === normalized || aliases.includes(normalized);
-    });
+    return findEnabledCommandLanguage(settings, block.language, block.languageAlias);
   }
 }
 

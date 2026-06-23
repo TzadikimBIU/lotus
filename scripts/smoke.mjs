@@ -160,7 +160,7 @@ async function assertCompiledPluginInstall(dir) {
   if (forbidden.length) {
     throw new Error(`Compiled plugin install contains source files: ${forbidden.join(", ")}`);
   }
-  for (const required of ["main.js", "manifest.json"]) {
+  for (const required of ["main.js", "manifest.json", "language-packs/nonessential.json"]) {
     if (!relativeFiles.includes(required)) {
       throw new Error(`Compiled plugin install is missing ${required}`);
     }

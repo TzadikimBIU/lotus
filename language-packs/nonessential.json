@@ -1,0 +1,15 @@
+{
+  "id": "nonessential",
+  "displayName": "Non-essential languages",
+  "description": "Optional command-backed languages kept outside the built-in runner surface.",
+  "languages": [
+    {
+      "id": "julia",
+      "displayName": "Julia",
+      "aliases": ["jl"],
+      "executable": "julia",
+      "args": "{file}",
+      "extension": ".jl"
+    }
+  ]
+}

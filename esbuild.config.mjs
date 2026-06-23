@@ -48,6 +48,7 @@ try {
       fs.copyFileSync("styles.css", path.join(deployDir, "styles.css"));
     }
     copyDirectoryIfPresent("syntaxes", path.join(deployDir, "syntaxes"));
+    copyDirectoryIfPresent("language-packs", path.join(deployDir, "language-packs"));
     console.log(`Deployed build to ${deployDir}`);
   }
 } catch (err) {

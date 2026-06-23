@@ -150,6 +150,7 @@ export interface loomPluginSettings {
   languageConfigurationVersion: number;
   enabledLanguagePacks: string[];
   enabledLanguages: string[];
+  externalLanguagePacks: loomExternalLanguagePack[];
   customLanguages: loomCustomLanguage[];
   pdfExportMode: "both" | "code" | "output";
   defaultContainerGroup: string;
@@ -171,4 +172,16 @@ export interface loomCustomLanguage {
   extractorArgs?: string;
   transpileExecutable?: string;
   transpileArgs?: string;
+}
+
+export interface loomExternalLanguagePack {
+  id: string;
+  displayName: string;
+  description: string;
+  languages: loomExternalLanguage[];
+}
+
+export interface loomExternalLanguage extends loomCustomLanguage {
+  displayName: string;
+  description?: string;
 }

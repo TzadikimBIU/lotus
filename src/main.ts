@@ -16,7 +16,7 @@ import { resolveExecutionContext } from "./executionContext";
 import { addLlvmDecorations, highlightLlvmElement } from "./llvmHighlight";
 import { findBlockAtLine, getSupportedLanguageAliases, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
-import { normalizeLanguageConfiguration } from "./languagePackages";
+import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
 import { NodeRunner } from "./runners/node";
 import { CustomLanguageRunner } from "./runners/custom";
 import { InterpretedRunner } from "./runners/interpreted";
@@ -35,9 +35,10 @@ import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { splitCommandLine } from "./utils/command";
-import type { loomCodeBlock, loomPluginSettings, loomResolvedExecutionContext, loomStoredOutput } from "./types";
+import type { loomCodeBlock, loomExternalLanguage, loomExternalLanguagePack, loomPluginSettings, loomResolvedExecutionContext, loomStoredOutput } from "./types";
 
 const loomRefreshEffect = StateEffect.define<void>();
+const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
 type loomOutputFileMode = "replace" | "append";
 type loomOutputFileFormat = "text" | "json";
 type loomOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
@@ -293,12 +294,65 @@ export default class loomPlugin extends Plugin {
       ...DEFAULT_SETTINGS,
       ...(await this.loadData()),
     };
+    await this.loadExternalLanguagePacks();
     this.normalizeSettings();
+  }
+
+  async loadExternalLanguagePacks(showNotice = false): Promise<void> {
+    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/loom"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
+    const adapter = this.app.vault.adapter;
+    const packs: loomExternalLanguagePack[] = [];
+    let failures = 0;
+
+    try {
+      if (!(await adapter.exists(packDir))) {
+        this.settings.externalLanguagePacks = [];
+        if (showNotice) {
+          await adapter.mkdir(packDir);
+          new Notice(`Created external language pack folder at ${packDir}`);
+        }
+        return;
+      }
+
+      const listed = await adapter.list(packDir);
+      const files = listed.files
+        .filter((path) => path.toLowerCase().endsWith(".json"))
+        .sort((a, b) => a.localeCompare(b));
+
+      for (const filePath of files) {
+        try {
+          const parsed = parseExternalLanguagePack(JSON.parse(await adapter.read(filePath)), filePath);
+          if (parsed) {
+            packs.push(parsed);
+          } else {
+            failures += 1;
+          }
+        } catch (error) {
+          failures += 1;
+          console.warn(`Failed to load loom language pack ${filePath}`, error);
+        }
+      }
+    } catch (error) {
+      this.settings.externalLanguagePacks = [];
+      console.warn(`Failed to scan loom language packs in ${packDir}`, error);
+      if (showNotice) {
+        new Notice(`Failed to load external language packs from ${packDir}`);
+      }
+      return;
+    }
+
+    this.settings.externalLanguagePacks = packs;
+    if (showNotice) {
+      const suffix = failures ? `, ${failures} failed` : "";
+      new Notice(`Loaded ${packs.length} external language pack${packs.length === 1 ? "" : "s"}${suffix}`);
+    }
   }
 
   async saveSettings(): Promise<void> {
     this.normalizeSettings();
-    await this.saveData(this.settings);
+    const persistedSettings: Partial<loomPluginSettings> = { ...this.settings };
+    delete persistedSettings.externalLanguagePacks;
+    await this.saveData(persistedSettings);
     this.registerCodeBlockProcessors();
     this.notifyAllOutputsChanged();
     this.refreshAllViews();
@@ -954,16 +1008,7 @@ export default class loomPlugin extends Plugin {
   }
 
   private getCustomLanguageExtractor(block: loomCodeBlock, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
-    const languageId = block.language;
-    const normalized = languageId.trim().toLowerCase();
-    const language = this.settings.customLanguages.find((candidate) => {
-      const name = candidate.name.trim().toLowerCase();
-      const aliases = candidate.aliases
-        .split(",")
-        .map((alias) => alias.trim().toLowerCase())
-        .filter(Boolean);
-      return name === normalized || aliases.includes(normalized);
-    });
+    const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
     if (!language) {
       return undefined;
     }
@@ -1298,6 +1343,101 @@ export default class loomPlugin extends Plugin {
 
 function decodeEscapedAttribute(value: string): string {
   return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+}
+
+function parseExternalLanguagePack(value: unknown, filePath: string): loomExternalLanguagePack | null {
+  if (!isRecord(value)) {
+    console.warn(`Ignoring loom language pack ${filePath}: manifest must be an object`);
+    return null;
+  }
+
+  const rawId = readString(value.id);
+  const id = normalizeManifestId(rawId);
+  if (!id) {
+    console.warn(`Ignoring loom language pack ${filePath}: missing package id`);
+    return null;
+  }
+  if (!Array.isArray(value.languages)) {
+    console.warn(`Ignoring loom language pack ${filePath}: languages must be an array`);
+    return null;
+  }
+
+  const languages = value.languages
+    .map((language) => parseExternalLanguage(language, filePath))
+    .filter((language): language is loomExternalLanguage => Boolean(language));
+  if (!languages.length) {
+    console.warn(`Ignoring loom language pack ${filePath}: no valid languages`);
+    return null;
+  }
+
+  return {
+    id: `external:${id}`,
+    displayName: readString(value.displayName) || rawId,
+    description: readString(value.description) || `External language pack from ${filePath}`,
+    languages,
+  };
+}
+
+function parseExternalLanguage(value: unknown, filePath: string): loomExternalLanguage | null {
+  if (!isRecord(value)) {
+    console.warn(`Ignoring language entry in ${filePath}: entry must be an object`);
+    return null;
+  }
+
+  const rawName = readString(value.id) || readString(value.name);
+  const name = normalizeManifestId(rawName);
+  const executable = readString(value.executable);
+  if (!name || !executable) {
+    console.warn(`Ignoring language entry in ${filePath}: language id/name and executable are required`);
+    return null;
+  }
+
+  return {
+    name,
+    displayName: readString(value.displayName) || rawName,
+    description: readString(value.description),
+    aliases: readAliasList(value.aliases, name).join(", "),
+    executable,
+    args: readString(value.args) || "{file}",
+    extension: normalizeExtension(readString(value.extension), name),
+    extractorMode: readString(value.extractorMode) === "transpile-c" ? "transpile-c" : "command",
+    extractorExecutable: readString(value.extractorExecutable),
+    extractorArgs: readString(value.extractorArgs) || "{request}",
+    transpileExecutable: readString(value.transpileExecutable),
+    transpileArgs: readString(value.transpileArgs) || "{request}",
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readAliasList(value: unknown, name: string): string[] {
+  const aliases = Array.isArray(value)
+    ? value.flatMap((alias) => readString(alias).split(","))
+    : readString(value).split(",");
+  return aliases
+    .map((alias) => normalizeManifestId(alias))
+    .filter((alias, index, list) => Boolean(alias) && alias !== name && list.indexOf(alias) === index);
+}
+
+function normalizeManifestId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeExtension(value: string, name: string): string {
+  if (!value) {
+    return `.${name}`;
+  }
+  return value.startsWith(".") ? value : `.${value}`;
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {

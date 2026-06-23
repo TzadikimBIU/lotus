@@ -180,6 +180,34 @@ Languages are grouped into vault level packages. A vault can enable only the pac
 
 By default every built in package is enabled to preserve the old behavior. Use **Language Packages** in settings to make a vault specific profile, such as a server management vault with only Shell, Python, JavaScript, HTTP style custom tools, and no LLVM/proof clutter.
 
+External language packs can live in the plugin directory under:
+
+```text
+.obsidian/plugins/loom/language-packs/*.json
+```
+
+Each JSON file describes one optional package. Reload external packs from **Language Packages**, then enable the package and any languages you want for the vault.
+
+```json
+{
+  "id": "esolangs",
+  "displayName": "Esolangs",
+  "description": "Optional language support kept outside the core runner surface.",
+  "languages": [
+    {
+      "id": "julia",
+      "displayName": "Julia",
+      "aliases": ["jl"],
+      "executable": "julia",
+      "args": "{file}",
+      "extension": ".jl"
+    }
+  ]
+}
+```
+
+External languages use the same command contract as custom languages. They can also define `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` when they need partial source extraction. The manifest is treated as registry data rather than copied into plugin settings, while the vault's enabled package and language choices are persisted normally.
+
 ## Runner contract
 
 Runners implement this interface:
@@ -517,6 +545,9 @@ Each group needs a `config.json`:
 {
   "runtime": "docker",
   "image": "python:3.12-slim",
+  "elevation": {
+    "mode": "default"
+  },
   "languages": {
     "python": {
       "command": "python3 {file}",
@@ -525,6 +556,25 @@ Each group needs a `config.json`:
   }
 }
 ```
+
+Container groups can opt into elevated execution without giving the host Obsidian process elevated privileges:
+
+```json
+{
+  "runtime": "docker",
+  "image": "alpine:latest",
+  "elevation": {
+    "mode": "root"
+  },
+  "languages": {
+    "shell": {
+      "useDefault": true
+    }
+  }
+}
+```
+
+For Docker and Podman, `"mode": "root"` adds `--user root` to the container run. For QEMU, WSL, and custom runtimes, add an optional command prefix such as `"commandPrefix": "sudo -n"` if the target environment should elevate the command. Loom does not prompt for passwords or store credentials.
 
 ### Supported Runtimes
 

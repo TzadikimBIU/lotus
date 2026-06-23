@@ -608,20 +608,24 @@ function renderHtmlBlock(block: SmokeBlockResult): string {
 async function renderPdfIfPossible(htmlPath: string, pdfPath: string, mustRender: boolean): Promise<void> {
   const configuredChrome = process.env.LOOM_CHROME_PATH?.trim();
   if (configuredChrome) {
-    await runPdfCommand(configuredChrome, ["--headless", "--disable-gpu", "--no-sandbox", `--print-to-pdf=${pdfPath}`, pathToFileURL(htmlPath).href]);
+    if (await renderPdfWithCommand(configuredChrome, ["--headless", "--disable-gpu", "--no-sandbox", `--print-to-pdf=${pdfPath}`, pathToFileURL(htmlPath).href], pdfPath, mustRender)) {
+      return;
+    }
     return;
   }
 
   const chromium = await findExecutable(["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]);
   if (chromium) {
-    await runPdfCommand(chromium, ["--headless", "--disable-gpu", "--no-sandbox", `--print-to-pdf=${pdfPath}`, pathToFileURL(htmlPath).href]);
-    return;
+    if (await renderPdfWithCommand(chromium, ["--headless", "--disable-gpu", "--no-sandbox", `--print-to-pdf=${pdfPath}`, pathToFileURL(htmlPath).href], pdfPath, mustRender)) {
+      return;
+    }
   }
 
   const wkhtmltopdf = await findExecutable(["wkhtmltopdf"]);
   if (wkhtmltopdf) {
-    await runPdfCommand(wkhtmltopdf, [htmlPath, pdfPath]);
-    return;
+    if (await renderPdfWithCommand(wkhtmltopdf, [htmlPath, pdfPath], pdfPath, mustRender)) {
+      return;
+    }
   }
 
   const message = "No PDF renderer found. Install chromium, google chrome, or wkhtmltopdf to emit report.pdf.";
@@ -629,6 +633,20 @@ async function renderPdfIfPossible(htmlPath: string, pdfPath: string, mustRender
   if (mustRender) {
     throw new Error(message);
   }
+}
+
+async function renderPdfWithCommand(command: string, commandArgs: string[], pdfPath: string, mustRender: boolean): Promise<boolean> {
+  const exitCode = await runCommand(command, commandArgs);
+  if (exitCode === 0) {
+    return true;
+  }
+
+  const message = `PDF export failed with ${command}`;
+  if (mustRender) {
+    throw new Error(message);
+  }
+  await writeFile(join(dirname(pdfPath), "pdf-skipped.txt"), message, "utf8");
+  return false;
 }
 
 async function findExecutable(names: string[]): Promise<string | null> {
@@ -644,13 +662,6 @@ async function findExecutable(names: string[]): Promise<string | null> {
     }
   }
   return null;
-}
-
-async function runPdfCommand(command: string, commandArgs: string[]): Promise<void> {
-  const exitCode = await runCommand(command, commandArgs);
-  if (exitCode !== 0) {
-    throw new Error(`PDF export failed with ${command}`);
-  }
 }
 
 async function runCommand(command: string, commandArgs: string[]): Promise<number> {
