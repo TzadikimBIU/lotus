@@ -23,7 +23,7 @@ export function createCodeBlockToolbar(
   toolbar.className = "loom-code-toolbar";
   toolbar.dataset.loomBlockId = blockId;
 
-  toolbar.appendChild(createButton("Run block", isRunning ? "loader-circle" : "play", handlers.onRun, isRunning));
+  toolbar.appendChild(createButton(isRunning ? "Cancel block" : "Run block", isRunning ? "square" : "play", handlers.onRun, false));
   toolbar.appendChild(createButton("Edit block", "pencil", handlers.onEdit, false));
   toolbar.appendChild(createButton(options.inputButtonLabel ?? "Toggle stdin input", "text-cursor-input", handlers.onToggleInput, false));
   toolbar.appendChild(createButton("Copy code", "copy", handlers.onCopy, false));

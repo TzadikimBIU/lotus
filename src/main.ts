@@ -402,6 +402,40 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "loom-cancel-current-code-block",
+      name: "loom: Cancel Current Code Block Run",
+      editorCheckCallback: (checking, editor, view) => {
+        const file = view.file;
+        if (!file) {
+          return false;
+        }
+        const blocks = parseMarkdownCodeBlocks(file.path, editor.getValue(), this.settings);
+        const block = findBlockAtLine(blocks, editor.getCursor().line);
+        if (!block || !this.running.has(block.id)) {
+          return false;
+        }
+        if (!checking) {
+          void this.cancelBlockRun(block.id, "current block", block, file.path);
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "loom-cancel-all-code-blocks",
+      name: "loom: Cancel All Running Code Blocks",
+      checkCallback: (checking) => {
+        if (!this.running.size) {
+          return false;
+        }
+        if (!checking) {
+          void this.cancelAllRuns();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "loom-clear-note-outputs",
       name: "loom: Clear loom Outputs in Current Note",
       checkCallback: (checking) => {
@@ -750,7 +784,7 @@ export default class loomPlugin extends Plugin {
   createToolbarElement(block: loomCodeBlock): HTMLElement {
     const isFunctionInput = this.isFunctionInputBlock(block);
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
-      onRun: () => void this.runActiveBlockById(block.id),
+      onRun: () => void this.runOrCancelBlockById(block.id),
       onEdit: () => void this.editBlockById(block.id),
       onCopy: async () => {
         try {
@@ -849,6 +883,57 @@ export default class loomPlugin extends Plugin {
       return;
     }
     await this.runBlock(file, block);
+  }
+
+  async runOrCancelBlockById(blockId: string): Promise<void> {
+    if (this.running.has(blockId)) {
+      const block = this.findActiveBlockById(blockId);
+      await this.cancelBlockRun(blockId, "toolbar", block ?? undefined, block?.filePath);
+      return;
+    }
+    await this.runActiveBlockById(blockId);
+  }
+
+  async cancelBlockRun(blockId: string, source: string, block?: loomCodeBlock, filePath?: string): Promise<void> {
+    const controller = this.running.get(blockId);
+    if (!controller) {
+      return;
+    }
+
+    controller.abort();
+    const output = this.outputs.get(blockId);
+    await this.logEvent({
+      type: "loom.run.cancel.requested",
+      message: "Cancellation requested",
+      notePath: filePath ?? block?.filePath ?? output?.block.filePath ?? this.getCurrentEditorFilePath() ?? undefined,
+      block: block ?? output?.block,
+      data: {
+        source,
+        blockId,
+      },
+    });
+    this.notifyOutputChanged(blockId);
+    this.updateStatusBar();
+    new Notice("loom cancellation requested.");
+  }
+
+  async cancelAllRuns(): Promise<void> {
+    const blockIds = [...this.running.keys()];
+    for (const blockId of blockIds) {
+      this.running.get(blockId)?.abort();
+      this.notifyOutputChanged(blockId);
+    }
+    await this.logEvent({
+      type: "loom.run.cancel.requested",
+      message: "Cancellation requested for all running blocks",
+      notePath: this.getCurrentEditorFilePath() ?? undefined,
+      data: {
+        source: "all",
+        count: blockIds.length,
+      },
+    });
+    this.updateStatusBar();
+    new Notice(`loom cancellation requested for ${blockIds.length} run${blockIds.length === 1 ? "" : "s"}.`);
   }
 
   async removeSnippetById(blockId: string): Promise<void> {

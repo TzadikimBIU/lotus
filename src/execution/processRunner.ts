@@ -4,6 +4,8 @@ import { join } from "path";
 import { spawn } from "child_process";
 import type { loomRunResult } from "../types";
 
+const FORCE_KILL_GRACE_MS = 1_500;
+
 export interface loomProcessSpec {
   runnerId: string;
   runnerName: string;
@@ -95,11 +97,27 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
   let timedOut = false;
   let cancelled = false;
   let child: ReturnType<typeof spawn> | null = null;
+  let childExited = false;
   let timeoutHandle: NodeJS.Timeout | null = null;
+  let killHandle: NodeJS.Timeout | null = null;
   let abortHandler: (() => void) | null = null;
 
   try {
     await new Promise<void>((resolve, reject) => {
+      const terminateChild = (signal: NodeJS.Signals) => {
+        if (!child || childExited) {
+          return;
+        }
+        child.kill(signal);
+        if (!killHandle) {
+          killHandle = setTimeout(() => {
+            if (child && !childExited) {
+              child.kill("SIGKILL");
+            }
+          }, FORCE_KILL_GRACE_MS);
+        }
+      };
+
       child = spawn(spec.executable, spec.args, {
         cwd: spec.workingDirectory,
         shell: false,
@@ -122,7 +140,7 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
 
       const abort = () => {
         cancelled = true;
-        child?.kill("SIGTERM");
+        terminateChild("SIGTERM");
       };
       abortHandler = abort;
 
@@ -134,7 +152,7 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
 
       timeoutHandle = setTimeout(() => {
         timedOut = true;
-        child?.kill("SIGTERM");
+        terminateChild("SIGTERM");
       }, spec.timeoutMs);
 
       child.stdout?.on("data", (chunk) => {
@@ -150,6 +168,11 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
       });
 
       child.on("close", (code) => {
+        childExited = true;
+        if (killHandle) {
+          clearTimeout(killHandle);
+          killHandle = null;
+        }
         exitCode = code;
         resolve();
       });
@@ -163,6 +186,9 @@ export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> 
     }
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
+    }
+    if (killHandle) {
+      clearTimeout(killHandle);
     }
   }
 
