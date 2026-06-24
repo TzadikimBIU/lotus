@@ -2,284 +2,69 @@
 
 Obsidian plugin for executing ordinary fenced Markdown code blocks.
 
-loom is intended for research and exploratory notes where code, proofs, solver queries, and runtime output should stay readable in the document. It adds execution controls to normal fenced code blocks and renders transient output beneath the block. The source block is not rewritten into a plugin specific format.
-
+loom is intended for research and exploratory notes where code, proofs, solver queries, and runtime output should stay readable in the document. It adds execution controls to normal fenced code blocks and renders transient output beneath the block. The source block is not rewritten into a plugin-specific format.
 
 ## Model
 
 loom treats a fenced block as executable when the fence info string resolves to a supported language alias. The parser walks the active Markdown buffer, skips managed loom output sections, normalises the fence language, and creates a stable block descriptor.
 
-Each block receives an ID derived from these values.
-
-<ul>
-  <li>vault relative file path</li>
-  <li>supported block ordinal</li>
-  <li>normalised language</li>
-  <li>source content hash</li>
-</ul>
+Each block receives an ID derived from these values:
+- Vault-relative file path
+- Supported block ordinal
+- Normalised language
+- Source content hash
 
 That ID is used for output replacement and toolbar state. Rerunning a block updates the existing output panel instead of appending another panel.
 
-## Supported languages
+## Installation
 
-loom includes built in runners for common interpreted, compiled, systems, and proof oriented languages. Additional local languages can be added from the settings tab under **Custom Languages**. A custom language defines these fields.
+### Via Community Plugins
+loom isn't in the plugin repository by design. It is intended for users that plan to run code in their vaults, therefore we expect them to at least be able to install it manually.
 
-<ul>
-  <li>name</li>
-  <li>comma separated aliases</li>
-  <li>executable</li>
-  <li>arguments like <code>{file}</code></li>
-  <li>source file extension</li>
-  <li>optional extractor executable</li>
-  <li>optional extractor arguments like <code>{request}</code></li>
-</ul>
+### Manual Installation
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
+2. Create a folder named `loom` under your vault's plugin directory: `<vault>/.obsidian/plugins/loom/`.
+3. Copy the downloaded files into that directory.
+4. Reload Obsidian and enable **loom** in the Community Plugins list.
 
-For example a custom shell alias could use this configuration.
+## Security
 
-```text
-name: shellcustom
-aliases: shx
-executable: /bin/sh
-args: {file}
-extension: .sh
-```
+Loom executes code blocks locally on your machine without sandboxing or isolation by default. 
 
-Then a normal fenced block can run with that alias.
+> [!CAUTION]
+> Running code blocks in untrusted notes can execute malicious commands on your host machine. Loom displays a consent modal before allowing local execution. For security isolation, consider setting up [Execution Groups](docs/execution-groups.md) to run code inside Docker/Podman containers or remote SSH/QEMU environments.
 
-````markdown
-```shx
-echo hello
-```
-````
+## Quick Start
 
-Custom languages can also support runnable partial source extraction. Each custom language chooses one of these strategies.
+1. Enable the plugin.
+2. In any Markdown file, create a standard fenced code block:
+   ````markdown
+   ```python
+   print("Hello from loom!")
+   ```
+   ````
+3. Hover over the block and click the **Run** button on the floating toolbar to execute the block and view the output.
 
-<ul>
-  <li>extractor command</li>
-  <li>transpile to C</li>
-</ul>
+## Supported Languages
 
-Use an extractor command when the language has its own parser, compiler API, or LSP. Use transpile to C when the language already lowers to C and can provide a symbol map.
+Languages are grouped into vault-level packages. You can enable only the packs you need, and optionally disable individual languages inside them.
 
-loom writes a JSON request file and passes it to the configured command through the configured arguments. The command should print JSON to stdout.
+| Package | Languages | Typical Vault |
+| :--- | :--- | :--- |
+| **Interpreted** | Python, JavaScript, TypeScript, Shell, Ruby, Perl, Lua, PHP, Go, Haskell, OCaml | ops notes, scripting, research scratchpads |
+| **Obsidian Context** | Obsidian JavaScript | vault and plugin integration snippets |
+| **Native Compiled** | C, C++ | systems, exploit dev, native debugging |
+| **Managed Compiled** | Rust, Java | application and service notes |
+| **Proofs** | Lean, Coq, SMT LIB | formal methods, solver work |
+| **LLVM** | LLVM IR | compiler and PL research |
+| **eBPF** | eBPF C, bpftrace | kernel tracing, observability, verifier experiments |
+| **Custom languages** | User-defined command-backed languages | toy languages, local DSLs, project-specific tools |
 
-Request shape
+By default, every built-in package is enabled. Use **Language Packages** in settings to customize your active languages.
 
-```json
-{
-  "language": "toy",
-  "filePath": "src/example.toy",
-  "symbolName": "main",
-  "lineStart": null,
-  "lineEnd": null,
-  "traceDependencies": true,
-  "sourceFile": "/tmp/loom-extract/source.txt",
-  "harnessFile": "/tmp/loom-extract/harness.txt"
-}
-```
+## Managed Output
 
-Supported argument placeholders
-
-<ul>
-  <li><code>{request}</code></li>
-  <li><code>{source}</code> or <code>{file}</code></li>
-  <li><code>{harness}</code></li>
-  <li><code>{symbol}</code></li>
-  <li><code>{lineStart}</code></li>
-  <li><code>{lineEnd}</code></li>
-  <li><code>{deps}</code></li>
-  <li><code>{language}</code></li>
-</ul>
-
-The extractor can return a complete runnable source.
-
-```json
-{
-  "description": "src/example.toy#main",
-  "content": "..."
-}
-```
-
-Or it can return structured parts.
-
-```json
-{
-  "imports": ["..."],
-  "dependencies": ["..."],
-  "selected": "..."
-}
-```
-
-The transpile to C strategy returns generated C or C++ and a symbol map.
-
-```json
-{
-  "language": "c",
-  "generatedSource": "int toy_score_impl(int x) { return x + 1; }",
-  "symbols": {
-    "score": "toy_score_impl"
-  },
-  "harness": "int main(void) { return toy_score_impl(1); }"
-}
-```
-
-`language` can be `c` or `cpp`. `symbols` maps source language names to generated C or C++ names. `harness` is optional, but useful when the note harness is written in the source language instead of generated C.
-
-If no extractor is configured for a custom language, loom falls back to generic line extraction and simple symbol slicing.
-
-## Language packages
-
-Languages are grouped into vault level packages. A vault can enable only the packs it needs, then optionally disable individual languages inside those packs. Disabled languages are removed from parsing, toolbar registration, runner lookup, and runtime settings for that vault.
-
-<table>
-  <thead>
-    <tr>
-      <th>Package</th>
-      <th>Languages</th>
-      <th>Typical vault</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Interpreted</td>
-      <td>Python, JavaScript, TypeScript, Shell, Ruby, Perl, Lua, PHP, Go, Haskell, OCaml</td>
-      <td>ops notes, scripting, research scratchpads</td>
-    </tr>
-    <tr>
-      <td>Obsidian Context</td>
-      <td>Obsidian JavaScript</td>
-      <td>vault and plugin integration snippets</td>
-    </tr>
-    <tr>
-      <td>Native Compiled</td>
-      <td>C, C++</td>
-      <td>systems, exploit dev, native debugging</td>
-    </tr>
-    <tr>
-      <td>Managed Compiled</td>
-      <td>Rust, Java</td>
-      <td>application and service notes</td>
-    </tr>
-    <tr>
-      <td>Proofs</td>
-      <td>Lean, Coq, SMT LIB</td>
-      <td>formal methods, solver work</td>
-    </tr>
-    <tr>
-      <td>LLVM</td>
-      <td>LLVM IR</td>
-      <td>compiler and PL research</td>
-    </tr>
-    <tr>
-      <td>eBPF</td>
-      <td>eBPF C, bpftrace</td>
-      <td>kernel tracing, observability, verifier experiments</td>
-    </tr>
-    <tr>
-      <td>Custom languages</td>
-      <td>User defined command backed languages</td>
-      <td>toy languages, local DSLs, project specific tools</td>
-    </tr>
-  </tbody>
-</table>
-
-By default every built in package is enabled to preserve the old behavior. Use **Language Packages** in settings to make a vault specific profile, such as a server management vault with only Shell, Python, JavaScript, HTTP style custom tools, and no LLVM/proof clutter.
-
-## Obsidian context JavaScript
-
-Normal `javascript` and `js` fences still run through Node or the selected execution group. Use `obsidian-js` only when the snippet needs to run inside Obsidian itself.
-
-````markdown
-```obsidian-js
-console.log(app.workspace.getActiveFile()?.path ?? "no active file");
-console.log(file.path);
-new Notice("Ran inside Obsidian");
-```
-````
-
-Obsidian context blocks receive `app`, `plugin`, `file`, `block`, `Notice`, `console`, `note`, and `input`. They run in the Obsidian renderer process, can touch vault and workspace APIs, and are not sandboxed. By default every run emits this warning in the output panel:
-
-```text
-No but seriously, you are risking your life
-```
-
-Turn off **Show Obsidian context warning** in settings if the warning is too noisy.
-
-The `note` helper wraps common current-note mutations:
-
-```javascript
-await note.setFrontmatter("last-run", new Date().toISOString());
-await note.updateJsonBetween("<!-- state:start -->", "<!-- state:end -->", (state) => ({
-  ...state,
-  runs: Number(state.runs ?? 0) + 1
-}));
-```
-
-Timeouts can stop loom from waiting for async work, but they cannot safely interrupt a synchronous infinite loop once it has started in the Obsidian renderer.
-
-External language packs can live in the plugin directory under this path.
-
-```text
-.obsidian/plugins/loom/language-packs/*.json
-```
-
-Each JSON file describes one optional package. You can also import a zip, tar, tgz, or tar.gz bundle from **Language Packages**. Imported bundles are unpacked under the plugin `language-packs` folder and then scanned the same way as hand placed packs.
-
-```json
-{
-  "id": "esolangs",
-  "displayName": "Esolangs",
-  "description": "Optional language support kept outside the core runner surface.",
-  "languages": [
-    {
-      "id": "julia",
-      "displayName": "Julia",
-      "aliases": ["jl"],
-      "executable": "julia",
-      "args": "{file}",
-      "extension": ".jl"
-    }
-  ]
-}
-```
-
-Bundle archives should keep their manifest at the archive root. A single top level folder is fine because loom strips it during import.
-
-```text
-loom-language-pack-julia/
-  loom-language-pack.json
-  highlighting/
-    julia.tmLanguage.json
-  examples/
-    basics.md
-```
-
-External languages use the same command contract as custom languages. They can also define `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` when they need partial source extraction. The manifest is treated as registry data rather than copied into plugin settings, while the vault's enabled package and language choices are persisted normally.
-
-## Runner contract
-
-Runners implement this interface.
-
-```ts
-interface loomRunner {
-  id: string;
-  displayName: string;
-  languages: readonly loomNormalizedLanguage[];
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean;
-  run(
-    block: loomCodeBlock,
-    context: loomRunContext,
-    settings: loomPluginSettings
-  ): Promise<loomRunResult>;
-}
-```
-
- A runner decides whether it can handle a block from the language and settings and then returns a `loomRunResult`
-
-
-## Managed output
-
-By default loom does not write output into the note. If `Write output back to note` is enabled then loom writes managed regions under blocks.
+By default, loom does not write output into the note. If `Write output back to note` is enabled, loom writes managed regions under blocks:
 
 ````markdown
 <!-- loom:output:start id=<stable-block-id> -->
@@ -295,605 +80,53 @@ hello
 <!-- loom:output:end -->
 ````
 
-The parser skips these regions and generated output blocks are never executed
+The parser skips these regions and generated output blocks are never executed.
 
-Output panels can also be capped to a visible line window while keeping the full stdout, stderr, and warning text scrollable in the panel. Set **Visible output lines** in settings for a vault wide default, or use `loom-output-lines=20` on a specific block. Use `0` to keep output unlimited
+### Output Window Limits
+Output panels can be capped to a visible line window while keeping the full output scrollable. Set **Visible output lines** in settings for a vault-wide default, or use the `loom-output-lines=20` attribute on a specific block. Use `0` to keep output unlimited.
 
-Blocks can materialise output into vault files with `loom-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and Loom creates missing parent folders. By default the file receives stdout and is replaced on each run. Use `loom-output-file-mode=append`, `loom-output-file-streams=metadata,stdout,stderr,warning`, or `loom-output-file-format=json` when a block needs a different artifact shape
-
-Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per block input buffer and run the block with that buffer. For reproducible notes use `loom-stdin="line one\nline two"` or `loom-stdin-file="inputs/payload.txt"`. `loom-input=true` keeps the input field visible whenever the note renders
-
-## Partial source extraction
-
-loom can run part of another file while keeping the call site in your note. Add source attributes to the fence info string.
-
-````markdown
-```python loom-file="lib/calculus.py" loom-symbol=derivative
-print(derivative(lambda x: x * x, 3))
-```
-````
-
-Paths that start with `/` are read from the vault root. Other paths are read relative to the note.
-
-Use `loom-lines=L10-L30` for a line range, or `loom-symbol=name` for a function, class, or similar definition. Add `loom-deps=false` when you only want the selected slice.
-
-By default, loom also pulls in imports, includes, and referenced definitions that it can identify. The code in the note is appended after the extracted source, so it can call the function or run a small harness.
-
-Python uses the standard library AST parser for symbol ranges, import analysis, alias handling, local module resolution, and recursive dependency tracing. C and C++ trace top level includes, macros, functions, types, and globals. LLVM IR traces `@symbol` definitions and declarations. Haskell and OCaml trace top level imports and bindings. Other languages use the generic extractor unless a custom extractor command is configured.
-
-### Function call harnesses
-
-If the block is documenting a function, the block body can be treated as input instead of raw harness code. Add `loom-call=true` and loom generates the call around the selected symbol:
-
-````markdown
-```python loom-file="lib/calculus.py" loom-symbol=weighted_root loom-call=true
-25
-```
-````
-
-That runs as if the harness were:
-
-```python
-print(weighted_root(25))
-```
-
-Use `loom-args` when the function needs more than the raw block input:
-
-````markdown
-```python loom-file="lib/calculus.py" loom-symbol=clamp loom-call=true loom-args="{input}, 0, 20"
-25
-```
-````
-
-Use `loom-call` as an expression template when the call shape needs to be custom:
-
-````markdown
-```python loom-file="lib/calculus.py" loom-symbol=weighted_root loom-call="round({symbol}({input}), 2)"
-25
-```
-````
-
-`{input}` expands to the trimmed block body and `{symbol}` expands to the selected symbol. By default loom wraps the expression in the language's print/output harness. Set `loom-print=false` when the expression is already a complete statement or harness.
-
-### Extracted source preview
-
-Runs that use `loom-file` include a collapsed **Extracted source** preview in the output panel. It shows the exact source handed to the runner, including imports, dependencies, selected symbol, and generated harness.
-
-The preview header also shows the capability path for that language.
-
-Preview settings live under **General Settings**.
-
-<table>
-  <thead>
-    <tr>
-      <th>Setting</th>
-      <th>Options</th>
-      <th>Effect</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Extracted source preview</td>
-      <td>Collapsed / Expanded / Hidden</td>
-      <td>Controls whether materialized source previews are hidden, shown closed, or opened by default.</td>
-    </tr>
-    <tr>
-      <td>Show capability metadata</td>
-      <td>On / Off</td>
-      <td>Controls the `symbols`, `deps`, and `call` metadata in preview headers.</td>
-    </tr>
-  </tbody>
-</table>
-
-<table>
-  <thead>
-    <tr>
-      <th>Path</th>
-      <th>Symbols</th>
-      <th>Deps</th>
-      <th>Harness</th>
-      <th>Preview</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Python</td>
-      <td>AST</td>
-      <td>AST</td>
-      <td>Built in</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>JavaScript / TypeScript</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Built in</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>C / C++</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Built in</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>LLVM IR</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>Haskell</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>OCaml</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Built in</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>Java</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>eBPF C</td>
-      <td>Top level</td>
-      <td>Top level</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>bpftrace</td>
-      <td>Generic</td>
-      <td>Generic</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>Custom extractor</td>
-      <td>External</td>
-      <td>External</td>
-      <td>External</td>
-      <td>Yes</td>
-    </tr>
-    <tr>
-      <td>Fallback</td>
-      <td>Generic</td>
-      <td>Generic</td>
-      <td>Raw</td>
-      <td>Yes</td>
-    </tr>
-  </tbody>
-</table>
-
-## eBPF execution
-
-eBPF support follows the normal BPF workflow. Compile first, inspect the object, then load only when intended. Loom writes the snippet to a temp file, runs the right frontend, and surfaces compiler output plus object metadata in the note. Kernel load is a separate opt in path because attaching probes or pinning programs should never happen just because a note rendered.
-
-<table>
-  <thead>
-    <tr>
-      <th>Language</th>
-      <th>What Loom does</th>
-      <th>Toolchain</th>
-      <th>Block controls</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>ebpf-c</code></td>
-      <td>Compiles the snippet into a BPF object and can dump the ELF sections so section names, license blocks, and target issues are visible in the note.</td>
-      <td><code>clang -target bpf</code>, optional <code>llvm-objdump</code></td>
-      <td><code>loom-ebpf-mode</code>, <code>loom-ebpf-includes</code>, <code>loom-ebpf-cflags</code>, <code>loom-ebpf-pin</code></td>
-    </tr>
-    <tr>
-      <td><code>bpftrace</code></td>
-      <td>Checks scripts with bpftrace parse/debug mode by default, then only attaches to live probes when the block asks for run mode</td>
-      <td><code>bpftrace --dry-run</code>, falling back to legacy <code>bpftrace -d</code></td>
-      <td><code>loom-bpftrace-mode</code>, <code>loom-bpftrace-args</code></td>
-    </tr>
-  </tbody>
-</table>
-
-`ebpf-c` defaults to `loom-ebpf-mode=compile`. That path only emits an object file and runs object inspection. `loom-ebpf-mode=load` is deliberately more explicit. The global **Allow eBPF kernel load** setting must be enabled, and the block must provide a bpffs pin path.
-
-````markdown
-```ebpf-c loom-ebpf-mode=load loom-ebpf-pin=/sys/fs/bpf/loom_xdp
-...
-```
-````
-
-`bpftrace` defaults to `loom-bpftrace-mode=check`. Use `loom-bpftrace-mode=run` when a note is meant to attach to live probes instead of just validating parser and probe syntax.
-
-## Execution groups
-
-Every block resolves its execution context through the same override stack.
-
-```text
-global settings to note frontmatter to block attributes
-```
-
-The context controls these values.
-
-<ul>
-  <li>execution group</li>
-  <li>working directory</li>
-  <li>timeout</li>
-</ul>
-
-Global values come from the Loom settings tab. Note values come from frontmatter.
-
-```yaml
-loom-execution: py-sandbox
-loom-cwd: /tmp/research
-loom-timeout: 15000
-```
-
-`loom-container` is still accepted as a compatibility alias.
-
-Block attributes override both note and global values.
-
-````markdown
-```python loom-execution=py-sandbox loom-cwd=/tmp/research loom-timeout=15000
-print("runs inside py-sandbox with this block context")
-```
-````
-
-Use `loom-execution=native`, `loom-execution=none`, or `loom-execution=off` to force a block back to native execution even when the note or global settings choose an execution group.
-
-<table>
-  <thead>
-    <tr>
-      <th>Layer</th>
-      <th>Execution group</th>
-      <th>Working directory</th>
-      <th>Timeout</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Global</td>
-      <td>Default execution group</td>
-      <td>Working directory</td>
-      <td>Default timeout</td>
-    </tr>
-    <tr>
-      <td>Note</td>
-      <td><code>loom-execution</code></td>
-      <td><code>loom-cwd</code></td>
-      <td><code>loom-timeout</code></td>
-    </tr>
-    <tr>
-      <td>Block</td>
-      <td><code>loom-execution</code></td>
-      <td><code>loom-cwd</code></td>
-      <td><code>loom-timeout</code></td>
-    </tr>
-  </tbody>
-</table>
-
-### Execution Group Directory
-Execution groups live inside the plugin folder.
-
-```text
-.obsidian/plugins/loom/containers/<group-name>/
-```
-
-Each group needs a `config.json`.
-
-```json
-{
-  "runtime": "docker",
-  "image": "python:3.12-slim",
-  "elevation": {
-    "mode": "default"
-  },
-  "languages": {
-    "python": {
-      "command": "python3 {file}",
-      "extension": ".py"
-    }
-  }
-}
-```
-
-Execution groups can opt into elevated execution without giving the host Obsidian process elevated privileges.
-
-```json
-{
-  "runtime": "docker",
-  "image": "alpine:latest",
-  "elevation": {
-    "mode": "root"
-  },
-  "languages": {
-    "shell": {
-      "useDefault": true
-    }
-  }
-}
-```
-
-For Docker and Podman, `"mode": "root"` adds `--user root` to the container run. For QEMU, WSL, and custom runtimes, add an optional command prefix such as `"commandPrefix": "sudo -n"` if the target environment should elevate the command. Loom does not prompt for passwords or store credentials.
-
-Remote SSH execution is configured with `runtime: "ssh"`. Loom writes the snippet locally, creates the remote workspace, uploads the temp source file with `scp`, runs the configured command over `ssh`, and removes the remote temp file after the run unless cleanup is disabled.
-
-```json
-{
-  "runtime": "ssh",
-  "ssh": {
-    "target": "user@vps.example",
-    "workspace": "/tmp/loom",
-    "sshArgs": "-p 2222",
-    "sshAuthSock": "/path/to/agent.sock",
-    "scpArgs": "-P 2222",
-    "cleanupRemoteFile": true,
-    "healthCheck": {
-      "command": "uname -a",
-      "positiveResponse": "Linux"
-    }
-  },
-  "languages": {
-    "shell": {
-      "useDefault": true
-    }
-  },
-  "outputFilters": {
-    "stripAnsi": true,
-    "stdoutStart": "LOOM_OUTPUT_START",
-    "stdoutEnd": "LOOM_OUTPUT_END",
-    "stripStderr": ["^Warning: Permanently added .*\\n"]
-  }
-}
-```
-
-`ssh` may also be written as `remote` in raw JSON for the transport block. Set `sshAuthSock` when the group should use a specific SSH agent socket, for example Bitwarden. Loom does not store keys or prompt for passphrases, it only passes `SSH_AUTH_SOCK` to the `ssh` and `scp` processes for that group. QEMU uses the same upload/run/cleanup transport after its VM start and readiness hooks, so QEMU configs can also set `scpExecutable`, `scpArgs`, `sshAuthSock`, and `cleanupRemoteFile`.
-
-### Supported Runtimes
-
-Loom supports the following runtimes under `"runtime"` in `config.json`.
-
-<ul>
-  <li><code>"docker"</code> / <code>"podman"</code> standard OCI container execution that mounts the group folder and runs your block command. If a <code>Dockerfile</code> exists inside the group folder, Loom builds and uses that image.</li>
-  <li><code>"wsl"</code> runs commands inside Windows Subsystem for Linux. You can specify a WSL distribution name in the <code>"image"</code> field, or omit it to run in your default WSL distro.</li>
-  <li><code>"ssh"</code> runs commands on a remote SSH target after uploading the temporary source file with SCP.</li>
-  <li><code>"qemu"</code> runs commands on a remote VM using SSH, with optional automated QEMU local process management.</li>
-  <li><code>"custom"</code> delegates container building, running, and teardown to a custom local executable wrapper.</li>
-</ul>
-
-### Settings
-Loom provides a tabbed dashboard in the plugin settings for managing execution environments. Click **Edit** next to any group to access these tabs.
-
-<ul>
-  <li><strong>General</strong> runtime type, fallback image or WSL distro name, SSH settings, elevation, and output filters</li>
-  <li><strong>Languages</strong> execution commands and source file extensions for individual languages</li>
-  <li><strong>Dockerfile</strong> Dockerfile editing for Docker and Podman environments</li>
-  <li><strong>Raw JSON</strong> direct editing for the group <code>config.json</code> file with syntax validation</li>
-</ul>
-
-Optional health checks can be added at the group level or under `ssh`, `qemu`, and `custom`.
-
-```json
-{
-  "healthCheck": {
-    "command": "docker info",
-    "positiveResponse": "Server Version",
-    "negativeResponse": "Cannot connect"
-  }
-}
-```
-
-QEMU example
-
-```json
-{
-  "runtime": "qemu",
-  "qemu": {
-    "sshTarget": "loom-vm",
-    "remoteWorkspace": "/workspace",
-    "sshArgs": "-o BatchMode=yes",
-    "startCommand": "./start-vm.sh",
-    "buildCommand": "./build-image.sh",
-    "teardownCommand": "./stop-vm.sh",
-    "healthCheck": {
-      "command": "ssh loom-vm true"
-    }
-  },
-  "languages": {
-    "c": {
-      "command": "gcc {file} -o /tmp/loom-c && /tmp/loom-c",
-      "extension": ".c"
-    }
-  }
-}
-```
-
-Managed QEMU
-
-```json
-{
-  "runtime": "qemu",
-  "qemu": {
-    "sshTarget": "loom-vm",
-    "remoteWorkspace": "/workspace",
-    "sshArgs": "-o BatchMode=yes -p 2222",
-    "manager": {
-      "enabled": true,
-      "executable": "qemu-system-x86_64",
-      "args": "-m 2048 -smp 2 -nographic -netdev user,id=net0,hostfwd=tcp::2222-:22 -device virtio-net-pci,netdev=net0",
-      "image": "vm.qcow2",
-      "imageFormat": "qcow2",
-      "pidFile": ".loom-qemu.pid",
-      "logFile": "qemu.log",
-      "readinessTimeoutMs": 60000,
-      "shutdownCommand": "ssh -p 2222 loom-vm sudo poweroff",
-      "persist": true
-    },
-    "healthCheck": {
-      "command": "ssh -p 2222 loom-vm true"
-    }
-  },
-  "languages": {
-    "python": {
-      "command": "python3 {file}",
-      "extension": ".py"
-    }
-  }
-}
-```
-
-When `qemu.manager.enabled` is true loom starts QEMU as a detached local process, writes a PID file, polls the QEMU health check until the guest is ready, executes through SSH, and optionally shuts the VM down when `"persist": false`.
-
-Custom wrapper
-
-```json
-{
-  "runtime": "custom",
-  "custom": {
-    "executable": "./loom-runtime.sh",
-    "args": "{request}",
-    "build": "./build.sh",
-    "commandStructure": "{command}",
-    "teardown": "./teardown.sh",
-    "healthCheck": {
-      "command": "./loom-runtime.sh --health",
-      "positiveResponse": "ok"
-    }
-  },
-  "languages": {
-    "python": {
-      "command": "python3 {file}",
-      "extension": ".py"
-    }
-  }
-}
-```
-
-For custom runtimes loom writes a request JSON file and passes its path through `{request}` and the relevant runtime config.
-
-`{group}` and `{groupPath}` are also available in wrapper args.
-
-
-## Toolchain(s)
-
-Some languages are only usable when their toolchain is installed and visible to Obsidian.
-
-## Build
+### Redirection to Files
+Blocks can materialise output into vault files with `loom-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and loom creates missing parent folders. By default, the file receives stdout and is overwritten on each run. 
+
+Use `loom-output-file-mode=append`, `loom-output-file-streams=metadata,stdout,stderr,warning`, or `loom-output-file-format=json` when a block needs a different artifact shape.
+
+### Standard Input (Stdin)
+Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per-block input buffer. For reproducible notes, use `loom-stdin="line one\nline two"` or `loom-stdin-file="inputs/payload.txt"`. The attribute `loom-input=true` keeps the input field visible whenever the note renders.
+
+## Advanced Topics
+
+For more specialized setups, refer to the guides in the [docs/](docs/) directory:
+
+- [Custom Languages](docs/custom-languages.md): Configure local interpreters, JSON request/response schema extractors, and C transpilation strategies.
+- [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
+- [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.
+- [eBPF Execution](docs/ebpf.md): Compile BPF programs, inspect ELF objects, and load probes safely.
+- [Hashing & Reproducibility](docs/reproducibility.md): Verify notes and code blocks against snapshots to guarantee document reproducibility.
+- [Developer Guide](docs/development.md): Runner API contracts, Obsidian context (`obsidian-js`) integrations, and the smoke testing suite.
+
+## Commands Reference
+
+Loom registers several commands in the Obsidian command palette (`Ctrl/Cmd + P`):
+
+- **`loom: Run Current Code Block`**: Executes the block under the cursor.
+- **`loom: Run All Supported Code Blocks in Current Note`**: Executes all runnable blocks in the active file.
+- **`loom: Clear loom Outputs in Current Note`**: Removes all rendered output panels and written output blocks in the active file.
+- **`loom: Save Reproducibility Snapshot`**: Saves the current block and note hashes to the note's frontmatter.
+- **`loom: Verify Reproducibility Snapshot`**: Compares the current note against the saved snapshot.
+
+*See [docs/reproducibility.md](docs/reproducibility.md) for the complete list of hashing and verification commands.*
+
+
+
+## Development
+
+### Native Toolchains
+To run languages natively on your host machine, their compilers or interpreters must be installed and available in Obsidian's PATH. See [docs/development.md](docs/development.md) for details on toolchain configurations.
+
+### Build from Source
+To build the plugin locally:
 
 ```bash
 npm install --legacy-peer-deps
-```
-
-```bash
 npm run build
 ```
-
-## Smoke matrix
-
-The smoke runner materializes the fixture vault from the `vault` branch, builds Loom from the current branch, installs only the compiled plugin artifacts into a temporary copy of that vault, runs tagged code blocks, and writes reports under `.loom/artifacts/smoke/<profile>`.
-
-```bash
-npm run smoke
-```
-
-```bash
-npm run smoke:matrix
-```
-
-<table>
-  <thead>
-    <tr>
-      <th>Profile</th>
-      <th>Command</th>
-      <th>Focus</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>minimal</td>
-      <td><code>npm run smoke -- --profile minimal</code></td>
-      <td>Python, Shell, source extraction, cwd overrides</td>
-    </tr>
-    <tr>
-      <td>systems</td>
-      <td><code>npm run smoke -- --profile systems</code></td>
-      <td>Shell plus native compiled C and C++ lanes</td>
-    </tr>
-    <tr>
-      <td>proofs</td>
-      <td><code>npm run smoke -- --profile proofs</code></td>
-      <td>Proof and solver package gating</td>
-    </tr>
-    <tr>
-      <td>ebpf</td>
-      <td><code>npm run smoke -- --profile ebpf</code></td>
-      <td>eBPF C object compilation and bpftrace availability checks</td>
-    </tr>
-    <tr>
-      <td>full</td>
-      <td><code>npm run smoke -- --profile full</code></td>
-      <td>Every smoke block in the fixture vault</td>
-    </tr>
-  </tbody>
-</table>
-
-GitHub Actions runs the same profiles on push and pull request. CI installs headless Chrome plus the smoke toolchains, renders `report.html`, prints it to `report.pdf`, requires every selected block to run without skips, and uploads one artifact bundle per profile.
-
-The temporary test vault gets the compiled plugin files, not the TypeScript source tree. The smoke command hashes the installed files and loads `main.js` with a small Obsidian shim so CI proves the branch produced a usable compiled plugin artifact.
-
-<table>
-  <thead>
-    <tr>
-      <th>Artifact</th>
-      <th>Purpose</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>compiled-plugin.json</code></td>
-      <td>Hash manifest for files installed into the temporary vault plugin directory</td>
-    </tr>
-    <tr>
-      <td><code>compiled-plugin-load.json</code></td>
-      <td>Compiled <code>main.js</code> load check with the Obsidian shim and registered language list</td>
-    </tr>
-    <tr>
-      <td><code>report.json</code></td>
-      <td>Machine readable block results, stdout, stderr, warnings, and extracted source</td>
-    </tr>
-    <tr>
-      <td><code>report.md</code></td>
-      <td>Small text summary for quick review</td>
-    </tr>
-    <tr>
-      <td><code>report.html</code></td>
-      <td>Rendered report used as the PDF source</td>
-    </tr>
-    <tr>
-      <td><code>report.pdf</code></td>
-      <td>Headless browser print output from the HTML report</td>
-    </tr>
-    <tr>
-      <td><code>smoke-runner.mjs</code></td>
-      <td>Bundled runner used for that profile</td>
-    </tr>
-  </tbody>
-</table>
-
-Local PDF export uses the same path when Chrome, Chromium, Google Chrome, or `wkhtmltopdf` is installed. A browser can also be provided explicitly.
-
-```bash
-LOOM_CHROME_PATH=/path/to/chrome npm run smoke -- --profile minimal --require-pdf
-```
-
-Without a browser, local smoke writes `pdf-skipped.txt` unless `--require-pdf` is set.
