@@ -1,12 +1,12 @@
 import { runTempFileProcess } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class NodeRunner implements loomRunner {
+export class NodeRunner implements lotusRunner {
   id = "node";
   displayName = "Node.js";
   languages = ["javascript", "typescript"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (block.language === "javascript") {
       return Boolean(settings.nodeExecutable.trim());
     }
@@ -14,7 +14,7 @@ export class NodeRunner implements loomRunner {
     return Boolean(settings.typescriptTranspilerExecutable.trim());
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     if (block.language === "javascript") {
       return runTempFileProcess({
         runnerId: this.id,

@@ -1,6 +1,6 @@
 import { dirname } from "path";
 import { normalizePath, type App, type TFile } from "obsidian";
-import type { loomCodeBlock, loomExecutionContextOverride, loomPluginSettings, loomResolvedExecutionContext } from "./types";
+import type { lotusCodeBlock, lotusExecutionContextOverride, lotusPluginSettings, lotusResolvedExecutionContext } from "./types";
 
 interface NoteExecutionContext {
   containerGroup?: string;
@@ -12,9 +12,9 @@ interface NoteExecutionContext {
 export function resolveExecutionContext(
   app: App,
   file: TFile,
-  block: loomCodeBlock,
-  settings: loomPluginSettings,
-): loomResolvedExecutionContext {
+  block: lotusCodeBlock,
+  settings: lotusPluginSettings,
+): lotusResolvedExecutionContext {
   const note = readNoteExecutionContext(app, file);
   const defaultWorkingDirectory = resolveDefaultWorkingDirectory(file, settings);
   const noteWorkingDirectory = normalizeWorkingDirectory(note.workingDirectory);
@@ -37,7 +37,7 @@ export function resolveExecutionContext(
 function resolveContainerGroup(
   globalContainer: string,
   note: NoteExecutionContext,
-  block: loomExecutionContextOverride,
+  block: lotusExecutionContextOverride,
 ): string | undefined {
   if (block.disableContainer) {
     return undefined;
@@ -57,8 +57,8 @@ function resolveContainerGroup(
 function resolveContainerSource(
   globalContainer: string,
   note: NoteExecutionContext,
-  block: loomExecutionContextOverride,
-): loomResolvedExecutionContext["source"]["container"] {
+  block: lotusExecutionContextOverride,
+): lotusResolvedExecutionContext["source"]["container"] {
   if (block.disableContainer || block.containerGroup?.trim()) {
     return "block";
   }
@@ -77,9 +77,9 @@ function readNoteExecutionContext(app: App, file: TFile): NoteExecutionContext {
     return {};
   }
 
-  const container = frontmatter["loom-execution"] ?? frontmatter["loom-container"];
-  const workingDirectory = frontmatter["loom-cwd"] ?? frontmatter["loom-working-directory"];
-  const timeout = frontmatter["loom-timeout"];
+  const container = frontmatter["lotus-execution"] ?? frontmatter["lotus-container"];
+  const workingDirectory = frontmatter["lotus-cwd"] ?? frontmatter["lotus-working-directory"];
+  const timeout = frontmatter["lotus-timeout"];
 
   return {
     containerGroup: typeof container === "string" && !isDisabledValue(container) ? container.trim() : undefined,
@@ -93,7 +93,7 @@ function readNoteExecutionContext(app: App, file: TFile): NoteExecutionContext {
   };
 }
 
-function resolveDefaultWorkingDirectory(file: TFile, settings: loomPluginSettings): string {
+function resolveDefaultWorkingDirectory(file: TFile, settings: lotusPluginSettings): string {
   if (settings.workingDirectory.trim()) {
     return normalizePath(settings.workingDirectory.trim());
   }

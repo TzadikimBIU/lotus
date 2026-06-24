@@ -2,11 +2,11 @@ import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn } from "child_process";
-import type { loomRunResult } from "../types";
+import type { lotusRunResult } from "../types";
 
 const FORCE_KILL_GRACE_MS = 1_500;
 
-export interface loomProcessSpec {
+export interface lotusProcessSpec {
   runnerId: string;
   runnerName: string;
   executable: string;
@@ -18,12 +18,12 @@ export interface loomProcessSpec {
   env?: NodeJS.ProcessEnv;
 }
 
-export interface loomTempSourceSpec extends loomProcessSpec {
+export interface lotusTempSourceSpec extends lotusProcessSpec {
   fileExtension: string;
   source: string;
 }
 
-export interface loomTempSourceHandle {
+export interface lotusTempSourceHandle {
   tempDir: string;
   tempFile: string;
 }
@@ -31,9 +31,9 @@ export interface loomTempSourceHandle {
 export async function withNamedTempSourceFile<T>(
   fileName: string,
   source: string,
-  callback: (handle: loomTempSourceHandle) => Promise<T>,
+  callback: (handle: lotusTempSourceHandle) => Promise<T>,
 ): Promise<T> {
-  const tempDir = await mkdtemp(join(tmpdir(), "loom-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "lotus-"));
   const tempFile = join(tempDir, fileName);
 
   try {
@@ -47,7 +47,7 @@ export async function withNamedTempSourceFile<T>(
 export async function withTempSourceFile<T>(
   fileExtension: string,
   source: string,
-  callback: (handle: loomTempSourceHandle) => Promise<T>,
+  callback: (handle: lotusTempSourceHandle) => Promise<T>,
 ): Promise<T> {
   return withNamedTempSourceFile(`snippet${fileExtension}`, source, callback);
 }
@@ -89,7 +89,7 @@ function sharedWhitespacePrefix(left: string, right: string): string {
   return left.slice(0, index);
 }
 
-export async function runProcess(spec: loomProcessSpec): Promise<loomRunResult> {
+export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult> {
   const startedAt = new Date();
   let stdout = "";
   let stderr = "";
@@ -219,7 +219,7 @@ function formatProcessError(error: unknown, executable: string): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function runTempFileProcess(spec: loomTempSourceSpec): Promise<loomRunResult> {
+export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lotusRunResult> {
   return withTempSourceFile(spec.fileExtension, spec.source, async ({ tempFile, tempDir }) =>
     runProcess({
       runnerId: spec.runnerId,

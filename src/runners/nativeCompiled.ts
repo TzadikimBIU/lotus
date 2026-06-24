@@ -1,13 +1,13 @@
 import { join } from "path";
 import { runProcess, withTempSourceFile } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class NativeCompiledRunner implements loomRunner {
+export class NativeCompiledRunner implements lotusRunner {
   id = "native-compiled";
   displayName = "Native compiler";
   languages = ["c", "cpp"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (block.language === "c") {
       return Boolean(settings.cExecutable.trim());
     }
@@ -19,7 +19,7 @@ export class NativeCompiledRunner implements loomRunner {
     return false;
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const executable = block.language === "c" ? settings.cExecutable.trim() : settings.cppExecutable.trim();
     const fileExtension = block.language === "c" ? ".c" : ".cpp";
     const runnerName = block.language === "c" ? "C (GCC)" : "C++ (G++)";

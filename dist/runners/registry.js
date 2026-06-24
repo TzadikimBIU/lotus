@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LoomRunnerRegistry = void 0;
-class LoomRunnerRegistry {
+exports.LotusRunnerRegistry = void 0;
+class LotusRunnerRegistry {
     constructor(runners) {
         this.runners = runners;
     }
@@ -12,4 +12,4 @@ class LoomRunnerRegistry {
         return [...new Set(this.runners.flatMap((runner) => runner.languages))];
     }
 }
-exports.LoomRunnerRegistry = LoomRunnerRegistry;
+exports.LotusRunnerRegistry = LotusRunnerRegistry;

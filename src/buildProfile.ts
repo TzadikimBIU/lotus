@@ -1,26 +1,26 @@
-declare const __LOOM_COMPILE_MODE__: string;
-declare const __LOOM_LIGHT_LANGUAGES__: string[];
-declare const __LOOM_LIGHT_LANGUAGE_PACKS__: string[];
-declare const __LOOM_LIGHT_FEATURES__: string[];
-declare const __LOOM_LIGHT_CONTAINER_GROUPS__: string[];
-declare const __LOOM_LIGHT_CONTAINER_RUNTIMES__: string[];
+declare const __LOTUS_COMPILE_MODE__: string;
+declare const __LOTUS_LIGHT_LANGUAGES__: string[];
+declare const __LOTUS_LIGHT_LANGUAGE_PACKS__: string[];
+declare const __LOTUS_LIGHT_FEATURES__: string[];
+declare const __LOTUS_LIGHT_CONTAINER_GROUPS__: string[];
+declare const __LOTUS_LIGHT_CONTAINER_RUNTIMES__: string[];
 
-export type loomCompileMode = "strict" | "light";
-export type loomCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters";
-export type loomCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
+export type lotusCompileMode = "strict" | "light";
+export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters";
+export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 
-const ALL_CONTAINER_RUNTIMES: loomCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom"];
+const ALL_CONTAINER_RUNTIMES: lotusCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom"];
 
-const COMPILE_MODE: loomCompileMode = readCompileMode(
-  typeof __LOOM_COMPILE_MODE__ === "undefined" ? "strict" : __LOOM_COMPILE_MODE__,
+const COMPILE_MODE: lotusCompileMode = readCompileMode(
+  typeof __LOTUS_COMPILE_MODE__ === "undefined" ? "strict" : __LOTUS_COMPILE_MODE__,
 );
-const LIGHT_LANGUAGES = normalizeList(typeof __LOOM_LIGHT_LANGUAGES__ === "undefined" ? [] : __LOOM_LIGHT_LANGUAGES__);
-const LIGHT_LANGUAGE_PACKS = normalizeList(typeof __LOOM_LIGHT_LANGUAGE_PACKS__ === "undefined" ? [] : __LOOM_LIGHT_LANGUAGE_PACKS__);
-const LIGHT_FEATURES = normalizeList(typeof __LOOM_LIGHT_FEATURES__ === "undefined" ? [] : __LOOM_LIGHT_FEATURES__);
-const LIGHT_CONTAINER_GROUPS = normalizeList(typeof __LOOM_LIGHT_CONTAINER_GROUPS__ === "undefined" ? [] : __LOOM_LIGHT_CONTAINER_GROUPS__);
-const LIGHT_CONTAINER_RUNTIMES = normalizeList(typeof __LOOM_LIGHT_CONTAINER_RUNTIMES__ === "undefined" ? [] : __LOOM_LIGHT_CONTAINER_RUNTIMES__);
+const LIGHT_LANGUAGES = normalizeList(typeof __LOTUS_LIGHT_LANGUAGES__ === "undefined" ? [] : __LOTUS_LIGHT_LANGUAGES__);
+const LIGHT_LANGUAGE_PACKS = normalizeList(typeof __LOTUS_LIGHT_LANGUAGE_PACKS__ === "undefined" ? [] : __LOTUS_LIGHT_LANGUAGE_PACKS__);
+const LIGHT_FEATURES = normalizeList(typeof __LOTUS_LIGHT_FEATURES__ === "undefined" ? [] : __LOTUS_LIGHT_FEATURES__);
+const LIGHT_CONTAINER_GROUPS = normalizeList(typeof __LOTUS_LIGHT_CONTAINER_GROUPS__ === "undefined" ? [] : __LOTUS_LIGHT_CONTAINER_GROUPS__);
+const LIGHT_CONTAINER_RUNTIMES = normalizeList(typeof __LOTUS_LIGHT_CONTAINER_RUNTIMES__ === "undefined" ? [] : __LOTUS_LIGHT_CONTAINER_RUNTIMES__);
 
-export function getCompileMode(): loomCompileMode {
+export function getCompileMode(): lotusCompileMode {
   return COMPILE_MODE;
 }
 
@@ -44,7 +44,7 @@ export function isCompileLanguagePackageAllowed(packageId: string): boolean {
   return !hasCompileLanguagePackageSelection() || LIGHT_LANGUAGE_PACKS.includes(normalizeToken(packageId));
 }
 
-export function isCompileFeatureAllowed(feature: loomCompileFeature): boolean {
+export function isCompileFeatureAllowed(feature: lotusCompileFeature): boolean {
   return !isLightCompileMode() || !LIGHT_FEATURES.length || LIGHT_FEATURES.includes(feature);
 }
 
@@ -73,7 +73,7 @@ export function isCompileExternalLanguagePacksAllowed(): boolean {
   return !hasCompileLanguageSelection() || LIGHT_LANGUAGES.includes("external") || LIGHT_LANGUAGES.includes("external-language-packs");
 }
 
-export function getCompileContainerRuntimes(): loomCompileContainerRuntime[] {
+export function getCompileContainerRuntimes(): lotusCompileContainerRuntime[] {
   if (!isLightCompileMode() || !LIGHT_CONTAINER_RUNTIMES.length) {
     return ALL_CONTAINER_RUNTIMES;
   }
@@ -89,7 +89,7 @@ export function isCompileContainerGroupAllowed(groupName: string): boolean {
 }
 
 export function isCompileContainerRuntimeAllowed(runtime: string): boolean {
-  return getCompileContainerRuntimes().includes(runtime as loomCompileContainerRuntime);
+  return getCompileContainerRuntimes().includes(runtime as lotusCompileContainerRuntime);
 }
 
 export function getCompileProfileSummary(): string {
@@ -106,7 +106,7 @@ export function getCompileProfileSummary(): string {
   return pieces.join("; ");
 }
 
-function readCompileMode(value: string): loomCompileMode {
+function readCompileMode(value: string): lotusCompileMode {
   return value.trim().toLowerCase() === "light" ? "light" : "strict";
 }
 

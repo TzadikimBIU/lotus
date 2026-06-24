@@ -1,16 +1,16 @@
 import { runTempFileProcess } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class PythonRunner implements loomRunner {
+export class PythonRunner implements lotusRunner {
   id = "python";
   displayName = "Python";
   languages = ["python"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     return block.language === "python" && Boolean(settings.pythonExecutable.trim());
   }
 
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     return runTempFileProcess({
       runnerId: this.id,
       runnerName: this.displayName,

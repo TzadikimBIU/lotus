@@ -1,32 +1,32 @@
 import type { TFile } from "obsidian";
 
-export type loomNormalizedLanguage = string;
+export type lotusNormalizedLanguage = string;
 
-export interface loomCodeBlock {
+export interface lotusCodeBlock {
   id: string;
   ordinal: number;
   filePath: string;
-  language: loomNormalizedLanguage;
+  language: lotusNormalizedLanguage;
   languageAlias: string;
   sourceLanguage: string;
   content: string;
   attributes: Record<string, string>;
-  sourceReference?: loomSourceReference;
-  executionContext: loomExecutionContextOverride;
+  sourceReference?: lotusSourceReference;
+  executionContext: lotusExecutionContextOverride;
   startLine: number;
   endLine: number;
   fenceStart: number;
   fenceEnd: number;
 }
 
-export interface loomExecutionContextOverride {
+export interface lotusExecutionContextOverride {
   containerGroup?: string;
   disableContainer?: boolean;
   workingDirectory?: string;
   timeoutMs?: number;
 }
 
-export interface loomResolvedExecutionContext {
+export interface lotusResolvedExecutionContext {
   containerGroup?: string;
   workingDirectory: string;
   timeoutMs: number;
@@ -37,22 +37,22 @@ export interface loomResolvedExecutionContext {
   };
 }
 
-export interface loomSourceReference {
+export interface lotusSourceReference {
   filePath: string;
   lineStart?: number;
   lineEnd?: number;
   symbolName?: string;
   traceDependencies: boolean;
-  call?: loomSourceCallHarness;
+  call?: lotusSourceCallHarness;
 }
 
-export interface loomSourceCallHarness {
+export interface lotusSourceCallHarness {
   expression?: string;
   args?: string;
   print: boolean;
 }
 
-export interface loomRunContext {
+export interface lotusRunContext {
   file: TFile;
   workingDirectory: string;
   timeoutMs: number;
@@ -60,7 +60,7 @@ export interface loomRunContext {
   stdin?: string;
 }
 
-export interface loomRunResult {
+export interface lotusRunResult {
   runnerId: string;
   runnerName: string;
   startedAt: string;
@@ -75,40 +75,40 @@ export interface loomRunResult {
   warning?: string;
 }
 
-export interface loomRunner {
+export interface lotusRunner {
   id: string;
   displayName: string;
-  languages: readonly loomNormalizedLanguage[];
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean;
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult>;
+  languages: readonly lotusNormalizedLanguage[];
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean;
+  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult>;
 }
 
-export interface loomStoredOutput {
+export interface lotusStoredOutput {
   blockId: string;
-  block: loomCodeBlock;
-  result: loomRunResult;
-  sourcePreview?: loomSourcePreview;
+  block: lotusCodeBlock;
+  result: lotusRunResult;
+  sourcePreview?: lotusSourcePreview;
   collapsed: boolean;
   visible: boolean;
 }
 
-export interface loomSourcePreview {
+export interface lotusSourcePreview {
   description: string;
-  language: loomNormalizedLanguage;
+  language: lotusNormalizedLanguage;
   content: string;
-  capability?: loomLanguageCapabilitySnapshot;
+  capability?: lotusLanguageCapabilitySnapshot;
   expanded: boolean;
   showCapabilityMetadata: boolean;
 }
 
-export interface loomLanguageCapabilitySnapshot {
+export interface lotusLanguageCapabilitySnapshot {
   symbolExtraction: string;
   dependencyTracing: string;
   callHarness: string;
   sourcePreview: boolean;
 }
 
-export interface loomPluginSettings {
+export interface lotusPluginSettings {
   enableLocalExecution: boolean;
   hasAcknowledgedExecutionRisk: boolean;
   preserveSourceMode: boolean;
@@ -152,8 +152,8 @@ export interface loomPluginSettings {
   languageConfigurationVersion: number;
   enabledLanguagePacks: string[];
   enabledLanguages: string[];
-  externalLanguagePacks: loomExternalLanguagePack[];
-  customLanguages: loomCustomLanguage[];
+  externalLanguagePacks: lotusExternalLanguagePack[];
+  customLanguages: lotusCustomLanguage[];
   pdfExportMode: "both" | "code" | "output";
   loggingEnabled: boolean;
   loggingGlobalTextEnabled: boolean;
@@ -178,12 +178,12 @@ export interface loomPluginSettings {
   defaultContainerGroup: string;
 }
 
-export interface loomRunState {
-  block: loomCodeBlock;
+export interface lotusRunState {
+  block: lotusCodeBlock;
   startedAt: number;
 }
 
-export interface loomCustomLanguage {
+export interface lotusCustomLanguage {
   name: string;
   aliases: string;
   executable: string;
@@ -196,14 +196,14 @@ export interface loomCustomLanguage {
   transpileArgs?: string;
 }
 
-export interface loomExternalLanguagePack {
+export interface lotusExternalLanguagePack {
   id: string;
   displayName: string;
   description: string;
-  languages: loomExternalLanguage[];
+  languages: lotusExternalLanguage[];
 }
 
-export interface loomExternalLanguage extends loomCustomLanguage {
+export interface lotusExternalLanguage extends lotusCustomLanguage {
   displayName: string;
   description?: string;
 }

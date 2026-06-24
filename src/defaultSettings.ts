@@ -1,7 +1,7 @@
 import { getDefaultLanguageIds, getDefaultLanguagePackIds } from "./languagePackages";
-import type { loomPluginSettings } from "./types";
+import type { lotusPluginSettings } from "./types";
 
-export const DEFAULT_SETTINGS: loomPluginSettings = {
+export const DEFAULT_SETTINGS: lotusPluginSettings = {
   enableLocalExecution: false,
   hasAcknowledgedExecutionRisk: false,
   preserveSourceMode: true,
@@ -50,13 +50,13 @@ export const DEFAULT_SETTINGS: loomPluginSettings = {
   pdfExportMode: "code",
   loggingEnabled: false,
   loggingGlobalTextEnabled: true,
-  loggingGlobalTextPath: ".loom/logs/events.log",
+  loggingGlobalTextPath: ".lotus/logs/events.log",
   loggingGlobalJsonlEnabled: true,
-  loggingGlobalJsonlPath: ".loom/logs/events.jsonl",
+  loggingGlobalJsonlPath: ".lotus/logs/events.jsonl",
   loggingPerNoteTextEnabled: false,
-  loggingPerNoteTextPathPattern: ".loom/logs/notes/{note}.log",
+  loggingPerNoteTextPathPattern: ".lotus/logs/notes/{note}.log",
   loggingPerNoteJsonlEnabled: false,
-  loggingPerNoteJsonlPathPattern: ".loom/logs/notes/{note}.jsonl",
+  loggingPerNoteJsonlPathPattern: ".lotus/logs/notes/{note}.jsonl",
   loggingProcessEnabled: false,
   loggingProcessCommand: "",
   loggingHttpEnabled: false,

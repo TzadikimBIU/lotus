@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LoomSettingTab = exports.DEFAULT_SETTINGS = void 0;
+exports.LotusSettingTab = exports.DEFAULT_SETTINGS = void 0;
 exports.showExecutionDisabledNotice = showExecutionDisabledNotice;
 const obsidian_1 = require("obsidian");
 exports.DEFAULT_SETTINGS = {
@@ -17,72 +17,72 @@ exports.DEFAULT_SETTINGS = {
     writeOutputToNote: false,
     autoRunOnFileOpen: false,
 };
-class LoomSettingTab extends obsidian_1.PluginSettingTab {
-    constructor(loomPlugin) {
-        super(loomPlugin.app, loomPlugin);
-        this.loomPlugin = loomPlugin;
+class LotusSettingTab extends obsidian_1.PluginSettingTab {
+    constructor(lotusPlugin) {
+        super(lotusPlugin.app, lotusPlugin);
+        this.lotusPlugin = lotusPlugin;
     }
     display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl("h2", { text: "Loom" });
+        containerEl.createEl("h2", { text: "Lotus" });
         containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
         containerEl.createEl("h3", { text: "Execution" });
         new obsidian_1.Setting(containerEl)
             .setName("Enable local execution")
-            .setDesc("Disabled by default. Loom runs code on your local machine and does not provide sandboxing.")
-            .addToggle((toggle) => toggle.setValue(this.loomPlugin.settings.enableLocalExecution).onChange(async (value) => {
-            this.loomPlugin.settings.enableLocalExecution = value;
+            .setDesc("Disabled by default. Lotus runs code on your local machine and does not provide sandboxing.")
+            .addToggle((toggle) => toggle.setValue(this.lotusPlugin.settings.enableLocalExecution).onChange(async (value) => {
+            this.lotusPlugin.settings.enableLocalExecution = value;
             if (value) {
-                this.loomPlugin.settings.hasAcknowledgedExecutionRisk = true;
+                this.lotusPlugin.settings.hasAcknowledgedExecutionRisk = true;
             }
-            await this.loomPlugin.saveSettings();
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("Default timeout")
-            .setDesc("Maximum execution time in milliseconds before Loom terminates the process.")
-            .addText((text) => text.setPlaceholder("8000").setValue(String(this.loomPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
+            .setDesc("Maximum execution time in milliseconds before Lotus terminates the process.")
+            .addText((text) => text.setPlaceholder("8000").setValue(String(this.lotusPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
             const parsed = Number.parseInt(value, 10);
             if (!Number.isNaN(parsed) && parsed > 0) {
-                this.loomPlugin.settings.defaultTimeoutMs = parsed;
-                await this.loomPlugin.saveSettings();
+                this.lotusPlugin.settings.defaultTimeoutMs = parsed;
+                await this.lotusPlugin.saveSettings();
             }
         }));
         new obsidian_1.Setting(containerEl)
             .setName("Working directory")
             .setDesc("Optional. Empty uses the current note folder when possible, otherwise the vault root.")
-            .addText((text) => text.setPlaceholder("Vault root").setValue(this.loomPlugin.settings.workingDirectory).onChange(async (value) => {
-            this.loomPlugin.settings.workingDirectory = value.trim() ? (0, obsidian_1.normalizePath)(value.trim()) : "";
-            await this.loomPlugin.saveSettings();
+            .addText((text) => text.setPlaceholder("Vault root").setValue(this.lotusPlugin.settings.workingDirectory).onChange(async (value) => {
+            this.lotusPlugin.settings.workingDirectory = value.trim() ? (0, obsidian_1.normalizePath)(value.trim()) : "";
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("Write output back to note")
-            .setDesc("Insert managed Loom output sections beneath code blocks instead of keeping results purely in the UI.")
-            .addToggle((toggle) => toggle.setValue(this.loomPlugin.settings.writeOutputToNote).onChange(async (value) => {
-            this.loomPlugin.settings.writeOutputToNote = value;
-            await this.loomPlugin.saveSettings();
+            .setDesc("Insert managed Lotus output sections beneath code blocks instead of keeping results purely in the UI.")
+            .addToggle((toggle) => toggle.setValue(this.lotusPlugin.settings.writeOutputToNote).onChange(async (value) => {
+            this.lotusPlugin.settings.writeOutputToNote = value;
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("Auto-run on file open")
             .setDesc("Run all supported blocks in the active note when it opens. Disabled by default.")
-            .addToggle((toggle) => toggle.setValue(this.loomPlugin.settings.autoRunOnFileOpen).onChange(async (value) => {
-            this.loomPlugin.settings.autoRunOnFileOpen = value;
-            await this.loomPlugin.saveSettings();
+            .addToggle((toggle) => toggle.setValue(this.lotusPlugin.settings.autoRunOnFileOpen).onChange(async (value) => {
+            this.lotusPlugin.settings.autoRunOnFileOpen = value;
+            await this.lotusPlugin.saveSettings();
         }));
         containerEl.createEl("h3", { text: "Runtimes" });
         new obsidian_1.Setting(containerEl)
             .setName("Python executable")
             .setDesc("Path or command name for Python.")
-            .addText((text) => text.setValue(this.loomPlugin.settings.pythonExecutable).onChange(async (value) => {
-            this.loomPlugin.settings.pythonExecutable = value.trim();
-            await this.loomPlugin.saveSettings();
+            .addText((text) => text.setValue(this.lotusPlugin.settings.pythonExecutable).onChange(async (value) => {
+            this.lotusPlugin.settings.pythonExecutable = value.trim();
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("Node executable")
             .setDesc("Path or command name for JavaScript execution.")
-            .addText((text) => text.setValue(this.loomPlugin.settings.nodeExecutable).onChange(async (value) => {
-            this.loomPlugin.settings.nodeExecutable = value.trim();
-            await this.loomPlugin.saveSettings();
+            .addText((text) => text.setValue(this.lotusPlugin.settings.nodeExecutable).onChange(async (value) => {
+            this.lotusPlugin.settings.nodeExecutable = value.trim();
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("TypeScript runner mode")
@@ -90,17 +90,17 @@ class LoomSettingTab extends obsidian_1.PluginSettingTab {
             .addDropdown((dropdown) => dropdown
             .addOption("ts-node", "ts-node")
             .addOption("tsx", "tsx")
-            .setValue(this.loomPlugin.settings.typescriptMode)
+            .setValue(this.lotusPlugin.settings.typescriptMode)
             .onChange(async (value) => {
-            this.loomPlugin.settings.typescriptMode = value;
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.typescriptMode = value;
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("TypeScript transpiler executable")
             .setDesc("Command or path for ts-node or tsx.")
-            .addText((text) => text.setValue(this.loomPlugin.settings.typescriptTranspilerExecutable).onChange(async (value) => {
-            this.loomPlugin.settings.typescriptTranspilerExecutable = value.trim();
-            await this.loomPlugin.saveSettings();
+            .addText((text) => text.setValue(this.lotusPlugin.settings.typescriptTranspilerExecutable).onChange(async (value) => {
+            this.lotusPlugin.settings.typescriptTranspilerExecutable = value.trim();
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("OCaml mode")
@@ -109,25 +109,25 @@ class LoomSettingTab extends obsidian_1.PluginSettingTab {
             .addOption("ocaml", "ocaml")
             .addOption("ocamlc", "ocamlc")
             .addOption("dune", "dune")
-            .setValue(this.loomPlugin.settings.ocamlMode)
+            .setValue(this.lotusPlugin.settings.ocamlMode)
             .onChange(async (value) => {
-            this.loomPlugin.settings.ocamlMode = value;
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.ocamlMode = value;
+            await this.lotusPlugin.saveSettings();
         }));
         new obsidian_1.Setting(containerEl)
             .setName("OCaml executable")
             .setDesc("Command or path for ocaml, ocamlc, or dune depending on the selected mode.")
-            .addText((text) => text.setValue(this.loomPlugin.settings.ocamlExecutable).onChange(async (value) => {
-            this.loomPlugin.settings.ocamlExecutable = value.trim();
-            await this.loomPlugin.saveSettings();
+            .addText((text) => text.setValue(this.lotusPlugin.settings.ocamlExecutable).onChange(async (value) => {
+            this.lotusPlugin.settings.ocamlExecutable = value.trim();
+            await this.lotusPlugin.saveSettings();
         }));
         containerEl.createEl("p", {
-            text: "Missing runtime executables will surface as run errors. Loom never claims sandboxing and executes code with your configured commands.",
+            text: "Missing runtime executables will surface as run errors. Lotus never claims sandboxing and executes code with your configured commands.",
             cls: "setting-item-description",
         });
     }
 }
-exports.LoomSettingTab = LoomSettingTab;
+exports.LotusSettingTab = LotusSettingTab;
 function showExecutionDisabledNotice() {
-    new obsidian_1.Notice("Loom local execution is disabled. Enable it in settings or confirm the execution warning first.");
+    new obsidian_1.Notice("Lotus local execution is disabled. Enable it in settings or confirm the execution warning first.");
 }

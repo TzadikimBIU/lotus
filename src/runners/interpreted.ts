@@ -1,10 +1,10 @@
 import { runTempFileProcess } from "../execution/processRunner";
-import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusNormalizedLanguage, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 interface InterpretedSpec {
-  language: loomNormalizedLanguage;
+  language: lotusNormalizedLanguage;
   displayName: string;
-  executable: (settings: loomPluginSettings) => string;
+  executable: (settings: lotusPluginSettings) => string;
   fileExtension: string;
   args?: string[];
   env?: NodeJS.ProcessEnv;
@@ -62,17 +62,17 @@ const INTERPRETED_SPECS: InterpretedSpec[] = [
   },
 ];
 
-export class InterpretedRunner implements loomRunner {
+export class InterpretedRunner implements lotusRunner {
   id = "interpreted";
   displayName = "Interpreted";
   languages = INTERPRETED_SPECS.map((spec) => spec.language);
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     const spec = this.getSpec(block.language);
     return Boolean(spec?.executable(settings).trim());
   }
 
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const spec = this.getSpec(block.language);
     if (!spec) {
       throw new Error(`Unsupported language: ${block.language}`);
@@ -93,7 +93,7 @@ export class InterpretedRunner implements loomRunner {
     });
   }
 
-  private getSpec(language: loomNormalizedLanguage): InterpretedSpec | undefined {
+  private getSpec(language: lotusNormalizedLanguage): InterpretedSpec | undefined {
     return INTERPRETED_SPECS.find((spec) => spec.language === language);
   }
 }

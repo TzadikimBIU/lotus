@@ -1,14 +1,14 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { runTempFileProcess } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class ProofRunner implements loomRunner {
+export class ProofRunner implements lotusRunner {
   id = "proof";
   displayName = "Proof checker";
   languages = ["lean", "coq", "smtlib"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (block.language === "lean") {
       return Boolean(settings.leanExecutable.trim());
     }
@@ -24,7 +24,7 @@ export class ProofRunner implements loomRunner {
     return false;
   }
 
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     if (block.language === "lean") {
       return runTempFileProcess({
         runnerId: `${this.id}:lean`,
@@ -74,7 +74,7 @@ export class ProofRunner implements loomRunner {
   }
 }
 
-function resolveCoqExecutable(settings: loomPluginSettings): string {
+function resolveCoqExecutable(settings: lotusPluginSettings): string {
   const configured = settings.coqExecutable.trim();
   if (configured && configured !== "coqc") {
     return configured;

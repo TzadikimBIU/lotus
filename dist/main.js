@@ -12,7 +12,7 @@ const registry_1 = require("./runners/registry");
 const settings_1 = require("./settings");
 const codeBlockToolbar_1 = require("./ui/codeBlockToolbar");
 const outputPanel_1 = require("./ui/outputPanel");
-const loomRefreshEffect = state_1.StateEffect.define();
+const lotusRefreshEffect = state_1.StateEffect.define();
 class ExecutionConsentModal extends obsidian_1.Modal {
     constructor(app, onConfirm) {
         super(app);
@@ -21,11 +21,11 @@ class ExecutionConsentModal extends obsidian_1.Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl("h2", { text: "Enable Loom local execution?" });
+        contentEl.createEl("h2", { text: "Enable Lotus local execution?" });
         contentEl.createEl("p", {
-            text: "Loom runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
+            text: "Lotus runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
         });
-        const actions = contentEl.createDiv({ cls: "loom-modal-actions" });
+        const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
         const cancelButton = actions.createEl("button", { text: "Cancel" });
         const enableButton = actions.createEl("button", { text: "Enable and run", cls: "mod-cta" });
         cancelButton.addEventListener("click", () => this.close());
@@ -35,7 +35,7 @@ class ExecutionConsentModal extends obsidian_1.Modal {
         });
     }
 }
-class LoomToolbarRenderChild extends obsidian_1.MarkdownRenderChild {
+class LotusToolbarRenderChild extends obsidian_1.MarkdownRenderChild {
     constructor(containerEl, plugin, block, codeElement) {
         super(containerEl);
         this.plugin = plugin;
@@ -45,9 +45,9 @@ class LoomToolbarRenderChild extends obsidian_1.MarkdownRenderChild {
         this.unregisterOutputListener = null;
     }
     onload() {
-        this.codeElement.parentElement?.addClass("loom-codeblock-shell");
+        this.codeElement.parentElement?.addClass("lotus-codeblock-shell");
         this.codeElement.parentElement?.appendChild(this.plugin.createToolbarElement(this.block));
-        this.panelContainer = this.containerEl.createDiv({ cls: "loom-inline-output-host" });
+        this.panelContainer = this.containerEl.createDiv({ cls: "lotus-inline-output-host" });
         this.plugin.renderOutputInto(this.block.id, this.panelContainer);
         this.unregisterOutputListener = this.plugin.registerOutputListener(this.block.id, () => {
             if (this.panelContainer) {
@@ -59,7 +59,7 @@ class LoomToolbarRenderChild extends obsidian_1.MarkdownRenderChild {
         this.unregisterOutputListener?.();
     }
 }
-class LoomToolbarWidget extends view_1.WidgetType {
+class LotusToolbarWidget extends view_1.WidgetType {
     constructor(plugin, block) {
         super();
         this.plugin = plugin;
@@ -72,7 +72,7 @@ class LoomToolbarWidget extends view_1.WidgetType {
         return this.plugin.createToolbarElement(this.block);
     }
 }
-class LoomOutputWidget extends view_1.WidgetType {
+class LotusOutputWidget extends view_1.WidgetType {
     constructor(plugin, blockId) {
         super();
         this.plugin = plugin;
@@ -83,16 +83,16 @@ class LoomOutputWidget extends view_1.WidgetType {
     }
     toDOM() {
         const wrapper = document.createElement("div");
-        wrapper.className = "loom-inline-output-host";
+        wrapper.className = "lotus-inline-output-host";
         this.plugin.renderOutputInto(this.blockId, wrapper);
         return wrapper;
     }
 }
-class LoomPlugin extends obsidian_1.Plugin {
+class LotusPlugin extends obsidian_1.Plugin {
     constructor() {
         super(...arguments);
         this.settings = settings_1.DEFAULT_SETTINGS;
-        this.registry = new registry_1.LoomRunnerRegistry([new python_1.PythonRunner(), new node_1.NodeRunner(), new ocaml_1.OcamlRunner()]);
+        this.registry = new registry_1.LotusRunnerRegistry([new python_1.PythonRunner(), new node_1.NodeRunner(), new ocaml_1.OcamlRunner()]);
         this.outputs = new Map();
         this.running = new Map();
         this.outputListeners = new Map();
@@ -100,12 +100,12 @@ class LoomPlugin extends obsidian_1.Plugin {
     }
     async onload() {
         await this.loadSettings();
-        this.addSettingTab(new settings_1.LoomSettingTab(this));
+        this.addSettingTab(new settings_1.LotusSettingTab(this));
         this.statusBarItemEl = this.addStatusBarItem();
         this.updateStatusBar();
         this.addCommand({
-            id: "loom-run-current-code-block",
-            name: "loom: run current code block",
+            id: "lotus-run-current-code-block",
+            name: "lotus: run current code block",
             editorCallback: async (editor, view) => {
                 const file = view.file;
                 if (!file) {
@@ -114,15 +114,15 @@ class LoomPlugin extends obsidian_1.Plugin {
                 const blocks = (0, parser_1.parseMarkdownCodeBlocks)(file.path, editor.getValue());
                 const block = (0, parser_1.findBlockAtLine)(blocks, editor.getCursor().line);
                 if (!block) {
-                    new obsidian_1.Notice("No supported Loom block at the current cursor.");
+                    new obsidian_1.Notice("No supported Lotus block at the current cursor.");
                     return;
                 }
                 await this.runBlock(file, block);
             },
         });
         this.addCommand({
-            id: "loom-run-all-code-blocks",
-            name: "loom: run all supported code blocks in current note",
+            id: "lotus-run-all-code-blocks",
+            name: "lotus: run all supported code blocks in current note",
             checkCallback: (checking) => {
                 const file = this.getActiveMarkdownFile();
                 if (!file) {
@@ -135,8 +135,8 @@ class LoomPlugin extends obsidian_1.Plugin {
             },
         });
         this.addCommand({
-            id: "loom-clear-note-outputs",
-            name: "loom: clear Loom outputs in current note",
+            id: "lotus-clear-note-outputs",
+            name: "lotus: clear Lotus outputs in current note",
             checkCallback: (checking) => {
                 const file = this.getActiveMarkdownFile();
                 if (!file) {
@@ -164,7 +164,7 @@ class LoomPlugin extends obsidian_1.Plugin {
                     return;
                 }
                 const pre = el.querySelector("pre") ?? el;
-                ctx.addChild(new LoomToolbarRenderChild(el, this, block, pre));
+                ctx.addChild(new LotusToolbarRenderChild(el, this, block, pre));
             });
         }
         this.registerEditorExtension(this.createLivePreviewExtension());
@@ -256,7 +256,7 @@ class LoomPlugin extends obsidian_1.Plugin {
         const blocks = (0, parser_1.parseMarkdownCodeBlocks)(file.path, source);
         const supportedBlocks = blocks.filter((block) => this.registry.getRunnerForBlock(block, this.settings));
         if (!supportedBlocks.length) {
-            new obsidian_1.Notice("No supported Loom blocks found in the current note.");
+            new obsidian_1.Notice("No supported Lotus blocks found in the current note.");
             return;
         }
         for (const block of supportedBlocks) {
@@ -271,11 +271,11 @@ class LoomPlugin extends obsidian_1.Plugin {
             this.notifyOutputChanged(block.id);
             await this.removeManagedOutputBlock(file.path, block.id);
         }
-        new obsidian_1.Notice("Loom outputs cleared.");
+        new obsidian_1.Notice("Lotus outputs cleared.");
     }
     async runBlock(file, block) {
         if (this.running.has(block.id)) {
-            new obsidian_1.Notice("This Loom block is already running.");
+            new obsidian_1.Notice("This Lotus block is already running.");
             return;
         }
         if (!(await this.ensureExecutionEnabled())) {
@@ -318,7 +318,7 @@ class LoomPlugin extends obsidian_1.Plugin {
             if (this.settings.writeOutputToNote) {
                 await this.writeManagedOutputBlock(file, block, result);
             }
-            new obsidian_1.Notice(result.success ? `Loom ran ${runner.displayName} block.` : `Loom run failed for ${runner.displayName}.`);
+            new obsidian_1.Notice(result.success ? `Lotus ran ${runner.displayName} block.` : `Lotus run failed for ${runner.displayName}.`);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -341,7 +341,7 @@ class LoomPlugin extends obsidian_1.Plugin {
                     cancelled: false,
                 },
             });
-            new obsidian_1.Notice(`Loom error: ${message}`);
+            new obsidian_1.Notice(`Lotus error: ${message}`);
         }
         finally {
             this.running.delete(block.id);
@@ -386,7 +386,7 @@ class LoomPlugin extends obsidian_1.Plugin {
     }
     updateStatusBar() {
         const activeRuns = this.running.size;
-        this.statusBarItemEl.setText(activeRuns ? `Loom: ${activeRuns} active run${activeRuns === 1 ? "" : "s"}` : "Loom: idle");
+        this.statusBarItemEl.setText(activeRuns ? `Lotus: ${activeRuns} active run${activeRuns === 1 ? "" : "s"}` : "Lotus: idle");
     }
     notifyOutputChanged(blockId) {
         this.outputListeners.get(blockId)?.forEach((listener) => listener());
@@ -399,7 +399,7 @@ class LoomPlugin extends obsidian_1.Plugin {
             previewMode?.rerender?.(true);
         });
         for (const editorView of this.editorViews) {
-            editorView.dispatch({ effects: loomRefreshEffect.of(undefined) });
+            editorView.dispatch({ effects: lotusRefreshEffect.of(undefined) });
         }
     }
     getActiveMarkdownFile() {
@@ -425,7 +425,7 @@ class LoomPlugin extends obsidian_1.Plugin {
                 this.decorations = this.buildDecorations();
             }
             update(update) {
-                if (update.docChanged || update.viewportChanged || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(loomRefreshEffect)))) {
+                if (update.docChanged || update.viewportChanged || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(lotusRefreshEffect)))) {
                     this.decorations = this.buildDecorations();
                 }
             }
@@ -448,13 +448,13 @@ class LoomPlugin extends obsidian_1.Plugin {
                 for (const block of blocks) {
                     const startLine = this.view.state.doc.line(block.startLine + 1);
                     builder.add(startLine.from, startLine.from, view_1.Decoration.widget({
-                        widget: new LoomToolbarWidget(plugin, block),
+                        widget: new LotusToolbarWidget(plugin, block),
                         side: -1,
                     }));
                     if (plugin.outputs.has(block.id) || plugin.running.has(block.id)) {
                         const endLine = this.view.state.doc.line(block.endLine + 1);
                         builder.add(endLine.to, endLine.to, view_1.Decoration.widget({
-                            widget: new LoomOutputWidget(plugin, block.id),
+                            widget: new LotusOutputWidget(plugin, block.id),
                             side: 1,
                             block: true,
                         }));
@@ -511,21 +511,21 @@ class LoomPlugin extends obsidian_1.Plugin {
             .filter(Boolean)
             .join("\n\n");
         return [
-            `<!-- loom:output:start id=${blockId} -->`,
+            `<!-- lotus:output:start id=${blockId} -->`,
             "```text",
             body,
             "```",
-            "<!-- loom:output:end -->",
+            "<!-- lotus:output:end -->",
         ];
     }
     findManagedOutputRange(lines, blockId) {
-        const startMarker = `<!-- loom:output:start id=${blockId} -->`;
+        const startMarker = `<!-- lotus:output:start id=${blockId} -->`;
         for (let i = 0; i < lines.length; i += 1) {
             if (lines[i].trim() !== startMarker) {
                 continue;
             }
             for (let j = i + 1; j < lines.length; j += 1) {
-                if (lines[j].trim() === "<!-- loom:output:end -->") {
+                if (lines[j].trim() === "<!-- lotus:output:end -->") {
                     return { start: i, end: j };
                 }
             }
@@ -533,4 +533,4 @@ class LoomPlugin extends obsidian_1.Plugin {
         return null;
     }
 }
-exports.default = LoomPlugin;
+exports.default = LotusPlugin;

@@ -1,16 +1,16 @@
 import { runTempFileProcess } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class LlvmRunner implements loomRunner {
+export class LlvmRunner implements lotusRunner {
   id = "llvm-ir";
   displayName = "LLVM IR";
   languages = ["llvm-ir"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     return block.language === "llvm-ir" && Boolean(settings.llvmInterpreterExecutable.trim());
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const result = await runTempFileProcess({
       runnerId: this.id,
       runnerName: this.displayName,

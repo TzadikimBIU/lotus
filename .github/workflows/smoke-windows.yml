@@ -59,7 +59,7 @@ jobs:
       - name: Run native smoke profile
         shell: powershell
         run: |
-          $env:LOOM_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
+          $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
           npm run smoke -- --profile ${{ matrix.profile }}
 
       # - name: Configure note for WSL container tests
@@ -67,7 +67,7 @@ jobs:
       #   run: |
       #     git checkout vault
       #     $content = Get-Content "Smoke Suite.md" -Raw
-      #     $frontmatter = "---\r\nloom-container: wsl-test\r\n---\r\n\r\n"
+      #     $frontmatter = "---\r\nlotus-container: wsl-test\r\n---\r\n\r\n"
       #     Set-Content -Path "Smoke Suite.md" -Value ($frontmatter + $content) -NoNewline
       #     git config user.name "github-actions"
       #     git config user.email "github-actions@github.com"
@@ -77,12 +77,12 @@ jobs:
       # - name: Run WSL container smoke tests (Systems & Proofs)
       #   shell: powershell
       #   run: |
-      #     $env:LOOM_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
+      #     $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
       #     npm run smoke -- --profile systems --require-pdf --require-all
       #     npm run smoke -- --profile proofs --require-pdf --require-all
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loom-smoke-windows-artifacts-${{ matrix.profile }}
-          path: .loom/artifacts/smoke/${{ matrix.profile }}
+          name: lotus-smoke-windows-artifacts-${{ matrix.profile }}
+          path: .lotus/artifacts/smoke/${{ matrix.profile }}

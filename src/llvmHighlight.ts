@@ -1,6 +1,6 @@
 import { Decoration, type EditorView } from "@codemirror/view";
 import type { RangeSetBuilder } from "@codemirror/state";
-import type { loomCodeBlock } from "./types";
+import type { lotusCodeBlock } from "./types";
 
 interface LlvmToken {
   from: number;
@@ -9,27 +9,27 @@ interface LlvmToken {
 }
 
 const LLVM_KEYWORDS = new Map<string, string>([
-  ...mapWords("loom-llvm-keyword-control", [
+  ...mapWords("lotus-llvm-keyword-control", [
     "ret", "br", "switch", "indirectbr", "invoke", "callbr", "resume", "unreachable", "cleanupret", "catchret", "catchswitch",
   ]),
-  ...mapWords("loom-llvm-keyword-declaration", [
+  ...mapWords("lotus-llvm-keyword-declaration", [
     "define", "declare", "type", "global", "constant", "alias", "ifunc", "comdat", "attributes", "section", "gc", "prefix", "prologue",
     "personality", "uselistorder", "uselistorder_bb", "module", "asm", "source_filename", "target",
   ]),
-  ...mapWords("loom-llvm-keyword-memory", [
+  ...mapWords("lotus-llvm-keyword-memory", [
     "alloca", "load", "store", "getelementptr", "fence", "cmpxchg", "atomicrmw", "extractvalue", "insertvalue", "extractelement",
     "insertelement", "shufflevector",
   ]),
-  ...mapWords("loom-llvm-keyword-arithmetic", [
+  ...mapWords("lotus-llvm-keyword-arithmetic", [
     "add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "shl", "lshr", "ashr", "and", "or", "xor", "fneg", "fadd", "fsub", "fmul",
     "fdiv", "frem",
   ]),
-  ...mapWords("loom-llvm-keyword-comparison", ["icmp", "fcmp"]),
-  ...mapWords("loom-llvm-keyword-cast", [
+  ...mapWords("lotus-llvm-keyword-comparison", ["icmp", "fcmp"]),
+  ...mapWords("lotus-llvm-keyword-cast", [
     "trunc", "zext", "sext", "fptrunc", "fpext", "fptoui", "fptosi", "uitofp", "sitofp", "ptrtoint", "inttoptr", "bitcast", "addrspacecast",
   ]),
-  ...mapWords("loom-llvm-keyword-other", ["phi", "select", "freeze", "call", "landingpad", "catchpad", "cleanuppad", "va_arg"]),
-  ...mapWords("loom-llvm-keyword-modifier", [
+  ...mapWords("lotus-llvm-keyword-other", ["phi", "select", "freeze", "call", "landingpad", "catchpad", "cleanuppad", "va_arg"]),
+  ...mapWords("lotus-llvm-keyword-modifier", [
     "private", "internal", "available_externally", "linkonce", "weak", "common", "appending", "extern_weak", "linkonce_odr", "weak_odr",
     "external", "default", "hidden", "protected", "dllimport", "dllexport", "dso_local", "dso_preemptable", "externally_initialized",
     "thread_local", "localdynamic", "initialexec", "localexec", "unnamed_addr", "local_unnamed_addr", "atomic", "unordered", "monotonic",
@@ -37,11 +37,11 @@ const LLVM_KEYWORDS = new Map<string, string>([
     "anyregcc", "preserve_mostcc", "preserve_allcc", "cxx_fast_tlscc", "swiftcc", "tailcc", "cfguard_checkcc", "tail", "musttail", "notail",
     "fast", "nnan", "ninf", "nsz", "arcp", "contract", "afn", "reassoc", "nuw", "nsw", "exact", "inbounds", "to", "x",
   ]),
-  ...mapWords("loom-llvm-predicate", [
+  ...mapWords("lotus-llvm-predicate", [
     "eq", "ne", "ugt", "uge", "ult", "ule", "sgt", "sge", "slt", "sle", "oeq", "ogt", "oge", "olt", "ole", "one", "ord", "ueq", "une",
     "uno",
   ]),
-  ...mapWords("loom-llvm-attribute", [
+  ...mapWords("lotus-llvm-attribute", [
     "alwaysinline", "argmemonly", "builtin", "byref", "byval", "cold", "convergent", "dereferenceable", "dereferenceable_or_null", "distinct",
     "immarg", "inalloca", "inreg", "mustprogress", "nest", "noalias", "nocallback", "nocapture", "nofree", "noinline", "nonlazybind",
     "nonnull", "norecurse", "noredzone", "noreturn", "nosync", "nounwind", "null_pointer_is_valid", "opaque", "optnone", "optsize",
@@ -49,18 +49,18 @@ const LLVM_KEYWORDS = new Map<string, string>([
     "sanitize_thread", "signext", "speculatable", "sret", "ssp", "sspreq", "sspstrong", "swiftasync", "swiftself", "swifterror", "uwtable",
     "willreturn", "writeonly", "zeroext",
   ]),
-  ...mapWords("loom-llvm-constant", ["true", "false", "null", "none", "undef", "poison", "zeroinitializer"]),
+  ...mapWords("lotus-llvm-constant", ["true", "false", "null", "none", "undef", "poison", "zeroinitializer"]),
 ]);
 
 const LLVM_PRIMITIVE_TYPES = new Set([
   "void", "label", "token", "metadata", "x86_mmx", "x86_amx", "half", "bfloat", "float", "double", "fp128", "x86_fp80", "ppc_fp128", "ptr",
 ]);
 
-const PUNCTUATION_CLASS = "loom-llvm-punctuation";
+const PUNCTUATION_CLASS = "lotus-llvm-punctuation";
 
 export function highlightLlvmElement(codeElement: HTMLElement, source: string): void {
   codeElement.empty();
-  codeElement.addClass("loom-llvm-code");
+  codeElement.addClass("lotus-llvm-code");
 
   const lines = source.split("\n");
   lines.forEach((line, index) => {
@@ -74,7 +74,7 @@ export function highlightLlvmElement(codeElement: HTMLElement, source: string): 
 export function addLlvmDecorations(
   builder: RangeSetBuilder<Decoration>,
   view: EditorView,
-  block: loomCodeBlock,
+  block: lotusCodeBlock,
 ): void {
   const contentLineCount = getContentLineCount(block);
   if (!contentLineCount) {
@@ -130,7 +130,7 @@ function tokenizeLlvmLine(line: string): LlvmToken[] {
   while (index < line.length) {
     const current = line[index];
     if (current === ";") {
-      tokens.push({ from: index, to: line.length, className: "loom-llvm-comment" });
+      tokens.push({ from: index, to: line.length, className: "lotus-llvm-comment" });
       break;
     }
 
@@ -142,26 +142,26 @@ function tokenizeLlvmLine(line: string): LlvmToken[] {
     const stringToken = readStringToken(line, index);
     if (stringToken) {
       if (stringToken.prefixEnd > index) {
-        tokens.push({ from: index, to: stringToken.prefixEnd, className: "loom-llvm-string-prefix" });
+        tokens.push({ from: index, to: stringToken.prefixEnd, className: "lotus-llvm-string-prefix" });
       }
-      tokens.push({ from: stringToken.valueStart, to: stringToken.valueEnd, className: "loom-llvm-string" });
+      tokens.push({ from: stringToken.valueStart, to: stringToken.valueEnd, className: "lotus-llvm-string" });
       index = stringToken.valueEnd;
       continue;
     }
 
     const matched =
-      matchRegexToken(line, index, /@llvm\.[A-Za-z$._0-9]+/y, "loom-llvm-intrinsic", tokens) ||
-      matchRegexToken(line, index, /@[A-Za-z$._-][A-Za-z$._0-9-]*|@\d+\b/y, "loom-llvm-global", tokens) ||
-      matchRegexToken(line, index, /%[A-Za-z$._-][A-Za-z$._0-9-]*|%\d+\b/y, "loom-llvm-local", tokens) ||
-      matchRegexToken(line, index, /![A-Za-z$._-][A-Za-z$._0-9-]*|!\d+\b/y, "loom-llvm-metadata", tokens) ||
-      matchRegexToken(line, index, /\$[A-Za-z$._-][A-Za-z$._0-9-]*/y, "loom-llvm-comdat", tokens) ||
-      matchRegexToken(line, index, /#\d+\b/y, "loom-llvm-attribute-group", tokens) ||
-      matchRegexToken(line, index, /\baddrspace\s*\(\s*\d+\s*\)/y, "loom-llvm-type", tokens) ||
-      matchRegexToken(line, index, /[-+]?0x[0-9A-Fa-f]+\b/y, "loom-llvm-number", tokens) ||
-      matchRegexToken(line, index, /[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)\b/y, "loom-llvm-number", tokens) ||
-      matchRegexToken(line, index, /[-+]?(?:\d+\.\d*|\.\d+)\b/y, "loom-llvm-number", tokens) ||
-      matchRegexToken(line, index, /[-+]?\d+\b/y, "loom-llvm-number", tokens) ||
-      matchRegexToken(line, index, /\.\.\./y, "loom-llvm-punctuation", tokens);
+      matchRegexToken(line, index, /@llvm\.[A-Za-z$._0-9]+/y, "lotus-llvm-intrinsic", tokens) ||
+      matchRegexToken(line, index, /@[A-Za-z$._-][A-Za-z$._0-9-]*|@\d+\b/y, "lotus-llvm-global", tokens) ||
+      matchRegexToken(line, index, /%[A-Za-z$._-][A-Za-z$._0-9-]*|%\d+\b/y, "lotus-llvm-local", tokens) ||
+      matchRegexToken(line, index, /![A-Za-z$._-][A-Za-z$._0-9-]*|!\d+\b/y, "lotus-llvm-metadata", tokens) ||
+      matchRegexToken(line, index, /\$[A-Za-z$._-][A-Za-z$._0-9-]*/y, "lotus-llvm-comdat", tokens) ||
+      matchRegexToken(line, index, /#\d+\b/y, "lotus-llvm-attribute-group", tokens) ||
+      matchRegexToken(line, index, /\baddrspace\s*\(\s*\d+\s*\)/y, "lotus-llvm-type", tokens) ||
+      matchRegexToken(line, index, /[-+]?0x[0-9A-Fa-f]+\b/y, "lotus-llvm-number", tokens) ||
+      matchRegexToken(line, index, /[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)\b/y, "lotus-llvm-number", tokens) ||
+      matchRegexToken(line, index, /[-+]?(?:\d+\.\d*|\.\d+)\b/y, "lotus-llvm-number", tokens) ||
+      matchRegexToken(line, index, /[-+]?\d+\b/y, "lotus-llvm-number", tokens) ||
+      matchRegexToken(line, index, /\.\.\./y, "lotus-llvm-punctuation", tokens);
 
     if (matched) {
       index = matched;
@@ -206,7 +206,7 @@ function addLabelToken(line: string, tokens: LlvmToken[]): void {
   tokens.push({
     from: labelStart,
     to: labelStart + labelText.length,
-    className: "loom-llvm-label",
+    className: "lotus-llvm-label",
   });
   tokens.push({
     from: labelStart + labelText.length,
@@ -217,10 +217,10 @@ function addLabelToken(line: string, tokens: LlvmToken[]): void {
 
 function classifyWord(word: string): string {
   if (/^i\d+$/.test(word) || LLVM_PRIMITIVE_TYPES.has(word)) {
-    return "loom-llvm-type";
+    return "lotus-llvm-type";
   }
 
-  return LLVM_KEYWORDS.get(word) ?? "loom-llvm-plain";
+  return LLVM_KEYWORDS.get(word) ?? "lotus-llvm-plain";
 }
 
 function readWord(line: string, index: number): { value: string; end: number } | null {
@@ -303,7 +303,7 @@ function normalizeTokens(tokens: LlvmToken[]): LlvmToken[] {
   return normalized;
 }
 
-function getContentLineCount(block: loomCodeBlock): number {
+function getContentLineCount(block: lotusCodeBlock): number {
   if (block.endLine === block.startLine) {
     return 0;
   }

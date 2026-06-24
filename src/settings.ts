@@ -1,5 +1,5 @@
 import { App, Modal, Notice, PluginSettingTab, Setting, normalizePath } from "obsidian";
-import type loomPlugin from "./main";
+import type lotusPlugin from "./main";
 import {
   getCompileContainerRuntimes,
   getCompileProfileSummary,
@@ -12,19 +12,19 @@ import {
 } from "./buildProfile";
 import { CUSTOM_LANGUAGE_PACKAGE_ID, getAvailableLanguagePackages, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
 import { sha256Hash } from "./utils/hash";
-import type { loomCustomLanguage, loomPluginSettings } from "./types";
+import type { lotusCustomLanguage, lotusPluginSettings } from "./types";
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
-export class loomSettingTab extends PluginSettingTab {
-  constructor(private readonly loomPlugin: loomPlugin) {
-    super(loomPlugin.app, loomPlugin);
+export class lotusSettingTab extends PluginSettingTab {
+  constructor(private readonly lotusPlugin: lotusPlugin) {
+    super(lotusPlugin.app, lotusPlugin);
   }
 
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "loom" });
+    containerEl.createEl("h2", { text: "lotus" });
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
 
     this.renderGeneralSettings(this.createSection(containerEl, "General Settings", true));
@@ -40,10 +40,10 @@ export class loomSettingTab extends PluginSettingTab {
   }
 
   private createSection(containerEl: HTMLElement, title: string, open = false): HTMLElement {
-    const details = containerEl.createEl("details", { cls: "loom-settings-section" });
+    const details = containerEl.createEl("details", { cls: "lotus-settings-section" });
     details.open = open;
-    details.createEl("summary", { text: title, cls: "loom-settings-summary" });
-    return details.createDiv({ cls: "loom-settings-section-body" });
+    details.createEl("summary", { text: title, cls: "lotus-settings-summary" });
+    return details.createDiv({ cls: "lotus-settings-section-body" });
   }
 
   private renderGeneralSettings(containerEl: HTMLElement): void {
@@ -51,45 +51,45 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Compile profile")
       .setDesc(isLightCompileMode()
         ? `This build was compiled with ${getCompileProfileSummary()}.`
-        : "STRICT build. All Loom feature surfaces are available unless disabled in vault settings.");
+        : "STRICT build. All Lotus feature surfaces are available unless disabled in vault settings.");
 
     new Setting(containerEl)
       .setName("Enable local execution")
-      .setDesc("Disabled by default. loom runs code on your local machine and does not provide sandboxing.")
+      .setDesc("Disabled by default. lotus runs code on your local machine and does not provide sandboxing.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.enableLocalExecution).onChange(async (value) => {
-          this.loomPlugin.settings.enableLocalExecution = value;
+        toggle.setValue(this.lotusPlugin.settings.enableLocalExecution).onChange(async (value) => {
+          this.lotusPlugin.settings.enableLocalExecution = value;
           if (value) {
-            this.loomPlugin.settings.hasAcknowledgedExecutionRisk = true;
+            this.lotusPlugin.settings.hasAcknowledgedExecutionRisk = true;
           }
-          await this.loomPlugin.saveSettings();
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
-      .setName("Keep loom notes in source mode")
+      .setName("Keep lotus notes in source mode")
       .setDesc("Preserve raw fenced code in the editor instead of letting live preview collapse research snippets.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.preserveSourceMode).onChange(async (value) => {
-          this.loomPlugin.settings.preserveSourceMode = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.preserveSourceMode).onChange(async (value) => {
+          this.lotusPlugin.settings.preserveSourceMode = value;
+          await this.lotusPlugin.saveSettings();
           if (value) {
-            void this.loomPlugin.enforceSourceModeForActiveView();
+            void this.lotusPlugin.enforceSourceModeForActiveView();
           } else {
-            void this.loomPlugin.disableSourceModeForActiveView();
+            void this.lotusPlugin.disableSourceModeForActiveView();
           }
         }),
       );
 
     new Setting(containerEl)
       .setName("Default timeout")
-      .setDesc("Maximum execution time in milliseconds before loom terminates the process.")
+      .setDesc("Maximum execution time in milliseconds before lotus terminates the process.")
       .addText((text) =>
-        text.setPlaceholder("8000").setValue(String(this.loomPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
+        text.setPlaceholder("8000").setValue(String(this.lotusPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
           const parsed = Number.parseInt(value, 10);
           if (!Number.isNaN(parsed) && parsed > 0) {
-            this.loomPlugin.settings.defaultTimeoutMs = parsed;
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.defaultTimeoutMs = parsed;
+            await this.lotusPlugin.saveSettings();
           }
         }),
       );
@@ -98,19 +98,19 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Working directory")
       .setDesc("Optional. Empty uses the current note folder when possible, otherwise the vault root.")
       .addText((text) =>
-        text.setPlaceholder("Vault root").setValue(this.loomPlugin.settings.workingDirectory).onChange(async (value) => {
-          this.loomPlugin.settings.workingDirectory = value.trim() ? normalizePath(value.trim()) : "";
-          await this.loomPlugin.saveSettings();
+        text.setPlaceholder("Vault root").setValue(this.lotusPlugin.settings.workingDirectory).onChange(async (value) => {
+          this.lotusPlugin.settings.workingDirectory = value.trim() ? normalizePath(value.trim()) : "";
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName("Write output back to note")
-      .setDesc("Insert managed loom output sections beneath code blocks instead of keeping results purely in the UI.")
+      .setDesc("Insert managed lotus output sections beneath code blocks instead of keeping results purely in the UI.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.writeOutputToNote).onChange(async (value) => {
-          this.loomPlugin.settings.writeOutputToNote = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.writeOutputToNote).onChange(async (value) => {
+          this.lotusPlugin.settings.writeOutputToNote = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
@@ -118,11 +118,11 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Visible output lines")
       .setDesc("Limit each stdout, stderr, and warning panel to this many visible lines. Use 0 for unlimited output.")
       .addText((text) =>
-        text.setPlaceholder("0").setValue(String(this.loomPlugin.settings.outputVisibleLines ?? 0)).onChange(async (value) => {
+        text.setPlaceholder("0").setValue(String(this.lotusPlugin.settings.outputVisibleLines ?? 0)).onChange(async (value) => {
           const parsed = Number.parseInt(value.trim(), 10);
           if (!Number.isNaN(parsed) && parsed >= 0) {
-            this.loomPlugin.settings.outputVisibleLines = Math.min(parsed, 2000);
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.outputVisibleLines = Math.min(parsed, 2000);
+            await this.lotusPlugin.saveSettings();
           }
         }),
       );
@@ -131,19 +131,19 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Auto-run on file open")
       .setDesc("Run all supported blocks in the active note when it opens. Disabled by default.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.autoRunOnFileOpen).onChange(async (value) => {
-          this.loomPlugin.settings.autoRunOnFileOpen = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.autoRunOnFileOpen).onChange(async (value) => {
+          this.lotusPlugin.settings.autoRunOnFileOpen = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName("Write code block hashes to frontmatter")
-      .setDesc("Maintain loom-code-block-hashes in note frontmatter when hashing notes or running blocks.")
+      .setDesc("Maintain lotus-code-block-hashes in note frontmatter when hashing notes or running blocks.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.hashCodeBlocks ?? false).onChange(async (value) => {
-          this.loomPlugin.settings.hashCodeBlocks = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.hashCodeBlocks ?? false).onChange(async (value) => {
+          this.lotusPlugin.settings.hashCodeBlocks = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
@@ -151,24 +151,24 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Show Obsidian context warning")
       .setDesc('Show "No but seriously, you are risking your life" when obsidian-js blocks run.')
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.showObsidianContextWarning ?? true).onChange(async (value) => {
-          this.loomPlugin.settings.showObsidianContextWarning = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.showObsidianContextWarning ?? true).onChange(async (value) => {
+          this.lotusPlugin.settings.showObsidianContextWarning = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName("Extracted source preview")
-      .setDesc("Choose how loom shows the materialized source for blocks that use loom-file.")
+      .setDesc("Choose how lotus shows the materialized source for blocks that use lotus-file.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("collapsed", "Collapsed")
           .addOption("expanded", "Expanded")
           .addOption("hidden", "Hidden")
-          .setValue(this.loomPlugin.settings.extractedSourcePreviewMode || "collapsed")
+          .setValue(this.lotusPlugin.settings.extractedSourcePreviewMode || "collapsed")
           .onChange(async (value) => {
-            this.loomPlugin.settings.extractedSourcePreviewMode = value as "collapsed" | "expanded" | "hidden";
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.extractedSourcePreviewMode = value as "collapsed" | "expanded" | "hidden";
+            await this.lotusPlugin.saveSettings();
           }),
       );
 
@@ -176,24 +176,24 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Show capability metadata")
       .setDesc("Show symbol, dependency, and harness capability metadata in extracted source preview headers.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.showLanguageCapabilityMetadata ?? true).onChange(async (value) => {
-          this.loomPlugin.settings.showLanguageCapabilityMetadata = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.showLanguageCapabilityMetadata ?? true).onChange(async (value) => {
+          this.lotusPlugin.settings.showLanguageCapabilityMetadata = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName("PDF export mode")
-      .setDesc("Choose what to include when exporting notes containing loom code blocks to PDF.")
+      .setDesc("Choose what to include when exporting notes containing lotus code blocks to PDF.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("code", "Code Block Only")
           .addOption("both", "Both Code and Output")
           .addOption("output", "Output Only")
-          .setValue(this.loomPlugin.settings.pdfExportMode || "code")
+          .setValue(this.lotusPlugin.settings.pdfExportMode || "code")
           .onChange(async (value) => {
-            this.loomPlugin.settings.pdfExportMode = value as "both" | "code" | "output";
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.pdfExportMode = value as "both" | "code" | "output";
+            await this.lotusPlugin.saveSettings();
           }),
       );
   }
@@ -201,25 +201,25 @@ export class loomSettingTab extends PluginSettingTab {
   private renderLoggingSettings(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Enable logging")
-      .setDesc("Write Loom execution, note modification, reproducibility, and settings events to configured sinks.")
+      .setDesc("Write Lotus execution, note modification, reproducibility, and settings events to configured sinks.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName("Machine hash")
-      .setDesc(`Stable machine/install identifier emitted in logs: ${sha256Hash(this.loomPlugin.settings.loggingMachineId).slice(0, 16)}`);
+      .setDesc(`Stable machine/install identifier emitted in logs: ${sha256Hash(this.lotusPlugin.settings.loggingMachineId).slice(0, 16)}`);
 
     new Setting(containerEl)
       .setName("Global text log")
       .setDesc("Append human-readable events to a vault-relative text file.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingGlobalTextEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingGlobalTextEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingGlobalTextEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingGlobalTextEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
     this.addTextSetting(containerEl, "Global text log path", "Vault-relative path for the text log.", "loggingGlobalTextPath");
@@ -228,9 +228,9 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Global JSONL log")
       .setDesc("Append structured JSON Lines events to a vault-relative file.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingGlobalJsonlEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingGlobalJsonlEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingGlobalJsonlEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingGlobalJsonlEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
     this.addTextSetting(containerEl, "Global JSONL log path", "Vault-relative path for structured logs.", "loggingGlobalJsonlPath");
@@ -239,45 +239,45 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Per-note text logs")
       .setDesc("Append human-readable events to a per-note log. Pattern supports {note} and {hash}.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingPerNoteTextEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingPerNoteTextEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingPerNoteTextEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingPerNoteTextEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
-    this.addTextSetting(containerEl, "Per-note text path pattern", "Example: .loom/logs/notes/{note}.log", "loggingPerNoteTextPathPattern");
+    this.addTextSetting(containerEl, "Per-note text path pattern", "Example: .lotus/logs/notes/{note}.log", "loggingPerNoteTextPathPattern");
 
     new Setting(containerEl)
       .setName("Per-note JSONL logs")
       .setDesc("Append structured events to a per-note log. Pattern supports {note} and {hash}.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingPerNoteJsonlEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingPerNoteJsonlEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingPerNoteJsonlEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingPerNoteJsonlEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
-    this.addTextSetting(containerEl, "Per-note JSONL path pattern", "Example: .loom/logs/notes/{note}.jsonl", "loggingPerNoteJsonlPathPattern");
+    this.addTextSetting(containerEl, "Per-note JSONL path pattern", "Example: .lotus/logs/notes/{note}.jsonl", "loggingPerNoteJsonlPathPattern");
 
     new Setting(containerEl)
       .setName("Local process sink")
       .setDesc("Start a local command and stream JSONL events to its stdin.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingProcessEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingProcessEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingProcessEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingProcessEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
-    this.addTextSetting(containerEl, "Local process command", "Example: /usr/local/bin/loom-log-agent --stdin-jsonl", "loggingProcessCommand");
+    this.addTextSetting(containerEl, "Local process command", "Example: /usr/local/bin/lotus-log-agent --stdin-jsonl", "loggingProcessCommand");
 
     new Setting(containerEl)
       .setName("HTTP remote sink")
       .setDesc("POST each structured event as JSON to a remote endpoint.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingHttpEnabled).onChange(async (value) => {
-          this.loomPlugin.settings.loggingHttpEnabled = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingHttpEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingHttpEnabled = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
-    this.addTextSetting(containerEl, "HTTP endpoint", "Example: https://collector.example.com/loom/events", "loggingHttpEndpoint");
+    this.addTextSetting(containerEl, "HTTP endpoint", "Example: https://collector.example.com/lotus/events", "loggingHttpEndpoint");
     this.addTextSetting(containerEl, "HTTP headers JSON", "Optional JSON object of string headers.", "loggingHttpHeaders");
 
     new Setting(containerEl)
@@ -288,10 +288,10 @@ export class loomSettingTab extends PluginSettingTab {
           .addOption("hash", "Hash")
           .addOption("plain", "Plain")
           .addOption("omit", "Omit")
-          .setValue(this.loomPlugin.settings.loggingNotePathMode)
+          .setValue(this.lotusPlugin.settings.loggingNotePathMode)
           .onChange(async (value) => {
-            this.loomPlugin.settings.loggingNotePathMode = value as "plain" | "hash" | "omit";
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.loggingNotePathMode = value as "plain" | "hash" | "omit";
+            await this.lotusPlugin.saveSettings();
           }),
       );
 
@@ -299,27 +299,27 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Include code")
       .setDesc("Include code block source in structured events. Disabled by default.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingIncludeCode).onChange(async (value) => {
-          this.loomPlugin.settings.loggingIncludeCode = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingIncludeCode).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingIncludeCode = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
     new Setting(containerEl)
       .setName("Include stdin/function input")
       .setDesc("Include runtime input in structured events. Disabled by default.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingIncludeInput).onChange(async (value) => {
-          this.loomPlugin.settings.loggingIncludeInput = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingIncludeInput).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingIncludeInput = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
     new Setting(containerEl)
       .setName("Include output streams")
       .setDesc("Include stdout, stderr, and warnings in structured events. Disabled by default.")
       .addToggle((toggle) =>
-        toggle.setValue(this.loomPlugin.settings.loggingIncludeOutput).onChange(async (value) => {
-          this.loomPlugin.settings.loggingIncludeOutput = value;
-          await this.loomPlugin.saveSettings();
+        toggle.setValue(this.lotusPlugin.settings.loggingIncludeOutput).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingIncludeOutput = value;
+          await this.lotusPlugin.saveSettings();
         }),
       );
 
@@ -327,11 +327,11 @@ export class loomSettingTab extends PluginSettingTab {
       .setName("Max event bytes")
       .setDesc("Large structured events are truncated to metadata when they exceed this size.")
       .addText((text) =>
-        text.setValue(String(this.loomPlugin.settings.loggingMaxEventBytes)).onChange(async (value) => {
+        text.setValue(String(this.lotusPlugin.settings.loggingMaxEventBytes)).onChange(async (value) => {
           const parsed = Number.parseInt(value.trim(), 10);
           if (!Number.isNaN(parsed) && parsed > 0) {
-            this.loomPlugin.settings.loggingMaxEventBytes = parsed;
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.loggingMaxEventBytes = parsed;
+            await this.lotusPlugin.saveSettings();
           }
         }),
       );
@@ -353,10 +353,10 @@ export class loomSettingTab extends PluginSettingTab {
           dropdown
             .addOption("ts-node", "ts-node")
             .addOption("tsx", "tsx")
-            .setValue(this.loomPlugin.settings.typescriptMode)
+            .setValue(this.lotusPlugin.settings.typescriptMode)
             .onChange(async (value) => {
-              this.loomPlugin.settings.typescriptMode = value as "ts-node" | "tsx";
-              await this.loomPlugin.saveSettings();
+              this.lotusPlugin.settings.typescriptMode = value as "ts-node" | "tsx";
+              await this.lotusPlugin.saveSettings();
             }),
         );
 
@@ -372,10 +372,10 @@ export class loomSettingTab extends PluginSettingTab {
             .addOption("ocaml", "ocaml")
             .addOption("ocamlc", "ocamlc")
             .addOption("dune", "dune")
-            .setValue(this.loomPlugin.settings.ocamlMode)
+            .setValue(this.lotusPlugin.settings.ocamlMode)
             .onChange(async (value) => {
-              this.loomPlugin.settings.ocamlMode = value as "ocaml" | "ocamlc" | "dune";
-              await this.loomPlugin.saveSettings();
+              this.lotusPlugin.settings.ocamlMode = value as "ocaml" | "ocamlc" | "dune";
+              await this.lotusPlugin.saveSettings();
             }),
         );
 
@@ -404,11 +404,11 @@ export class loomSettingTab extends PluginSettingTab {
       this.addTextSetting(containerEl, "eBPF include paths", "Comma-separated include directories passed to clang with -I.", "ebpfIncludePaths");
       new Setting(containerEl)
         .setName("Allow eBPF kernel load")
-        .setDesc("Required before any block can use loom-ebpf-mode=load. Compile-only mode stays available without this.")
+        .setDesc("Required before any block can use lotus-ebpf-mode=load. Compile-only mode stays available without this.")
         .addToggle((toggle) =>
-          toggle.setValue(this.loomPlugin.settings.ebpfAllowKernelLoad).onChange(async (value) => {
-            this.loomPlugin.settings.ebpfAllowKernelLoad = value;
-            await this.loomPlugin.saveSettings();
+          toggle.setValue(this.lotusPlugin.settings.ebpfAllowKernelLoad).onChange(async (value) => {
+            this.lotusPlugin.settings.ebpfAllowKernelLoad = value;
+            await this.lotusPlugin.saveSettings();
           }),
         );
     }
@@ -418,22 +418,22 @@ export class loomSettingTab extends PluginSettingTab {
     this.addRuntimeTextSetting(containerEl, ["smtlib"], "SMT solver", "Command or path for SMT-LIB blocks. Defaults to z3.", "smtExecutable");
   }
 
-  private addRuntimeTextSetting<K extends keyof loomPluginSettings>(containerEl: HTMLElement, languageIds: string[], name: string, description: string, key: K): void {
+  private addRuntimeTextSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, languageIds: string[], name: string, description: string, key: K): void {
     if (languageIds.some((languageId) => this.isRuntimeLanguageEnabled(languageId))) {
       this.addTextSetting(containerEl, name, description, key);
     }
   }
 
   private isRuntimeLanguageEnabled(languageId: string): boolean {
-    return isLanguageEnabled(languageId, this.loomPlugin.settings);
+    return isLanguageEnabled(languageId, this.lotusPlugin.settings);
   }
 
   private renderLanguagePackages(containerEl: HTMLElement): void {
-    normalizeLanguageConfiguration(this.loomPlugin.settings);
+    normalizeLanguageConfiguration(this.lotusPlugin.settings);
 
-    for (const pack of getAvailableLanguagePackages(this.loomPlugin.settings)) {
-      const packEl = containerEl.createEl("details", { cls: "loom-language-package" });
-      packEl.open = this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id);
+    for (const pack of getAvailableLanguagePackages(this.lotusPlugin.settings)) {
+      const packEl = containerEl.createEl("details", { cls: "lotus-language-package" });
+      packEl.open = this.lotusPlugin.settings.enabledLanguagePacks.includes(pack.id);
       packEl.createEl("summary", { text: pack.displayName });
       packEl.createEl("p", { text: pack.description, cls: "setting-item-description" });
 
@@ -441,17 +441,17 @@ export class loomSettingTab extends PluginSettingTab {
         .setName("Enable package")
         .setDesc("Disable this to remove the package languages from parsing, command menus, and runners for this vault.")
         .addToggle((toggle) =>
-          toggle.setValue(this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id)).onChange(async (value) => {
-            this.setEnabledValue(this.loomPlugin.settings.enabledLanguagePacks, pack.id, value);
+          toggle.setValue(this.lotusPlugin.settings.enabledLanguagePacks.includes(pack.id)).onChange(async (value) => {
+            this.setEnabledValue(this.lotusPlugin.settings.enabledLanguagePacks, pack.id, value);
             for (const language of pack.languages) {
-              this.setEnabledValue(this.loomPlugin.settings.enabledLanguages, language.id, value);
+              this.setEnabledValue(this.lotusPlugin.settings.enabledLanguages, language.id, value);
             }
-            await this.loomPlugin.saveSettings();
+            await this.lotusPlugin.saveSettings();
             this.display();
           }),
         );
 
-      const packageEnabled = this.loomPlugin.settings.enabledLanguagePacks.includes(pack.id);
+      const packageEnabled = this.lotusPlugin.settings.enabledLanguagePacks.includes(pack.id);
       for (const language of pack.languages) {
         new Setting(packEl)
           .setName(language.displayName)
@@ -459,10 +459,10 @@ export class loomSettingTab extends PluginSettingTab {
           .addToggle((toggle) =>
             toggle
               .setDisabled(!packageEnabled)
-              .setValue(packageEnabled && this.loomPlugin.settings.enabledLanguages.includes(language.id))
+              .setValue(packageEnabled && this.lotusPlugin.settings.enabledLanguages.includes(language.id))
               .onChange(async (value) => {
-                this.setEnabledValue(this.loomPlugin.settings.enabledLanguages, language.id, value);
-                await this.loomPlugin.saveSettings();
+                this.setEnabledValue(this.lotusPlugin.settings.enabledLanguages, language.id, value);
+                await this.lotusPlugin.saveSettings();
               }),
           );
       }
@@ -474,8 +474,8 @@ export class loomSettingTab extends PluginSettingTab {
         .setDesc("Load JSON language pack manifests from the plugin language-packs folder.")
         .addButton((button) =>
           button.setButtonText("Reload").onClick(async () => {
-            await this.loomPlugin.loadExternalLanguagePacks(true);
-            await this.loomPlugin.saveSettings();
+            await this.lotusPlugin.loadExternalLanguagePacks(true);
+            await this.lotusPlugin.saveSettings();
             this.display();
           }),
         );
@@ -494,14 +494,14 @@ export class loomSettingTab extends PluginSettingTab {
         }
 
         try {
-          const result = await this.loomPlugin.importExternalLanguageBundle(file);
-          await this.loomPlugin.saveSettings();
+          const result = await this.lotusPlugin.importExternalLanguageBundle(file);
+          await this.lotusPlugin.saveSettings();
           new Notice(`Imported language bundle ${result.packId} (${result.fileCount} files)`);
           this.display();
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           new Notice(`Failed to import language bundle: ${message}`);
-          console.warn("Failed to import loom language bundle", error);
+          console.warn("Failed to import lotus language bundle", error);
         } finally {
           bundleInput.value = "";
         }
@@ -522,9 +522,9 @@ export class loomSettingTab extends PluginSettingTab {
         .setName("Custom languages")
         .setDesc("Enable user-defined languages from the Custom Languages section.")
         .addToggle((toggle) =>
-          toggle.setValue(this.loomPlugin.settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID)).onChange(async (value) => {
-            this.setEnabledValue(this.loomPlugin.settings.enabledLanguagePacks, CUSTOM_LANGUAGE_PACKAGE_ID, value);
-            await this.loomPlugin.saveSettings();
+          toggle.setValue(this.lotusPlugin.settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID)).onChange(async (value) => {
+            this.setEnabledValue(this.lotusPlugin.settings.enabledLanguagePacks, CUSTOM_LANGUAGE_PACKAGE_ID, value);
+            await this.lotusPlugin.saveSettings();
             this.display();
           }),
         );
@@ -535,9 +535,9 @@ export class loomSettingTab extends PluginSettingTab {
       .setDesc("Re-enable every built-in package and every built-in language.")
       .addButton((button) =>
         button.setButtonText("Reset").onClick(async () => {
-          this.loomPlugin.settings.enabledLanguagePacks = getDefaultLanguagePackIds();
-          this.loomPlugin.settings.enabledLanguages = getDefaultLanguageIds();
-          await this.loomPlugin.saveSettings();
+          this.lotusPlugin.settings.enabledLanguagePacks = getDefaultLanguagePackIds();
+          this.lotusPlugin.settings.enabledLanguages = getDefaultLanguageIds();
+          await this.lotusPlugin.saveSettings();
           this.display();
         }),
       );
@@ -553,7 +553,7 @@ export class loomSettingTab extends PluginSettingTab {
   }
 
   private renderCustomLanguages(containerEl: HTMLElement): void {
-    const listEl = containerEl.createDiv({ cls: "loom-custom-language-list" });
+    const listEl = containerEl.createDiv({ cls: "lotus-custom-language-list" });
     this.renderCustomLanguageList(listEl);
 
     new Setting(containerEl)
@@ -561,7 +561,7 @@ export class loomSettingTab extends PluginSettingTab {
       .setDesc("Create a new local command-backed language.")
       .addButton((button) =>
         button.setButtonText("+").onClick(async () => {
-          this.loomPlugin.settings.customLanguages.push({
+          this.lotusPlugin.settings.customLanguages.push({
             name: "custom-language",
             aliases: "",
             executable: "",
@@ -573,7 +573,7 @@ export class loomSettingTab extends PluginSettingTab {
             transpileExecutable: "",
             transpileArgs: "{request}",
           });
-          await this.loomPlugin.saveSettings();
+          await this.lotusPlugin.saveSettings();
           this.display();
         }),
       );
@@ -582,7 +582,7 @@ export class loomSettingTab extends PluginSettingTab {
   private renderCustomLanguageList(containerEl: HTMLElement): void {
     containerEl.empty();
 
-    if (!this.loomPlugin.settings.customLanguages.length) {
+    if (!this.lotusPlugin.settings.customLanguages.length) {
       containerEl.createEl("p", {
         text: "No custom languages configured.",
         cls: "setting-item-description",
@@ -590,13 +590,13 @@ export class loomSettingTab extends PluginSettingTab {
       return;
     }
 
-    this.loomPlugin.settings.customLanguages.forEach((language, index) => {
-      const details = containerEl.createEl("details", { cls: "loom-custom-language" });
+    this.lotusPlugin.settings.customLanguages.forEach((language, index) => {
+      const details = containerEl.createEl("details", { cls: "lotus-custom-language" });
       details.open = true;
       details.createEl("summary", { text: language.name || `Custom language ${index + 1}` });
-      const body = details.createDiv({ cls: "loom-custom-language-body" });
+      const body = details.createDiv({ cls: "lotus-custom-language-body" });
 
-      this.addCustomLanguageTextSetting(body, language, "Name", "Normalized language id used by loom.", "name");
+      this.addCustomLanguageTextSetting(body, language, "Name", "Normalized language id used by lotus.", "name");
       this.addCustomLanguageTextSetting(body, language, "Aliases", "Comma-separated fence aliases.", "aliases");
       this.addCustomLanguageTextSetting(body, language, "Executable", "Local command or absolute executable path.", "executable");
       this.addCustomLanguageTextSetting(body, language, "Arguments", "Space-separated arguments. Use {file} for the temp source file.", "args");
@@ -612,7 +612,7 @@ export class loomSettingTab extends PluginSettingTab {
             .setValue(language.extractorMode || "command")
             .onChange(async (value) => {
               language.extractorMode = value as "command" | "transpile-c";
-              await this.loomPlugin.saveSettings();
+              await this.lotusPlugin.saveSettings();
             }),
         );
 
@@ -626,8 +626,8 @@ export class loomSettingTab extends PluginSettingTab {
         .setDesc("Remove this custom language.")
         .addButton((button) =>
           button.setButtonText("Delete").setWarning().onClick(async () => {
-            this.loomPlugin.settings.customLanguages.splice(index, 1);
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.customLanguages.splice(index, 1);
+            await this.lotusPlugin.saveSettings();
             this.display();
           }),
         );
@@ -640,7 +640,7 @@ export class loomSettingTab extends PluginSettingTab {
     }
 
     try {
-      const groups = (await this.loomPlugin.getContainerGroupSummaries())
+      const groups = (await this.lotusPlugin.getContainerGroupSummaries())
         .filter((group) => isCompileContainerGroupAllowed(group.name));
 
       new Setting(containerEl)
@@ -651,10 +651,10 @@ export class loomSettingTab extends PluginSettingTab {
           for (const group of groups) {
             dropdown.addOption(group.name, group.name);
           }
-          dropdown.setValue(this.loomPlugin.settings.defaultContainerGroup || "");
+          dropdown.setValue(this.lotusPlugin.settings.defaultContainerGroup || "");
           dropdown.onChange(async (value) => {
-            this.loomPlugin.settings.defaultContainerGroup = value;
-            await this.loomPlugin.saveSettings();
+            this.lotusPlugin.settings.defaultContainerGroup = value;
+            await this.lotusPlugin.saveSettings();
           });
         });
 
@@ -671,7 +671,7 @@ export class loomSettingTab extends PluginSettingTab {
                   return;
                 }
 
-                const pluginDir = this.loomPlugin.manifest.dir ?? ".obsidian/plugins/loom";
+                const pluginDir = this.lotusPlugin.manifest.dir ?? ".obsidian/plugins/lotus";
                 const groupRelativePath = `${pluginDir}/containers/${cleanName}`;
                 const configPath = `${groupRelativePath}/config.json`;
 
@@ -703,10 +703,10 @@ export class loomSettingTab extends PluginSettingTab {
           );
       }
 
-      const listEl = containerEl.createDiv({ cls: "loom-container-group-list" });
+      const listEl = containerEl.createDiv({ cls: "lotus-container-group-list" });
       if (!groups.length) {
         listEl.createEl("p", {
-          text: "No execution groups found in .obsidian/plugins/loom/containers.",
+          text: "No execution groups found in .obsidian/plugins/lotus/containers.",
           cls: "setting-item-description",
         });
         return;
@@ -718,13 +718,13 @@ export class loomSettingTab extends PluginSettingTab {
           .setDesc(group.status)
           .addButton((button) =>
             button.setButtonText("Build / rebuild").onClick(async () => {
-              await this.loomPlugin.buildContainerGroup(group.name);
+              await this.lotusPlugin.buildContainerGroup(group.name);
             }),
           )
           .addButton((button) =>
             button.setButtonText("Edit").onClick(() => {
-              const pluginDir = this.loomPlugin.manifest.dir ?? ".obsidian/plugins/loom";
-              new EditContainerGroupModal(this.loomPlugin, group.name, pluginDir, () => {
+              const pluginDir = this.lotusPlugin.manifest.dir ?? ".obsidian/plugins/lotus";
+              new EditContainerGroupModal(this.lotusPlugin, group.name, pluginDir, () => {
                 this.display();
               }).open();
             }),
@@ -734,28 +734,28 @@ export class loomSettingTab extends PluginSettingTab {
       containerEl.empty();
       containerEl.createEl("p", {
       text: `Error loading execution groups: ${error instanceof Error ? error.message : String(error)}`,
-        cls: "loom-settings-error",
+        cls: "lotus-settings-error",
         attr: { style: "color: var(--text-error); font-weight: bold; margin: 1em 0;" }
       });
-      console.error("loom: failed to render execution groups:", error);
+      console.error("lotus: failed to render execution groups:", error);
     }
   }
 
-  private addTextSetting<K extends keyof loomPluginSettings>(containerEl: HTMLElement, name: string, description: string, key: K): void {
+  private addTextSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, name: string, description: string, key: K): void {
     new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addText((text) =>
-        text.setValue(String(this.loomPlugin.settings[key] ?? "")).onChange(async (value) => {
-          (this.loomPlugin.settings[key] as string) = value.trim();
-          await this.loomPlugin.saveSettings();
+        text.setValue(String(this.lotusPlugin.settings[key] ?? "")).onChange(async (value) => {
+          (this.lotusPlugin.settings[key] as string) = value.trim();
+          await this.lotusPlugin.saveSettings();
         }),
       );
   }
 
-  private addCustomLanguageTextSetting<K extends keyof loomCustomLanguage>(
+  private addCustomLanguageTextSetting<K extends keyof lotusCustomLanguage>(
     containerEl: HTMLElement,
-    language: loomCustomLanguage,
+    language: lotusCustomLanguage,
     name: string,
     description: string,
     key: K,
@@ -766,14 +766,14 @@ export class loomSettingTab extends PluginSettingTab {
       .addText((text) =>
         text.setValue(String(language[key] ?? "")).onChange(async (value) => {
           (language[key] as string | undefined) = value.trim();
-          await this.loomPlugin.saveSettings();
+          await this.lotusPlugin.saveSettings();
         }),
       );
   }
 }
 
 export function showExecutionDisabledNotice(): void {
-  new Notice("loom local execution is disabled. Enable it in settings or confirm the execution warning first.");
+  new Notice("lotus local execution is disabled. Enable it in settings or confirm the execution warning first.");
 }
 
 class ContainerGroupNameModal extends Modal {
@@ -823,12 +823,12 @@ class EditContainerGroupModal extends Modal {
   private tabContentEl!: HTMLElement;
 
   constructor(
-    private readonly loomPlugin: loomPlugin,
+    private readonly lotusPlugin: lotusPlugin,
     private readonly groupName: string,
     private readonly pluginDir: string,
     private readonly onSave: () => void
   ) {
-    super(loomPlugin.app);
+    super(lotusPlugin.app);
   }
 
   async onOpen() {
@@ -860,17 +860,17 @@ class EditContainerGroupModal extends Modal {
       this.dockerfileText = null;
     }
 
-    const container = contentEl.createDiv({ cls: "loom-tab-container" });
+    const container = contentEl.createDiv({ cls: "lotus-tab-container" });
 
     // Render Tab Header
-    this.tabHeaderEl = container.createDiv({ cls: "loom-tab-header" });
+    this.tabHeaderEl = container.createDiv({ cls: "lotus-tab-header" });
     this.renderTabs();
 
     // Render Tab Content Area
-    this.tabContentEl = container.createDiv({ cls: "loom-tab-content" });
+    this.tabContentEl = container.createDiv({ cls: "lotus-tab-content" });
 
     // Render Actions Footer
-    const actions = contentEl.createDiv({ cls: "loom-modal-actions" });
+    const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     const saveBtn = actions.createEl("button", { text: "Save", cls: "mod-cta" });
     saveBtn.addEventListener("click", async () => {
@@ -892,7 +892,7 @@ class EditContainerGroupModal extends Modal {
     for (const tab of tabs) {
       const btn = this.tabHeaderEl.createEl("button", {
         text: tab.label,
-        cls: "loom-tab-btn" + (this.activeTab === tab.id ? " is-active" : ""),
+        cls: "lotus-tab-btn" + (this.activeTab === tab.id ? " is-active" : ""),
       });
       btn.addEventListener("click", () => {
         void this.switchTab(tab.id);
@@ -1005,7 +1005,7 @@ class EditContainerGroupModal extends Modal {
     ) {
       new Setting(containerEl)
         .setName("Elevation command prefix")
-        .setDesc("Optional prefix for remote or wrapper commands, for example sudo -n. Loom does not prompt for passwords.")
+        .setDesc("Optional prefix for remote or wrapper commands, for example sudo -n. Lotus does not prompt for passwords.")
         .addText((text) => {
           text
             .setPlaceholder("sudo -n")
@@ -1036,7 +1036,7 @@ class EditContainerGroupModal extends Modal {
       if (!this.configObj.ssh || typeof this.configObj.ssh !== "object") {
         this.configObj.ssh = this.configObj.remote && typeof this.configObj.remote === "object"
           ? this.configObj.remote
-          : { target: "", workspace: "/tmp/loom" };
+          : { target: "", workspace: "/tmp/lotus" };
       }
 
       new Setting(containerEl)
@@ -1052,10 +1052,10 @@ class EditContainerGroupModal extends Modal {
 
       new Setting(containerEl)
         .setName("Remote Workspace")
-        .setDesc("Remote folder where Loom uploads snippets before running them.")
+        .setDesc("Remote folder where Lotus uploads snippets before running them.")
         .addText((text) => {
           text
-            .setValue(this.configObj.ssh.workspace || this.configObj.ssh.remoteWorkspace || "/tmp/loom")
+            .setValue(this.configObj.ssh.workspace || this.configObj.ssh.remoteWorkspace || "/tmp/lotus")
             .onChange((val) => {
               this.configObj.ssh.workspace = val.trim();
             });
@@ -1325,21 +1325,21 @@ class EditContainerGroupModal extends Modal {
       this.configObj.languages = {};
     }
 
-    const langsListEl = containerEl.createDiv({ cls: "loom-languages-list" });
+    const langsListEl = containerEl.createDiv({ cls: "lotus-languages-list" });
     const languages = Object.entries(this.configObj.languages as Record<string, { command?: string; extension?: string; useDefault?: boolean }>);
 
     if (languages.length === 0) {
       langsListEl.createEl("p", { text: "No languages configured for this group.", cls: "setting-item-description" });
     } else {
       for (const [langName, langConfig] of languages) {
-        const card = langsListEl.createDiv({ cls: "loom-language-card" });
+        const card = langsListEl.createDiv({ cls: "lotus-language-card" });
         card.createEl("strong", { text: langName, attr: { style: "display: block; margin-bottom: 0.5rem; font-size: 1.1em;" } });
 
         const isDefault = (langConfig as any).useDefault === true;
 
         new Setting(card)
           .setName("Use default configuration")
-          .setDesc("If checked, Loom will run this language using its built-in commands/extensions.")
+          .setDesc("If checked, Lotus will run this language using its built-in commands/extensions.")
           .addToggle((toggle) => {
             toggle
               .setValue(isDefault)
@@ -1350,7 +1350,7 @@ class EditContainerGroupModal extends Modal {
                   delete langConfig.extension;
                 } else {
                   delete (langConfig as any).useDefault;
-                  const defaults = this.loomPlugin.containerRunner.getDefaultLanguageConfig(langName, this.loomPlugin.settings);
+                  const defaults = this.lotusPlugin.containerRunner.getDefaultLanguageConfig(langName, this.lotusPlugin.settings);
                   langConfig.command = defaults?.command || "";
                   langConfig.extension = defaults?.extension || "";
                 }
@@ -1362,7 +1362,7 @@ class EditContainerGroupModal extends Modal {
           .setName("Command")
           .setDesc("Execution command. Use {file} for the code snippet filename.")
           .addText((text) => {
-            const defaults = this.loomPlugin.containerRunner.getDefaultLanguageConfig(langName, this.loomPlugin.settings);
+            const defaults = this.lotusPlugin.containerRunner.getDefaultLanguageConfig(langName, this.lotusPlugin.settings);
             text
               .setPlaceholder(defaults?.command || "")
               .setValue(langConfig.command || "")
@@ -1376,7 +1376,7 @@ class EditContainerGroupModal extends Modal {
           .setName("Extension")
           .setDesc("Source file extension (e.g. .py, .js).")
           .addText((text) => {
-            const defaults = this.loomPlugin.containerRunner.getDefaultLanguageConfig(langName, this.loomPlugin.settings);
+            const defaults = this.lotusPlugin.containerRunner.getDefaultLanguageConfig(langName, this.lotusPlugin.settings);
             text
               .setPlaceholder(defaults?.extension || "")
               .setValue(langConfig.extension || "")

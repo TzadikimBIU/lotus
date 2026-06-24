@@ -1,12 +1,12 @@
-# loom
+# lotus
 
 Obsidian plugin for executing ordinary fenced Markdown code blocks.
 
-loom is intended for research and exploratory notes where code, proofs, solver queries, and runtime output should stay readable in the document. It adds execution controls to normal fenced code blocks and renders transient output beneath the block. The source block is not rewritten into a plugin-specific format.
+lotus is intended for research and exploratory notes where code, proofs, solver queries, and runtime output should stay readable in the document. It adds execution controls to normal fenced code blocks and renders transient output beneath the block. The source block is not rewritten into a plugin-specific format.
 
 ## Model
 
-loom treats a fenced block as executable when the fence info string resolves to a supported language alias. The parser walks the active Markdown buffer, skips managed loom output sections, normalises the fence language, and creates a stable block descriptor.
+lotus treats a fenced block as executable when the fence info string resolves to a supported language alias. The parser walks the active Markdown buffer, skips managed lotus output sections, normalises the fence language, and creates a stable block descriptor.
 
 Each block receives an ID derived from these values:
 - Vault-relative file path
@@ -19,20 +19,20 @@ That ID is used for output replacement and toolbar state. Rerunning a block upda
 ## Installation
 
 ### Via Community Plugins
-loom isn't in the plugin repository by design. It is intended for users that plan to run code in their vaults, therefore we expect them to at least be able to install it manually.
+lotus isn't in the plugin repository by design. It is intended for users that plan to run code in their vaults, therefore we expect them to at least be able to install it manually.
 
 ### Manual Installation
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
-2. Create a folder named `loom` under your vault's plugin directory: `<vault>/.obsidian/plugins/loom/`.
+2. Create a folder named `lotus` under your vault's plugin directory: `<vault>/.obsidian/plugins/lotus/`.
 3. Copy the downloaded files into that directory.
-4. Reload Obsidian and enable **loom** in the Community Plugins list.
+4. Reload Obsidian and enable **lotus** in the Community Plugins list.
 
 ## Security
 
-Loom executes code blocks locally on your machine without sandboxing or isolation by default. 
+Lotus executes code blocks locally on your machine without sandboxing or isolation by default.
 
 > [!CAUTION]
-> Running code blocks in untrusted notes can execute malicious commands on your host machine. Loom displays a consent modal before allowing local execution. For security isolation, consider setting up [Execution Groups](docs/execution-groups.md) to run code inside Docker/Podman containers or remote SSH/QEMU environments.
+> Running code blocks in untrusted notes can execute malicious commands on your host machine. Lotus displays a consent modal before allowing local execution. For security isolation, consider setting up [Execution Groups](docs/execution-groups.md) to run code inside Docker/Podman containers or remote SSH/QEMU environments.
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ Loom executes code blocks locally on your machine without sandboxing or isolatio
 2. In any Markdown file, create a standard fenced code block:
    ````markdown
    ```python
-   print("Hello from loom!")
+   print("Hello from lotus!")
    ```
    ````
 3. Hover over the block and click the **Run** button on the floating toolbar to execute the block and view the output.
@@ -64,10 +64,10 @@ By default, every built-in package is enabled. Use **Language Packages** in sett
 
 ## Managed Output
 
-By default, loom does not write output into the note. If `Write output back to note` is enabled, loom writes managed regions under blocks:
+By default, lotus does not write output into the note. If `Write output back to note` is enabled, lotus writes managed regions under blocks:
 
 ````markdown
-<!-- loom:output:start id=<stable-block-id> -->
+<!-- lotus:output:start id=<stable-block-id> -->
 ```text
 runner=Python
 exit=0
@@ -77,21 +77,21 @@ timestamp=2026-06-20T00:00:00.000Z
 stdout:
 hello
 ```
-<!-- loom:output:end -->
+<!-- lotus:output:end -->
 ````
 
 The parser skips these regions and generated output blocks are never executed.
 
 ### Output Window Limits
-Output panels can be capped to a visible line window while keeping the full output scrollable. Set **Visible output lines** in settings for a vault-wide default, or use the `loom-output-lines=20` attribute on a specific block. Use `0` to keep output unlimited.
+Output panels can be capped to a visible line window while keeping the full output scrollable. Set **Visible output lines** in settings for a vault-wide default, or use the `lotus-output-lines=20` attribute on a specific block. Use `0` to keep output unlimited.
 
 ### Redirection to Files
-Blocks can materialise output into vault files with `loom-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and loom creates missing parent folders. By default, the file receives stdout and is overwritten on each run. 
+Blocks can materialise output into vault files with `lotus-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and lotus creates missing parent folders. By default, the file receives stdout and is overwritten on each run.
 
-Use `loom-output-file-mode=append`, `loom-output-file-streams=metadata,stdout,stderr,warning`, or `loom-output-file-format=json` when a block needs a different artifact shape.
+Use `lotus-output-file-mode=append`, `lotus-output-file-streams=metadata,stdout,stderr,warning`, or `lotus-output-file-format=json` when a block needs a different artifact shape.
 
 ### Standard Input (Stdin)
-Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per-block input buffer. For reproducible notes, use `loom-stdin="line one\nline two"` or `loom-stdin-file="inputs/payload.txt"`. The attribute `loom-input=true` keeps the input field visible whenever the note renders.
+Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per-block input buffer. For reproducible notes, use `lotus-stdin="line one\nline two"` or `lotus-stdin-file="inputs/payload.txt"`. The attribute `lotus-input=true` keeps the input field visible whenever the note renders.
 
 ## Advanced Topics
 
@@ -106,13 +106,13 @@ For more specialized setups, refer to the guides in the [docs/](docs/) directory
 
 ## Commands Reference
 
-Loom registers several commands in the Obsidian command palette (`Ctrl/Cmd + P`):
+Lotus registers several commands in the Obsidian command palette (`Ctrl/Cmd + P`):
 
-- **`loom: Run Current Code Block`**: Executes the block under the cursor.
-- **`loom: Run All Supported Code Blocks in Current Note`**: Executes all runnable blocks in the active file.
-- **`loom: Clear loom Outputs in Current Note`**: Removes all rendered output panels and written output blocks in the active file.
-- **`loom: Save Reproducibility Snapshot`**: Saves the current block and note hashes to the note's frontmatter.
-- **`loom: Verify Reproducibility Snapshot`**: Compares the current note against the saved snapshot.
+- **`lotus: Run Current Code Block`**: Executes the block under the cursor.
+- **`lotus: Run All Supported Code Blocks in Current Note`**: Executes all runnable blocks in the active file.
+- **`lotus: Clear lotus Outputs in Current Note`**: Removes all rendered output panels and written output blocks in the active file.
+- **`lotus: Save Reproducibility Snapshot`**: Saves the current block and note hashes to the note's frontmatter.
+- **`lotus: Verify Reproducibility Snapshot`**: Compares the current note against the saved snapshot.
 
 *See [docs/reproducibility.md](docs/reproducibility.md) for the complete list of hashing and verification commands.*
 

@@ -1,17 +1,17 @@
 import { join } from "path";
 import { runProcess, withTempSourceFile } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 type EbpfCMode = "compile" | "load";
 type BpftraceMode = "check" | "run";
 
-export class EbpfRunner implements loomRunner {
+export class EbpfRunner implements lotusRunner {
   id = "ebpf";
   displayName = "eBPF";
   languages = ["ebpf-c", "bpftrace"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (block.language === "ebpf-c") {
       return Boolean(settings.ebpfClangExecutable.trim());
     }
@@ -21,7 +21,7 @@ export class EbpfRunner implements loomRunner {
     return false;
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     if (block.language === "ebpf-c") {
       return this.runEbpfC(block, context, settings);
     }
@@ -31,12 +31,12 @@ export class EbpfRunner implements loomRunner {
     throw new Error(`Unsupported eBPF language: ${block.language}`);
   }
 
-  private async runEbpfC(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  private async runEbpfC(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const mode = readEbpfCMode(block);
-    const cflags = readListAttribute(block, "loom-ebpf-cflags", "ebpf-cflags").flatMap(splitCommandLine);
+    const cflags = readListAttribute(block, "lotus-ebpf-cflags", "ebpf-cflags").flatMap(splitCommandLine);
     const includePaths = [
       ...splitCsv(settings.ebpfIncludePaths),
-      ...readListAttribute(block, "loom-ebpf-includes", "ebpf-includes"),
+      ...readListAttribute(block, "lotus-ebpf-includes", "ebpf-includes"),
     ];
 
     return withTempSourceFile(".bpf.c", block.content, async ({ tempDir, tempFile }) => {
@@ -78,7 +78,7 @@ export class EbpfRunner implements loomRunner {
     });
   }
 
-  private async appendObjectInspection(result: loomRunResult, objectPath: string, context: loomRunContext, settings: loomPluginSettings): Promise<void> {
+  private async appendObjectInspection(result: lotusRunResult, objectPath: string, context: lotusRunContext, settings: lotusPluginSettings): Promise<void> {
     const objdump = settings.ebpfLlvmObjdumpExecutable.trim();
     if (!objdump) {
       result.warning = appendLine(result.warning, "eBPF object inspection skipped because no object inspector is configured.");
@@ -103,28 +103,28 @@ export class EbpfRunner implements loomRunner {
   }
 
   private async loadEbpfObject(
-    block: loomCodeBlock,
+    block: lotusCodeBlock,
     objectPath: string,
-    context: loomRunContext,
-    settings: loomPluginSettings,
-    compileResult: loomRunResult,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+    settings: lotusPluginSettings,
+    compileResult: lotusRunResult,
+  ): Promise<lotusRunResult> {
     if (!settings.ebpfAllowKernelLoad) {
       return {
         ...compileResult,
         success: false,
         exitCode: -1,
-        stderr: appendLine(compileResult.stderr, "eBPF kernel loading is disabled. Enable Allow eBPF kernel load in settings before using loom-ebpf-mode=load."),
+        stderr: appendLine(compileResult.stderr, "eBPF kernel loading is disabled. Enable Allow eBPF kernel load in settings before using lotus-ebpf-mode=load."),
       };
     }
 
-    const pinPath = readStringAttribute(block, "loom-ebpf-pin", "ebpf-pin");
+    const pinPath = readStringAttribute(block, "lotus-ebpf-pin", "ebpf-pin");
     if (!pinPath) {
       return {
         ...compileResult,
         success: false,
         exitCode: -1,
-        stderr: appendLine(compileResult.stderr, "loom-ebpf-mode=load requires loom-ebpf-pin=/sys/fs/bpf/<path>."),
+        stderr: appendLine(compileResult.stderr, "lotus-ebpf-mode=load requires lotus-ebpf-pin=/sys/fs/bpf/<path>."),
       };
     }
 
@@ -144,9 +144,9 @@ export class EbpfRunner implements loomRunner {
     return load;
   }
 
-  private async runBpftrace(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  private async runBpftrace(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const mode = readBpftraceMode(block);
-    const extraArgs = readListAttribute(block, "loom-bpftrace-args", "bpftrace-args").flatMap(splitCommandLine);
+    const extraArgs = readListAttribute(block, "lotus-bpftrace-args", "bpftrace-args").flatMap(splitCommandLine);
     const executable = settings.bpftraceExecutable.trim();
 
     return withTempSourceFile(".bt", block.content, async ({ tempFile }) => {
@@ -190,27 +190,27 @@ export class EbpfRunner implements loomRunner {
   }
 }
 
-function readEbpfCMode(block: loomCodeBlock): EbpfCMode {
-  const value = readStringAttribute(block, "loom-ebpf-mode", "ebpf-mode") || "compile";
+function readEbpfCMode(block: lotusCodeBlock): EbpfCMode {
+  const value = readStringAttribute(block, "lotus-ebpf-mode", "ebpf-mode") || "compile";
   if (value === "compile" || value === "load") {
     return value;
   }
   throw new Error(`Unsupported eBPF mode: ${value}. Use compile or load.`);
 }
 
-function readBpftraceMode(block: loomCodeBlock): BpftraceMode {
-  const value = readStringAttribute(block, "loom-bpftrace-mode", "bpftrace-mode") || "check";
+function readBpftraceMode(block: lotusCodeBlock): BpftraceMode {
+  const value = readStringAttribute(block, "lotus-bpftrace-mode", "bpftrace-mode") || "check";
   if (value === "check" || value === "run") {
     return value;
   }
   throw new Error(`Unsupported bpftrace mode: ${value}. Use check or run.`);
 }
 
-function readStringAttribute(block: loomCodeBlock, primary: string, fallback: string): string | undefined {
+function readStringAttribute(block: lotusCodeBlock, primary: string, fallback: string): string | undefined {
   return block.attributes[primary]?.trim() || block.attributes[fallback]?.trim() || undefined;
 }
 
-function readListAttribute(block: loomCodeBlock, primary: string, fallback: string): string[] {
+function readListAttribute(block: lotusCodeBlock, primary: string, fallback: string): string[] {
   return splitCsv(readStringAttribute(block, primary, fallback) || "");
 }
 
@@ -233,7 +233,7 @@ function appendSection(existing: string, title: string, body: string): string {
   return [existing.trim(), `${title}:\n${content}`].filter(Boolean).join("\n\n");
 }
 
-function isUnsupportedBpftraceDryRun(result: loomRunResult): boolean {
+function isUnsupportedBpftraceDryRun(result: lotusRunResult): boolean {
   const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
   return (
     output.includes("--dry-run") && (output.includes("unrecognized option") || output.includes("unknown option") || output.includes("invalid option"))

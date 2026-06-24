@@ -1,12 +1,12 @@
 import { shortHash } from "./utils/hash";
 import { findEnabledCommandLanguage, getEnabledCommandLanguages, getEnabledLanguageAliasMap } from "./languagePackages";
-import type { loomCodeBlock, loomNormalizedLanguage, loomPluginSettings, loomSourceReference } from "./types";
+import type { lotusCodeBlock, lotusNormalizedLanguage, lotusPluginSettings, lotusSourceReference } from "./types";
 
-const OUTPUT_START = /^<!--\s*loom:output:start\s+id=([a-f0-9]+)\s*-->$/i;
-const OUTPUT_END = /^<!--\s*loom:output:end\s*-->$/i;
+const OUTPUT_START = /^<!--\s*lotus:output:start\s+id=([a-f0-9]+)\s*-->$/i;
+const OUTPUT_END = /^<!--\s*lotus:output:end\s*-->$/i;
 const FENCE_START = /^(```+|~~~+)\s*([^\s`]*)?(.*)$/;
 
-export function normalizeLanguage(rawLanguage: string, settings?: loomPluginSettings): loomNormalizedLanguage | null {
+export function normalizeLanguage(rawLanguage: string, settings?: lotusPluginSettings): lotusNormalizedLanguage | null {
   const normalized = rawLanguage.trim().toLowerCase();
 
   if (!settings) {
@@ -22,7 +22,7 @@ export function normalizeLanguage(rawLanguage: string, settings?: loomPluginSett
   return aliases[normalized] ?? null;
 }
 
-export function getSupportedLanguageAliases(settings?: loomPluginSettings): string[] {
+export function getSupportedLanguageAliases(settings?: lotusPluginSettings): string[] {
   if (!settings) {
     return [];
   }
@@ -39,9 +39,9 @@ export function getSupportedLanguageAliases(settings?: loomPluginSettings): stri
   ].map((alias) => alias.toLowerCase()).filter(Boolean);
 }
 
-export function parseMarkdownCodeBlocks(filePath: string, source: string, settings?: loomPluginSettings): loomCodeBlock[] {
+export function parseMarkdownCodeBlocks(filePath: string, source: string, settings?: lotusPluginSettings): lotusCodeBlock[] {
   const lines = source.split(/\r?\n/);
-  const blocks: loomCodeBlock[] = [];
+  const blocks: lotusCodeBlock[] = [];
   let ordinal = 0;
   let insideManagedOutput = false;
 
@@ -135,19 +135,19 @@ function parseAliasList(value: string): string[] {
     .filter(Boolean);
 }
 
-function parseSourceReference(attrs: Record<string, string>): loomSourceReference | undefined {
-  const filePath = attrs["loom-file"] ?? attrs.file ?? attrs.src ?? attrs.source;
+function parseSourceReference(attrs: Record<string, string>): lotusSourceReference | undefined {
+  const filePath = attrs["lotus-file"] ?? attrs.file ?? attrs.src ?? attrs.source;
   if (!filePath) {
     return undefined;
   }
 
-  const lines = attrs["loom-lines"] ?? attrs.lines ?? attrs.line;
+  const lines = attrs["lotus-lines"] ?? attrs.lines ?? attrs.line;
   const lineRange = lines ? parseLineRange(lines) : null;
-  const symbolName = attrs["loom-symbol"] ?? attrs.symbol ?? attrs.fn ?? attrs.function;
-  const traceValue = attrs["loom-deps"] ?? attrs.deps ?? attrs.trace;
-  const callExpression = attrs["loom-call"] ?? attrs.call;
-  const callArgs = attrs["loom-args"] ?? attrs.args;
-  const printValue = attrs["loom-print"] ?? attrs.print;
+  const symbolName = attrs["lotus-symbol"] ?? attrs.symbol ?? attrs.fn ?? attrs.function;
+  const traceValue = attrs["lotus-deps"] ?? attrs.deps ?? attrs.trace;
+  const callExpression = attrs["lotus-call"] ?? attrs.call;
+  const callArgs = attrs["lotus-args"] ?? attrs.args;
+  const printValue = attrs["lotus-print"] ?? attrs.print;
   const call = callExpression != null || callArgs != null
     ? {
       expression: normalizeBooleanAttribute(callExpression) === "true" ? undefined : callExpression,
@@ -167,9 +167,9 @@ function parseSourceReference(attrs: Record<string, string>): loomSourceReferenc
 }
 
 function parseExecutionContext(attrs: Record<string, string>) {
-  const container = attrs["loom-execution"] ?? attrs.execution ?? attrs["loom-container"] ?? attrs.container;
-  const timeout = attrs["loom-timeout"] ?? attrs.timeout;
-  const workingDirectory = attrs["loom-cwd"] ?? attrs.cwd ?? attrs["working-directory"];
+  const container = attrs["lotus-execution"] ?? attrs.execution ?? attrs["lotus-container"] ?? attrs.container;
+  const timeout = attrs["lotus-timeout"] ?? attrs.timeout;
+  const workingDirectory = attrs["lotus-cwd"] ?? attrs.cwd ?? attrs["working-directory"];
   const timeoutMs = timeout ? parsePositiveInteger(timeout) : undefined;
 
   return {
@@ -216,7 +216,7 @@ function parseLineRange(value: string): { start: number; end: number } | null {
   return { start, end };
 }
 
-export function findBlockAtLine(blocks: loomCodeBlock[], line: number): loomCodeBlock | null {
+export function findBlockAtLine(blocks: lotusCodeBlock[], line: number): lotusCodeBlock | null {
   return blocks.find((block) => line >= block.startLine && line <= block.endLine) ?? null;
 }
 

@@ -4,8 +4,8 @@ exports.createCodeBlockToolbar = createCodeBlockToolbar;
 const obsidian_1 = require("obsidian");
 function createCodeBlockToolbar(blockId, isRunning, handlers) {
     const toolbar = document.createElement("div");
-    toolbar.className = "loom-code-toolbar";
-    toolbar.dataset.loomBlockId = blockId;
+    toolbar.className = "lotus-code-toolbar";
+    toolbar.dataset.lotusBlockId = blockId;
     toolbar.appendChild(createButton("Run block", isRunning ? "loader-circle" : "play", handlers.onRun, isRunning));
     toolbar.appendChild(createButton("Copy code", "copy", handlers.onCopy, false));
     toolbar.appendChild(createButton("Clear output", "trash-2", handlers.onClear, false));
@@ -14,7 +14,7 @@ function createCodeBlockToolbar(blockId, isRunning, handlers) {
 }
 function createButton(label, iconName, onClick, spinning) {
     const button = document.createElement("button");
-    button.className = `loom-toolbar-button${spinning ? " is-running" : ""}`;
+    button.className = `lotus-toolbar-button${spinning ? " is-running" : ""}`;
     button.type = "button";
     button.setAttribute("aria-label", label);
     button.addEventListener("click", (event) => {

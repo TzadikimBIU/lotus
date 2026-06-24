@@ -20,9 +20,9 @@ import { EbpfRunner } from "../src/runners/ebpf";
 import { LlvmRunner } from "../src/runners/llvm";
 import { ProofRunner } from "../src/runners/proof";
 import { CustomLanguageRunner } from "../src/runners/custom";
-import { loomRunnerRegistry } from "../src/runners/registry";
-import { loomContainerRunner } from "../src/execution/containerRunner";
-import type { loomCodeBlock, loomPluginSettings, loomResolvedExecutionContext, loomRunResult, loomSourcePreview } from "../src/types";
+import { lotusRunnerRegistry } from "../src/runners/registry";
+import { lotusContainerRunner } from "../src/execution/containerRunner";
+import type { lotusCodeBlock, lotusPluginSettings, lotusResolvedExecutionContext, lotusRunResult, lotusSourcePreview } from "../src/types";
 
 type SmokeProfile = "minimal" | "systems" | "proofs" | "ebpf" | "full";
 
@@ -56,7 +56,7 @@ const profile = readProfile(argv.profile ?? "full");
 const requirePdf = argv["require-pdf"] === "true";
 const requireAll = argv["require-all"] === "true";
 const settings = await loadSettings(vaultDir, profile);
-const registry = new loomRunnerRegistry([
+const registry = new lotusRunnerRegistry([
   new PythonRunner(),
   new NodeRunner(),
   new OcamlRunner(),
@@ -68,7 +68,7 @@ const registry = new loomRunnerRegistry([
   new ProofRunner(),
   new CustomLanguageRunner(),
 ]);
-const containerRunner = new loomContainerRunner({
+const containerRunner = new lotusContainerRunner({
   vault: {
     adapter: {
       basePath: vaultDir,
@@ -77,7 +77,7 @@ const containerRunner = new loomContainerRunner({
   metadataCache: {
     getFileCache: () => ({ frontmatter: {} }),
   },
-} as never, ".obsidian/plugins/loom");
+} as never, ".obsidian/plugins/lotus");
 const notes = await readNotes(vaultDir);
 const results: SmokeBlockResult[] = [];
 
@@ -118,16 +118,16 @@ if (requireAll && skipped.length) {
   process.exitCode = 1;
 }
 
-async function runBlock(note: NoteFile, block: loomCodeBlock): Promise<SmokeBlockResult> {
+async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlockResult> {
   const directives = readSmokeDirectives(block);
-  const name = block.attributes["loom-smoke-name"] || `${note.path}#${block.ordinal}`;
+  const name = block.attributes["lotus-smoke-name"] || `${note.path}#${block.ordinal}`;
   if (directives.has("skip")) {
     return { profile, note: note.path, ordinal: block.ordinal, language: block.language, status: "skipped", name, reason: "marked skip" };
   }
 
   const context = resolveCliExecutionContext(note, block, settings);
   const controller = new AbortController();
-  let sourcePreview: loomSourcePreview | undefined;
+  let sourcePreview: lotusSourcePreview | undefined;
   let executableBlock = block;
   try {
     const resolved = await resolveExecutableBlock(note, block);
@@ -187,12 +187,12 @@ async function runBlock(note: NoteFile, block: loomCodeBlock): Promise<SmokeBloc
 
 function classifyResult(
   note: NoteFile,
-  block: loomCodeBlock,
+  block: lotusCodeBlock,
   name: string,
   directives: Set<string>,
   runnerName: string,
-  result: loomRunResult,
-  sourcePreview: loomSourcePreview | undefined,
+  result: lotusRunResult,
+  sourcePreview: lotusSourcePreview | undefined,
 ): SmokeBlockResult {
   const base = {
     profile,
@@ -230,23 +230,23 @@ function classifyResult(
   return { ...base, status: "passed" };
 }
 
-function checkAssertions(block: loomCodeBlock, result: loomRunResult): string | null {
-  const exactStdout = block.attributes["loom-smoke-stdout"];
+function checkAssertions(block: lotusCodeBlock, result: lotusRunResult): string | null {
+  const exactStdout = block.attributes["lotus-smoke-stdout"];
   if (exactStdout != null && result.stdout.trim() !== exactStdout) {
     return `stdout mismatch: expected ${JSON.stringify(exactStdout)}, got ${JSON.stringify(result.stdout.trim())}`;
   }
-  const stdoutContains = block.attributes["loom-smoke-stdout-contains"];
+  const stdoutContains = block.attributes["lotus-smoke-stdout-contains"];
   if (stdoutContains != null && !result.stdout.includes(stdoutContains)) {
     return `stdout did not contain ${JSON.stringify(stdoutContains)}`;
   }
-  const stderrContains = block.attributes["loom-smoke-stderr-contains"];
+  const stderrContains = block.attributes["lotus-smoke-stderr-contains"];
   if (stderrContains != null && !result.stderr.includes(stderrContains)) {
     return `stderr did not contain ${JSON.stringify(stderrContains)}`;
   }
   return null;
 }
 
-async function resolveExecutableBlock(note: NoteFile, block: loomCodeBlock): Promise<{ block: loomCodeBlock; sourcePreview?: loomSourcePreview }> {
+async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusSourcePreview }> {
   if (!block.sourceReference) {
     return { block };
   }
@@ -283,8 +283,8 @@ async function resolveExecutableBlock(note: NoteFile, block: loomCodeBlock): Pro
   };
 }
 
-async function loadSettings(vaultPath: string): Promise<loomPluginSettings> {
-  const dataPath = join(vaultPath, ".obsidian", "plugins", "loom", "data.json");
+async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
+  const dataPath = join(vaultPath, ".obsidian", "plugins", "lotus", "data.json");
   let saved = {};
   try {
     saved = JSON.parse(await fsReadFile(dataPath, "utf8"));
@@ -303,7 +303,7 @@ async function loadSettings(vaultPath: string): Promise<loomPluginSettings> {
   return merged;
 }
 
-function applySmokeProfile(settings: loomPluginSettings, selectedProfile: SmokeProfile): void {
+function applySmokeProfile(settings: lotusPluginSettings, selectedProfile: SmokeProfile): void {
   const config = smokeProfileConfig(selectedProfile);
   if (!config) {
     return;
@@ -312,7 +312,7 @@ function applySmokeProfile(settings: loomPluginSettings, selectedProfile: SmokeP
   settings.enabledLanguages = config.enabledLanguages;
 }
 
-function smokeProfileConfig(selectedProfile: SmokeProfile): Pick<loomPluginSettings, "enabledLanguagePacks" | "enabledLanguages"> | null {
+function smokeProfileConfig(selectedProfile: SmokeProfile): Pick<lotusPluginSettings, "enabledLanguagePacks" | "enabledLanguages"> | null {
   switch (selectedProfile) {
     case "minimal":
       return {
@@ -339,10 +339,10 @@ function smokeProfileConfig(selectedProfile: SmokeProfile): Pick<loomPluginSetti
   }
 }
 
-function resolveCliExecutionContext(note: NoteFile, block: loomCodeBlock, pluginSettings: loomPluginSettings): loomResolvedExecutionContext {
-  const noteContainer = note.frontmatter["loom-execution"] ?? note.frontmatter["loom-container"];
-  const noteCwd = note.frontmatter["loom-cwd"] ?? note.frontmatter["loom-working-directory"];
-  const noteTimeout = parsePositiveInteger(note.frontmatter["loom-timeout"]);
+function resolveCliExecutionContext(note: NoteFile, block: lotusCodeBlock, pluginSettings: lotusPluginSettings): lotusResolvedExecutionContext {
+  const noteContainer = note.frontmatter["lotus-execution"] ?? note.frontmatter["lotus-container"];
+  const noteCwd = note.frontmatter["lotus-cwd"] ?? note.frontmatter["lotus-working-directory"];
+  const noteTimeout = parsePositiveInteger(note.frontmatter["lotus-timeout"]);
   const blockCwd = block.executionContext.workingDirectory;
   const blockTimeout = block.executionContext.timeoutMs;
   const blockContainer = block.executionContext.disableContainer ? undefined : block.executionContext.containerGroup;
@@ -385,7 +385,7 @@ async function listMarkdownFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
-    if (entry.name === ".obsidian" || entry.name === ".loom") {
+    if (entry.name === ".obsidian" || entry.name === ".lotus") {
       continue;
     }
     const absolutePath = join(dir, entry.name);
@@ -468,13 +468,13 @@ function resolveReferencedVaultPath(notePath: string, referencePath: string): st
   return normalizeVaultPath(baseDir === "." ? trimmed : `${baseDir}/${trimmed}`);
 }
 
-async function resolveBlockStdin(note: NoteFile, block: loomCodeBlock): Promise<string | undefined> {
-  const inline = block.attributes["loom-stdin"] ?? block.attributes.stdin;
+async function resolveBlockStdin(note: NoteFile, block: lotusCodeBlock): Promise<string | undefined> {
+  const inline = block.attributes["lotus-stdin"] ?? block.attributes.stdin;
   if (inline != null) {
     return decodeEscapedAttribute(inline);
   }
 
-  const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+  const stdinFile = block.attributes["lotus-stdin-file"] ?? block.attributes["stdin-file"];
   if (!stdinFile?.trim()) {
     return undefined;
   }
@@ -511,15 +511,15 @@ function ascendVaultPath(pathValue: string, levels: number): string {
   return current;
 }
 
-function readSmokeDirectives(block: loomCodeBlock): Set<string> {
-  return new Set((block.attributes["loom-smoke"] || "").split(",").map((value) => value.trim()).filter(Boolean));
+function readSmokeDirectives(block: lotusCodeBlock): Set<string> {
+  return new Set((block.attributes["lotus-smoke"] || "").split(",").map((value) => value.trim()).filter(Boolean));
 }
 
-function shouldRunForProfile(block: loomCodeBlock, selectedProfile: SmokeProfile): boolean {
+function shouldRunForProfile(block: lotusCodeBlock, selectedProfile: SmokeProfile): boolean {
   if (selectedProfile === "full") {
     return true;
   }
-  const profiles = splitAttributeList(block.attributes["loom-smoke-profiles"]);
+  const profiles = splitAttributeList(block.attributes["lotus-smoke-profiles"]);
   return profiles.includes(selectedProfile);
 }
 
@@ -530,7 +530,7 @@ function splitAttributeList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function isMissingExecutable(result: loomRunResult): boolean {
+function isMissingExecutable(result: lotusRunResult): boolean {
   return /Executable not found:/i.test(result.stderr);
 }
 
@@ -556,7 +556,7 @@ function summarize(blocks: SmokeBlockResult[]): Record<string, number> {
 }
 
 function renderMarkdownReport(blocks: SmokeBlockResult[]): string {
-  const lines = ["# Loom Smoke Report", "", `Profile: ${profile}`, `Generated: ${new Date().toISOString()}`, "", "| Status | Note | Lang | Name |", "| --- | --- | --- | --- |"];
+  const lines = ["# Lotus Smoke Report", "", `Profile: ${profile}`, `Generated: ${new Date().toISOString()}`, "", "| Status | Note | Lang | Name |", "| --- | --- | --- | --- |"];
   for (const block of blocks) {
     lines.push(`| ${block.status} | ${block.note}#${block.ordinal} | ${block.language} | ${block.name} |`);
     if (block.reason) {
@@ -571,7 +571,7 @@ function renderHtmlReport(blocks: SmokeBlockResult[]): string {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Loom Smoke Report</title>
+  <title>Lotus Smoke Report</title>
   <style>
     body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 32px; color: #1f2937; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
@@ -583,7 +583,7 @@ function renderHtmlReport(blocks: SmokeBlockResult[]): string {
   </style>
 </head>
 <body>
-  <h1>Loom Smoke Report</h1>
+  <h1>Lotus Smoke Report</h1>
   <p>Profile: ${escapeHtml(profile)}</p>
   <p>${escapeHtml(new Date().toISOString())}</p>
   <table>
@@ -616,7 +616,7 @@ function renderHtmlBlock(block: SmokeBlockResult): string {
 }
 
 async function renderPdfIfPossible(htmlPath: string, pdfPath: string, mustRender: boolean): Promise<void> {
-  const configuredChrome = process.env.LOOM_CHROME_PATH?.trim();
+  const configuredChrome = process.env.LOTUS_CHROME_PATH?.trim();
   if (configuredChrome) {
     if (await renderPdfWithCommand(configuredChrome, ["--headless", "--disable-gpu", "--no-sandbox", `--print-to-pdf=${pdfPath}`, pathToFileURL(htmlPath).href], pdfPath, mustRender)) {
       return;

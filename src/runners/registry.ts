@@ -1,10 +1,10 @@
-import type { loomCodeBlock, loomPluginSettings, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunner } from "../types";
 import { findEnabledCommandLanguage, isLanguageEnabled } from "../languagePackages";
 
-export class loomRunnerRegistry {
-  constructor(private readonly runners: loomRunner[]) {}
+export class lotusRunnerRegistry {
+  constructor(private readonly runners: lotusRunner[]) {}
 
-  getRunnerForBlock(block: loomCodeBlock, settings: loomPluginSettings): loomRunner | null {
+  getRunnerForBlock(block: lotusCodeBlock, settings: lotusPluginSettings): lotusRunner | null {
     if (!this.isBlockLanguageEnabled(block, settings)) {
       return null;
     }
@@ -15,7 +15,7 @@ export class loomRunnerRegistry {
     return [...new Set(this.runners.flatMap((runner) => runner.languages))];
   }
 
-  private isBlockLanguageEnabled(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  private isBlockLanguageEnabled(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (isLanguageEnabled(block.language, settings)) {
       return true;
     }

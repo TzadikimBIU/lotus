@@ -49,8 +49,8 @@ try {
   const loaded = require(pluginPath);
   const PluginClass = loaded.default ?? loaded;
   const instance = new PluginClass(fakeApp(), {
-    id: "loom",
-    name: "loom",
+    id: "lotus",
+    name: "lotus",
     dir: pluginDir,
     version: "0.1.0",
   });

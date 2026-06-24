@@ -15,8 +15,8 @@ const LANGUAGE_ALIASES = {
     ocaml: "ocaml",
     ml: "ocaml",
 };
-const OUTPUT_START = /^<!--\s*loom:output:start\s+id=([a-f0-9]+)\s*-->$/i;
-const OUTPUT_END = /^<!--\s*loom:output:end\s*-->$/i;
+const OUTPUT_START = /^<!--\s*lotus:output:start\s+id=([a-f0-9]+)\s*-->$/i;
+const OUTPUT_END = /^<!--\s*lotus:output:end\s*-->$/i;
 const FENCE_START = /^(```+|~~~+)\s*([^\s`]*)?.*$/;
 function normalizeLanguage(rawLanguage) {
     const normalized = rawLanguage.trim().toLowerCase();

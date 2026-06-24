@@ -1,5 +1,5 @@
 import { Notice, type App, type TFile } from "obsidian";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 const OBSIDIAN_CONTEXT_WARNING = "No but seriously, you are risking your life";
 
@@ -22,18 +22,18 @@ interface ObsidianContextNoteHelper {
   setFrontmatter(key: string, value: unknown): Promise<void>;
 }
 
-export class ObsidianContextRunner implements loomRunner {
+export class ObsidianContextRunner implements lotusRunner {
   id = "obsidian-js";
   displayName = "Obsidian JavaScript";
   languages = ["obsidian-js"] as const;
 
   constructor(private readonly host: ObsidianContextRunnerHost) {}
 
-  canRun(block: loomCodeBlock, _settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, _settings: lotusPluginSettings): boolean {
     return block.language === "obsidian-js";
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, _settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, _settings: lotusPluginSettings): Promise<lotusRunResult> {
     const startedAt = new Date();
     const stdout: string[] = [];
     const stderr: string[] = [];

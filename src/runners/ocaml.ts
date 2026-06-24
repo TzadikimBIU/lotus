@@ -1,17 +1,17 @@
 import { join } from "path";
 import { runProcess, runTempFileProcess, withTempSourceFile } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class OcamlRunner implements loomRunner {
+export class OcamlRunner implements lotusRunner {
   id = "ocaml";
   displayName = "OCaml";
   languages = ["ocaml"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     return block.language === "ocaml" && Boolean(settings.ocamlExecutable.trim());
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const mode = settings.ocamlMode;
     const executable = settings.ocamlExecutable.trim();
 

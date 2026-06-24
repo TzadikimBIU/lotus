@@ -1,11 +1,11 @@
 import { setIcon } from "obsidian";
-import type { loomStoredOutput } from "../types";
+import type { lotusStoredOutput } from "../types";
 
-interface loomOutputPanelOptions {
+interface lotusOutputPanelOptions {
   defaultVisibleLines: number;
 }
 
-function getStatusKind(output: loomStoredOutput): "success" | "warning" | "failure" {
+function getStatusKind(output: lotusStoredOutput): "success" | "warning" | "failure" {
   if (output.result.success) {
     return output.result.stderr.trim() || output.result.warning?.trim() ? "warning" : "success";
   }
@@ -13,31 +13,31 @@ function getStatusKind(output: loomStoredOutput): "success" | "warning" | "failu
   return "failure";
 }
 
-export function createOutputPanel(output: loomStoredOutput, options: loomOutputPanelOptions): HTMLDivElement {
+export function createOutputPanel(output: lotusStoredOutput, options: lotusOutputPanelOptions): HTMLDivElement {
   const panel = document.createElement("div");
-  panel.className = `loom-output-panel is-${getStatusKind(output)}${output.visible ? "" : " is-hidden"}`;
-  panel.dataset.loomBlockId = output.blockId;
+  panel.className = `lotus-output-panel is-${getStatusKind(output)}${output.visible ? "" : " is-hidden"}`;
+  panel.dataset.lotusBlockId = output.blockId;
   renderOutputPanel(panel, output, options);
   return panel;
 }
 
-export function renderOutputPanel(panel: HTMLElement, output: loomStoredOutput, options: loomOutputPanelOptions): void {
+export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput, options: lotusOutputPanelOptions): void {
   const kind = getStatusKind(output);
-  panel.className = `loom-output-panel is-${kind}${output.visible ? "" : " is-hidden"}${output.collapsed ? " is-collapsed" : ""}`;
+  panel.className = `lotus-output-panel is-${kind}${output.visible ? "" : " is-hidden"}${output.collapsed ? " is-collapsed" : ""}`;
   panel.empty();
   const visibleLines = resolveVisibleLines(output, options.defaultVisibleLines);
 
-  const header = panel.createDiv({ cls: "loom-output-header" });
-  const badge = header.createDiv({ cls: "loom-output-badge" });
+  const header = panel.createDiv({ cls: "lotus-output-header" });
+  const badge = header.createDiv({ cls: "lotus-output-badge" });
   setIcon(badge, kind === "success" ? "check-circle-2" : kind === "warning" ? "alert-triangle" : "x-circle");
 
-  const title = header.createDiv({ cls: "loom-output-title" });
+  const title = header.createDiv({ cls: "lotus-output-title" });
   title.setText(`${output.result.runnerName} · exit ${output.result.exitCode ?? "?"}`);
 
-  const meta = header.createDiv({ cls: "loom-output-meta" });
+  const meta = header.createDiv({ cls: "lotus-output-meta" });
   meta.setText(`${output.result.durationMs} ms · ${new Date(output.result.finishedAt).toLocaleTimeString()}`);
 
-  const body = panel.createDiv({ cls: "loom-output-body" });
+  const body = panel.createDiv({ cls: "lotus-output-body" });
   if (output.result.stdout.trim()) {
     createStream(body, "Stdout", output.result.stdout, visibleLines);
   }
@@ -51,32 +51,32 @@ export function renderOutputPanel(panel: HTMLElement, output: loomStoredOutput, 
     createSourcePreview(body, output.sourcePreview);
   }
   if (!output.result.stdout.trim() && !output.result.warning?.trim() && !output.result.stderr.trim() && !output.sourcePreview?.content.trim()) {
-    const empty = body.createDiv({ cls: "loom-output-empty" });
+    const empty = body.createDiv({ cls: "lotus-output-empty" });
     empty.setText("No output");
   }
 }
 
 function createStream(container: HTMLElement, label: string, content: string, visibleLines: number): void {
-  const section = container.createDiv({ cls: "loom-output-stream" });
+  const section = container.createDiv({ cls: "lotus-output-stream" });
   const lineCount = countLines(content);
-  section.createDiv({ cls: "loom-output-stream-label", text: formatStreamLabel(label, lineCount, visibleLines) });
-  const pre = section.createEl("pre", { cls: "loom-output-pre", text: content });
+  section.createDiv({ cls: "lotus-output-stream-label", text: formatStreamLabel(label, lineCount, visibleLines) });
+  const pre = section.createEl("pre", { cls: "lotus-output-pre", text: content });
   if (visibleLines > 0 && lineCount > visibleLines) {
     pre.addClass("is-scroll-limited");
-    pre.style.setProperty("--loom-output-visible-lines", String(visibleLines));
+    pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
   }
 }
 
-function createSourcePreview(container: HTMLElement, preview: NonNullable<loomStoredOutput["sourcePreview"]>): void {
-  const details = container.createEl("details", { cls: "loom-source-preview" });
+function createSourcePreview(container: HTMLElement, preview: NonNullable<lotusStoredOutput["sourcePreview"]>): void {
+  const details = container.createEl("details", { cls: "lotus-source-preview" });
   details.open = preview.expanded;
-  const summary = details.createEl("summary", { cls: "loom-source-preview-summary" });
+  const summary = details.createEl("summary", { cls: "lotus-source-preview-summary" });
   summary.createSpan({ text: "Extracted source" });
-  summary.createSpan({ cls: "loom-source-preview-meta", text: formatSourcePreviewMeta(preview) });
-  details.createEl("pre", { cls: "loom-output-pre loom-source-preview-pre", text: preview.content });
+  summary.createSpan({ cls: "lotus-source-preview-meta", text: formatSourcePreviewMeta(preview) });
+  details.createEl("pre", { cls: "lotus-output-pre lotus-source-preview-pre", text: preview.content });
 }
 
-function formatSourcePreviewMeta(preview: NonNullable<loomStoredOutput["sourcePreview"]>): string {
+function formatSourcePreviewMeta(preview: NonNullable<lotusStoredOutput["sourcePreview"]>): string {
   const capability = preview.capability;
   if (!capability || !preview.showCapabilityMetadata) {
     return `${preview.language} · ${preview.description}`;
@@ -90,8 +90,8 @@ function formatSourcePreviewMeta(preview: NonNullable<loomStoredOutput["sourcePr
   ].join(" · ");
 }
 
-function resolveVisibleLines(output: loomStoredOutput, defaultVisibleLines: number): number {
-  const override = output.block.attributes["loom-output-lines"] ?? output.block.attributes["output-lines"];
+function resolveVisibleLines(output: lotusStoredOutput, defaultVisibleLines: number): number {
+  const override = output.block.attributes["lotus-output-lines"] ?? output.block.attributes["output-lines"];
   if (override != null) {
     return normalizeVisibleLines(Number.parseInt(override.trim(), 10));
   }
@@ -118,14 +118,14 @@ function formatStreamLabel(label: string, lineCount: number, visibleLines: numbe
 
 export function createRunningPanel(): HTMLDivElement {
   const panel = document.createElement("div");
-  panel.className = "loom-output-panel is-running";
+  panel.className = "lotus-output-panel is-running";
 
-  const header = panel.createDiv({ cls: "loom-output-header" });
-  const spinner = header.createDiv({ cls: "loom-spinner" });
+  const header = panel.createDiv({ cls: "lotus-output-header" });
+  const spinner = header.createDiv({ cls: "lotus-spinner" });
   setIcon(spinner, "loader-circle");
-  const title = header.createDiv({ cls: "loom-output-title" });
+  const title = header.createDiv({ cls: "lotus-output-title" });
   title.setText("Running");
-  const meta = header.createDiv({ cls: "loom-output-meta" });
+  const meta = header.createDiv({ cls: "lotus-output-meta" });
   meta.setText("Executing...");
   spinner.setAttribute("aria-hidden", "true");
 

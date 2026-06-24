@@ -7,24 +7,24 @@ import { isCompileContainerGroupAllowed, isCompileContainerRuntimeAllowed, isCom
 import { runProcess } from "./processRunner";
 import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult } from "../types";
 
-type loomContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
-type loomContainerElevationMode = "default" | "root";
+type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
+type lotusContainerElevationMode = "default" | "root";
 
-interface loomContainerLanguageConfig {
+interface lotusContainerLanguageConfig {
   command?: string;
   extension?: string;
   useDefault?: boolean;
 }
 
-interface loomCommandExpectation {
+interface lotusCommandExpectation {
   command: string;
   positiveResponse?: string;
   negativeResponse?: string;
 }
 
-interface loomQemuConfig {
+interface lotusQemuConfig {
   sshTarget: string;
   remoteWorkspace: string;
   sshExecutable?: string;
@@ -36,11 +36,11 @@ interface loomQemuConfig {
   startCommand?: string;
   buildCommand?: string;
   teardownCommand?: string;
-  healthCheck?: loomCommandExpectation;
-  manager?: loomQemuManagerConfig;
+  healthCheck?: lotusCommandExpectation;
+  manager?: lotusQemuManagerConfig;
 }
 
-interface loomRemoteConfig {
+interface lotusRemoteConfig {
   target: string;
   workspace: string;
   sshExecutable?: string;
@@ -51,10 +51,10 @@ interface loomRemoteConfig {
   cleanupRemoteFile?: boolean;
   mkdirCommand?: string;
   cleanupCommand?: string;
-  healthCheck?: loomCommandExpectation;
+  healthCheck?: lotusCommandExpectation;
 }
 
-interface loomQemuManagerConfig {
+interface lotusQemuManagerConfig {
   enabled: boolean;
   executable?: string;
   args?: string;
@@ -71,39 +71,39 @@ interface loomQemuManagerConfig {
   persist?: boolean;
 }
 
-interface loomCustomRuntimeConfig {
+interface lotusCustomRuntimeConfig {
   executable: string;
   args?: string;
   build?: string;
   commandStructure?: string;
   teardown?: string;
-  healthCheck?: loomCommandExpectation;
+  healthCheck?: lotusCommandExpectation;
 }
 
-interface loomWslConfig {
+interface lotusWslConfig {
   interactive?: boolean;
 }
 
-interface loomContainerElevationConfig {
-  mode: loomContainerElevationMode;
+interface lotusContainerElevationConfig {
+  mode: lotusContainerElevationMode;
   commandPrefix?: string;
 }
 
-interface loomContainerConfig {
-  runtime: loomContainerRuntime;
+interface lotusContainerConfig {
+  runtime: lotusContainerRuntime;
   executable?: string;
   image?: string;
-  elevation: loomContainerElevationConfig;
-  wsl?: loomWslConfig;
-  healthCheck?: loomCommandExpectation;
-  outputFilters?: loomOutputFilterConfig;
-  ssh?: loomRemoteConfig;
-  qemu?: loomQemuConfig;
-  custom?: loomCustomRuntimeConfig;
-  languages: Record<string, loomContainerLanguageConfig>;
+  elevation: lotusContainerElevationConfig;
+  wsl?: lotusWslConfig;
+  healthCheck?: lotusCommandExpectation;
+  outputFilters?: lotusOutputFilterConfig;
+  ssh?: lotusRemoteConfig;
+  qemu?: lotusQemuConfig;
+  custom?: lotusCustomRuntimeConfig;
+  languages: Record<string, lotusContainerLanguageConfig>;
 }
 
-interface loomOutputFilterConfig {
+interface lotusOutputFilterConfig {
   stripAnsi?: boolean;
   stdoutStart?: RegExp;
   stdoutEnd?: RegExp;
@@ -113,11 +113,11 @@ interface loomOutputFilterConfig {
   stripStderr?: RegExp[];
 }
 
-interface loomCustomRuntimeRequest {
+interface lotusCustomRuntimeRequest {
   action: "build" | "run" | "teardown";
   groupName: string;
   groupPath: string;
-  runtime: loomContainerRuntime;
+  runtime: lotusContainerRuntime;
   image?: string;
   build?: string;
   commandStructure?: string;
@@ -131,11 +131,11 @@ interface loomCustomRuntimeRequest {
   timeoutMs: number;
   config: {
     executable?: string;
-    custom?: loomCustomRuntimeConfig;
-    ssh?: loomRemoteConfig;
-    qemu?: loomQemuConfig;
-    healthCheck?: loomCommandExpectation;
-    elevation?: loomContainerElevationConfig;
+    custom?: lotusCustomRuntimeConfig;
+    ssh?: lotusRemoteConfig;
+    qemu?: lotusQemuConfig;
+    healthCheck?: lotusCommandExpectation;
+    elevation?: lotusContainerElevationConfig;
     outputFilters?: {
       stripAnsi?: boolean;
       stdoutStart?: string;
@@ -148,7 +148,7 @@ interface loomCustomRuntimeRequest {
   };
 }
 
-export class loomContainerRunner {
+export class lotusContainerRunner {
   private readonly builtImages = new Set<string>();
 
   constructor(
@@ -158,7 +158,7 @@ export class loomContainerRunner {
 
   getContainerGroupName(file: TFile): string | null {
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    const value = frontmatter?.["loom-execution"] ?? frontmatter?.["loom-container"];
+    const value = frontmatter?.["lotus-execution"] ?? frontmatter?.["lotus-container"];
     return typeof value === "string" && value.trim() ? value.trim() : null;
   }
 
@@ -219,16 +219,16 @@ export class loomContainerRunner {
     );
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings, groupName: string): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings, groupName: string): Promise<lotusRunResult> {
     if (!isCompileContainerGroupAllowed(groupName)) {
-      throw new Error(`Container group ${groupName} is not included in this Loom build.`);
+      throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
     }
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
     const configLang = config.languages[block.language] ?? config.languages[block.languageAlias];
 
     let isFallback = false;
-    let language: loomContainerLanguageConfig | null = null;
+    let language: lotusContainerLanguageConfig | null = null;
 
     if (configLang) {
       if (configLang.useDefault) {
@@ -252,7 +252,7 @@ export class loomContainerRunner {
 
     try {
       await writeFile(tempFilePath, block.content, "utf8");
-      let result: loomRunResult;
+      let result: lotusRunResult;
       switch (config.runtime) {
         case "docker":
         case "podman":
@@ -277,11 +277,11 @@ export class loomContainerRunner {
       this.applyOutputFilters(result, config.outputFilters);
 
       if (isFallback) {
-        const fallbackMsg = `[Loom] Language '${block.language}' was not declared in container group. Running using default command: ${language.command}`;
+        const fallbackMsg = `[Lotus] Language '${block.language}' was not declared in container group. Running using default command: ${language.command}`;
         result.warning = result.warning ? `${result.warning}\n${fallbackMsg}` : fallbackMsg;
       }
       if (config.elevation.mode === "root") {
-        const elevationMsg = `[Loom] Container elevation: root${config.elevation.commandPrefix ? ` via ${config.elevation.commandPrefix}` : ""}.`;
+        const elevationMsg = `[Lotus] Container elevation: root${config.elevation.commandPrefix ? ` via ${config.elevation.commandPrefix}` : ""}.`;
         result.warning = result.warning ? `${result.warning}\n${elevationMsg}` : elevationMsg;
       }
       return result;
@@ -290,9 +290,9 @@ export class loomContainerRunner {
     }
   }
 
-  async buildGroup(groupName: string, timeoutMs: number, signal: AbortSignal): Promise<loomRunResult> {
+  async buildGroup(groupName: string, timeoutMs: number, signal: AbortSignal): Promise<lotusRunResult> {
     if (!isCompileContainerGroupAllowed(groupName)) {
-      throw new Error(`Container group ${groupName} is not included in this Loom build.`);
+      throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
     }
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
@@ -324,12 +324,12 @@ export class loomContainerRunner {
   private async runOciContainer(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
-    context: loomRunContext,
-    settings: loomPluginSettings,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+    settings: lotusPluginSettings,
+  ): Promise<lotusRunResult> {
     const image = await this.resolveImage(groupName, groupPath, config, context, settings);
     const workspacePath = "/workspace";
     const containerFile = posixPath.join(workspacePath, tempFileName);
@@ -351,7 +351,7 @@ export class loomContainerRunner {
         "-v",
         `${groupPath}:${workspacePath}`,
         ...(useContextWorkingDirectory
-          ? ["-v", `${workingDirectory}:/loom-cwd`, "-w", "/loom-cwd"]
+          ? ["-v", `${workingDirectory}:/lotus-cwd`, "-w", "/lotus-cwd"]
           : ["-w", workspacePath]),
         ...this.ociElevationArgs(config),
         image,
@@ -367,12 +367,12 @@ export class loomContainerRunner {
   private async runQemu(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
     tempFilePath: string,
-    context: loomRunContext,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
     const qemu = this.requireQemuConfig(config);
     await this.runOptionalCommand(qemu.startCommand, groupPath, context.timeoutMs, context.signal, `container:${groupName}:qemu:start`, `QEMU ${groupName} start`);
     await this.ensureManagedQemu(groupName, groupPath, qemu, context.timeoutMs, context.signal);
@@ -400,12 +400,12 @@ export class loomContainerRunner {
   private async runSshRemote(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
     tempFilePath: string,
-    context: loomRunContext,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
     return this.runRemoteLanguage(
       groupName,
       groupPath,
@@ -425,19 +425,19 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    config: loomContainerConfig,
-    remote: loomRemoteConfig,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    remote: lotusRemoteConfig,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
     tempFilePath: string,
-    context: loomRunContext,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
     const remoteFile = posixPath.join(remote.workspace, tempFileName);
     await this.ensureRemoteWorkspace(groupName, groupPath, runtimeId, runnerName, remote, context.timeoutMs, context.signal);
     await this.runRemoteHealthCheck(groupName, groupPath, runtimeId, runnerName, remote, context.timeoutMs, context.signal);
     await this.uploadRemoteFile(groupName, groupPath, runtimeId, runnerName, remote, tempFilePath, remoteFile, context.timeoutMs, context.signal);
 
-    let result: loomRunResult | undefined;
+    let result: lotusRunResult | undefined;
     try {
       const remoteCommand = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", shellQuote(remoteFile)));
       if (!remoteCommand.trim()) {
@@ -470,13 +470,13 @@ export class loomContainerRunner {
   private async runCustom(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    block: loomCodeBlock,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    block: lotusCodeBlock,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
     tempFilePath: string,
-    context: loomRunContext,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
     const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
     const result = await this.runCustomWrapper(
       groupName,
@@ -521,11 +521,11 @@ export class loomContainerRunner {
   private async runWslContainer(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    language: loomContainerLanguageConfig,
+    config: lotusContainerConfig,
+    language: lotusContainerLanguageConfig,
     tempFileName: string,
-    context: loomRunContext,
-  ): Promise<loomRunResult> {
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
     const wslGroupPath = this.translateToWslPath(groupPath);
     const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
     if (!command.trim()) {
@@ -550,7 +550,7 @@ export class loomContainerRunner {
     });
   }
 
-  private remoteConfigFromQemu(qemu: loomQemuConfig): loomRemoteConfig {
+  private remoteConfigFromQemu(qemu: lotusQemuConfig): lotusRemoteConfig {
     return {
       target: qemu.sshTarget,
       workspace: qemu.remoteWorkspace,
@@ -568,7 +568,7 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    remote: loomRemoteConfig,
+    remote: lotusRemoteConfig,
     timeoutMs: number,
     signal: AbortSignal,
   ): Promise<void> {
@@ -584,7 +584,7 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    remote: loomRemoteConfig,
+    remote: lotusRemoteConfig,
     timeoutMs: number,
     signal: AbortSignal,
   ): Promise<void> {
@@ -609,7 +609,7 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    remote: loomRemoteConfig,
+    remote: lotusRemoteConfig,
     localFile: string,
     remoteFile: string,
     timeoutMs: number,
@@ -639,11 +639,11 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    remote: loomRemoteConfig,
+    remote: lotusRemoteConfig,
     remoteFile: string,
     timeoutMs: number,
     signal: AbortSignal,
-  ): Promise<loomRunResult> {
+  ): Promise<lotusRunResult> {
     const command = (remote.cleanupCommand || "rm -f {file}").replaceAll("{file}", shellQuote(remoteFile));
     return this.runRemoteCommand(groupName, groupPath, runtimeId, `${runnerName} cleanup`, remote, command, timeoutMs, signal, undefined, "cleanup");
   }
@@ -653,13 +653,13 @@ export class loomContainerRunner {
     groupPath: string,
     runtimeId: "ssh" | "qemu",
     runnerName: string,
-    remote: loomRemoteConfig,
+    remote: lotusRemoteConfig,
     command: string,
     timeoutMs: number,
     signal: AbortSignal,
     stdin: string | undefined,
     action: string,
-  ): Promise<loomRunResult> {
+  ): Promise<lotusRunResult> {
     return runProcess({
       runnerId: `container:${groupName}:${runtimeId}:${action}`,
       runnerName,
@@ -677,7 +677,7 @@ export class loomContainerRunner {
     });
   }
 
-  private remoteProcessEnv(remote: loomRemoteConfig): NodeJS.ProcessEnv | undefined {
+  private remoteProcessEnv(remote: lotusRemoteConfig): NodeJS.ProcessEnv | undefined {
     return remote.sshAuthSock ? { SSH_AUTH_SOCK: remote.sshAuthSock } : undefined;
   }
 
@@ -697,9 +697,9 @@ export class loomContainerRunner {
   private async resolveImage(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    context: loomRunContext,
-    settings: loomPluginSettings,
+    config: lotusContainerConfig,
+    context: lotusRunContext,
+    settings: lotusPluginSettings,
   ): Promise<string> {
     const dockerfile = join(groupPath, "Dockerfile");
     if (!existsSync(dockerfile)) {
@@ -724,10 +724,10 @@ export class loomContainerRunner {
   private async buildImage(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
+    config: lotusContainerConfig,
     timeoutMs: number,
     signal: AbortSignal,
-  ): Promise<loomRunResult> {
+  ): Promise<lotusRunResult> {
     const image = this.imageNameForGroup(groupName);
     if (!existsSync(join(groupPath, "Dockerfile"))) {
       return this.createSyntheticResult(
@@ -747,7 +747,7 @@ export class loomContainerRunner {
     });
   }
 
-  private async buildQemu(groupName: string, groupPath: string, config: loomContainerConfig, timeoutMs: number, signal: AbortSignal): Promise<loomRunResult> {
+  private async buildQemu(groupName: string, groupPath: string, config: lotusContainerConfig, timeoutMs: number, signal: AbortSignal): Promise<lotusRunResult> {
     const qemu = this.requireQemuConfig(config);
     if (!qemu.buildCommand?.trim()) {
       return this.createSyntheticResult(`container:${groupName}:qemu:build`, `QEMU ${groupName} build`, "No QEMU build command configured.\n");
@@ -755,7 +755,7 @@ export class loomContainerRunner {
     return this.runCommandLine(qemu.buildCommand, groupPath, timeoutMs, signal, `container:${groupName}:qemu:build`, `QEMU ${groupName} build`);
   }
 
-  private async readConfig(groupPath: string): Promise<loomContainerConfig> {
+  private async readConfig(groupPath: string): Promise<lotusContainerConfig> {
     const configPath = join(groupPath, "config.json");
     let raw: unknown;
     try {
@@ -794,7 +794,7 @@ export class loomContainerRunner {
       throw new Error("Container config languages must be an object.");
     }
 
-    const languages: Record<string, loomContainerLanguageConfig> = {};
+    const languages: Record<string, lotusContainerLanguageConfig> = {};
     for (const [language, value] of Object.entries(data.languages as Record<string, unknown>)) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error(`Container language ${language} must be an object.`);
@@ -828,8 +828,8 @@ export class loomContainerRunner {
     };
   }
 
-  private readRuntime(value: unknown): loomContainerRuntime {
-    let runtime: loomContainerRuntime;
+  private readRuntime(value: unknown): lotusContainerRuntime {
+    let runtime: lotusContainerRuntime;
     if (value == null) {
       runtime = "docker";
     } else if (value === "remote") {
@@ -841,12 +841,12 @@ export class loomContainerRunner {
     }
 
     if (!isCompileContainerRuntimeAllowed(runtime)) {
-      throw new Error(`Container runtime ${runtime} is not included in this Loom build.`);
+      throw new Error(`Container runtime ${runtime} is not included in this Lotus build.`);
     }
     return runtime;
   }
 
-  private readWslConfig(value: unknown): loomWslConfig | undefined {
+  private readWslConfig(value: unknown): lotusWslConfig | undefined {
     if (value == null) {
       return undefined;
     }
@@ -859,7 +859,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readElevationConfig(value: unknown): loomContainerElevationConfig {
+  private readElevationConfig(value: unknown): lotusContainerElevationConfig {
     if (value == null) {
       return { mode: "default" };
     }
@@ -883,7 +883,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readSshConfig(value: unknown, runtime: loomContainerRuntime): loomRemoteConfig | undefined {
+  private readSshConfig(value: unknown, runtime: lotusContainerRuntime): lotusRemoteConfig | undefined {
     if (value == null) {
       if (runtime === "ssh") {
         throw new Error("SSH runtime requires an ssh config object.");
@@ -917,7 +917,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readOutputFilters(value: unknown): loomOutputFilterConfig | undefined {
+  private readOutputFilters(value: unknown): lotusOutputFilterConfig | undefined {
     if (!isCompileFeatureAllowed("output-filters")) {
       return undefined;
     }
@@ -939,7 +939,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readQemuConfig(value: unknown): loomQemuConfig | undefined {
+  private readQemuConfig(value: unknown): lotusQemuConfig | undefined {
     if (value == null) {
       return undefined;
     }
@@ -971,7 +971,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readQemuManagerConfig(value: unknown): loomQemuManagerConfig | undefined {
+  private readQemuManagerConfig(value: unknown): lotusQemuManagerConfig | undefined {
     if (value == null) {
       return undefined;
     }
@@ -997,7 +997,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readCustomConfig(value: unknown): loomCustomRuntimeConfig | undefined {
+  private readCustomConfig(value: unknown): lotusCustomRuntimeConfig | undefined {
     if (value == null) {
       return undefined;
     }
@@ -1018,7 +1018,7 @@ export class loomContainerRunner {
     };
   }
 
-  private readHealthCheck(value: unknown, label: string): loomCommandExpectation | undefined {
+  private readHealthCheck(value: unknown, label: string): lotusCommandExpectation | undefined {
     if (value == null) {
       return undefined;
     }
@@ -1036,44 +1036,44 @@ export class loomContainerRunner {
     };
   }
 
-  private requireQemuConfig(config: loomContainerConfig): loomQemuConfig {
+  private requireQemuConfig(config: lotusContainerConfig): lotusQemuConfig {
     if (!config.qemu) {
       throw new Error("QEMU runtime requires a qemu config object.");
     }
     return config.qemu;
   }
 
-  private requireSshConfig(config: loomContainerConfig): loomRemoteConfig {
+  private requireSshConfig(config: lotusContainerConfig): lotusRemoteConfig {
     if (!config.ssh) {
       throw new Error("SSH runtime requires an ssh config object.");
     }
     return config.ssh;
   }
 
-  private requireCustomConfig(config: loomContainerConfig): loomCustomRuntimeConfig {
+  private requireCustomConfig(config: lotusContainerConfig): lotusCustomRuntimeConfig {
     if (!config.custom) {
       throw new Error("Custom runtime requires a custom config object.");
     }
     return config.custom;
   }
 
-  private runtimeExecutable(config: loomContainerConfig): string {
+  private runtimeExecutable(config: lotusContainerConfig): string {
     if (config.executable?.trim()) {
       return config.executable.trim();
     }
     return config.runtime === "podman" ? "podman" : "docker";
   }
 
-  private ociElevationArgs(config: loomContainerConfig): string[] {
+  private ociElevationArgs(config: lotusContainerConfig): string[] {
     return config.elevation.mode === "root" ? ["--user", "root"] : [];
   }
 
-  private applyCommandPrefix(config: loomContainerConfig, command: string): string {
+  private applyCommandPrefix(config: lotusContainerConfig, command: string): string {
     const prefix = config.elevation.mode === "root" ? config.elevation.commandPrefix?.trim() : "";
     return prefix ? `${prefix} ${command}` : command;
   }
 
-  private applyOutputFilters(result: loomRunResult, filters: loomOutputFilterConfig | undefined): void {
+  private applyOutputFilters(result: lotusRunResult, filters: lotusOutputFilterConfig | undefined): void {
     if (!filters) {
       return;
     }
@@ -1111,7 +1111,7 @@ export class loomContainerRunner {
   }
 
   private async runHealthCheck(
-    healthCheck: loomCommandExpectation | undefined,
+    healthCheck: lotusCommandExpectation | undefined,
     workingDirectory: string,
     timeoutMs: number,
     signal: AbortSignal,
@@ -1159,7 +1159,7 @@ export class loomContainerRunner {
     signal: AbortSignal,
     runnerId: string,
     runnerName: string,
-  ): Promise<loomRunResult> {
+  ): Promise<lotusRunResult> {
     const parts = splitCommandLine(command);
     if (!parts.length) {
       throw new Error(`${runnerName} command is empty.`);
@@ -1175,13 +1175,13 @@ export class loomContainerRunner {
     });
   }
 
-  private async ensureManagedQemu(groupName: string, groupPath: string, qemu: loomQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  private async ensureManagedQemu(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
     const manager = qemu.manager;
     if (!manager?.enabled) {
       return;
     }
 
-    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".lotus-qemu.pid");
     const existingPid = await this.readPidFile(pidPath);
     if (existingPid && this.isProcessRunning(existingPid)) {
       await this.waitForManagedQemuReadiness(groupName, groupPath, qemu, timeoutMs, signal);
@@ -1223,7 +1223,7 @@ export class loomContainerRunner {
     }
   }
 
-  private buildManagedQemuArgs(groupPath: string, manager: loomQemuManagerConfig): string[] {
+  private buildManagedQemuArgs(groupPath: string, manager: lotusQemuManagerConfig): string[] {
     const args = splitCommandLine(manager.args || "");
     if (manager.image) {
       const imagePath = this.resolveGroupFilePath(groupPath, manager.image);
@@ -1235,7 +1235,7 @@ export class loomContainerRunner {
   private async waitForManagedQemuReadiness(
     groupName: string,
     groupPath: string,
-    qemu: loomQemuConfig,
+    qemu: lotusQemuConfig,
     timeoutMs: number,
     signal: AbortSignal,
   ): Promise<void> {
@@ -1272,13 +1272,13 @@ export class loomContainerRunner {
     throw new Error(`QEMU ${groupName} did not become ready within ${timeout} ms${lastError ? `: ${lastError}` : "."}`);
   }
 
-  private async stopManagedQemuIfNeeded(groupName: string, groupPath: string, qemu: loomQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  private async stopManagedQemuIfNeeded(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
     const manager = qemu.manager;
     if (!manager?.enabled || manager.persist !== false) {
       return;
     }
 
-    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".lotus-qemu.pid");
     const pid = await this.readPidFile(pidPath);
     if (!pid) {
       return;
@@ -1306,8 +1306,8 @@ export class loomContainerRunner {
     await rm(pidPath, { force: true });
   }
 
-  private async getManagedQemuStatus(groupPath: string, manager: loomQemuManagerConfig): Promise<string> {
-    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".loom-qemu.pid");
+  private async getManagedQemuStatus(groupPath: string, manager: lotusQemuManagerConfig): Promise<string> {
+    const pidPath = this.resolveGroupFilePath(groupPath, manager.pidFile || ".lotus-qemu.pid");
     const pid = await this.readPidFile(pidPath);
     if (!pid) {
       return "stopped";
@@ -1351,11 +1351,11 @@ export class loomContainerRunner {
   private async runCustomWrapper(
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
-    request: loomCustomRuntimeRequest,
+    config: lotusContainerConfig,
+    request: lotusCustomRuntimeRequest,
     timeoutMs: number,
     signal: AbortSignal,
-  ): Promise<loomRunResult> {
+  ): Promise<lotusRunResult> {
     const custom = this.requireCustomConfig(config);
     await this.runHealthCheck(custom.healthCheck, groupPath, timeoutMs, signal, `container:${groupName}:custom:health`, `Custom ${groupName} health check`);
 
@@ -1384,13 +1384,13 @@ export class loomContainerRunner {
   }
 
   private createCustomRequest(
-    action: loomCustomRuntimeRequest["action"],
+    action: lotusCustomRuntimeRequest["action"],
     groupName: string,
     groupPath: string,
-    config: loomContainerConfig,
+    config: lotusContainerConfig,
     timeoutMs: number,
-    extra: Partial<loomCustomRuntimeRequest> = {},
-  ): loomCustomRuntimeRequest {
+    extra: Partial<lotusCustomRuntimeRequest> = {},
+  ): lotusCustomRuntimeRequest {
     return {
       action,
       groupName,
@@ -1412,7 +1412,7 @@ export class loomContainerRunner {
     };
   }
 
-  private createSyntheticResult(runnerId: string, runnerName: string, stdout: string, success = true): loomRunResult {
+  private createSyntheticResult(runnerId: string, runnerName: string, stdout: string, success = true): lotusRunResult {
     const now = new Date().toISOString();
     return {
       runnerId,
@@ -1454,10 +1454,10 @@ export class loomContainerRunner {
   }
 
   private imageNameForGroup(groupName: string): string {
-    return `loom-container-${groupName.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`;
+    return `lotus-container-${groupName.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`;
   }
 
-  public getDefaultLanguageConfig(langId: string, settings: loomPluginSettings): loomContainerLanguageConfig | null {
+  public getDefaultLanguageConfig(langId: string, settings: lotusPluginSettings): lotusContainerLanguageConfig | null {
     if (!langId) return null;
     const normalized = langId.toLowerCase().trim();
 
@@ -1544,7 +1544,7 @@ export class loomContainerRunner {
         }
         if (settings.ocamlMode === "ocamlc") {
           return {
-            command: shellCommand(`${settings.ocamlExecutable.trim() || "ocamlc"} -o /tmp/loom-ocaml "$1" && /tmp/loom-ocaml`),
+            command: shellCommand(`${settings.ocamlExecutable.trim() || "ocamlc"} -o /tmp/lotus-ocaml "$1" && /tmp/lotus-ocaml`),
             extension: ".ml",
           };
         }
@@ -1554,13 +1554,13 @@ export class loomContainerRunner {
         };
       case "c":
         return {
-          command: shellCommand(`${settings.cExecutable.trim() || "gcc"} "$1" -o /tmp/loom-c && /tmp/loom-c`),
+          command: shellCommand(`${settings.cExecutable.trim() || "gcc"} "$1" -o /tmp/lotus-c && /tmp/lotus-c`),
           extension: ".c",
         };
       case "cpp":
       case "c++":
         return {
-          command: shellCommand(`${settings.cppExecutable.trim() || "g++"} "$1" -o /tmp/loom-cpp && /tmp/loom-cpp`),
+          command: shellCommand(`${settings.cppExecutable.trim() || "g++"} "$1" -o /tmp/lotus-cpp && /tmp/lotus-cpp`),
           extension: ".cpp",
         };
       case "ebpf":
@@ -1568,7 +1568,7 @@ export class loomContainerRunner {
       case "bpf":
       case "bpf-c":
         return {
-          command: shellCommand(`${settings.ebpfClangExecutable.trim() || "clang"} -target bpf -O2 -g -Wall "$1" -c -o /tmp/loom-ebpf.o && printf 'compiled /tmp/loom-ebpf.o\\n'`),
+          command: shellCommand(`${settings.ebpfClangExecutable.trim() || "clang"} -target bpf -O2 -g -Wall "$1" -c -o /tmp/lotus-ebpf.o && printf 'compiled /tmp/lotus-ebpf.o\\n'`),
           extension: ".bpf.c",
         };
       case "bpftrace":
@@ -1580,13 +1580,13 @@ export class loomContainerRunner {
       case "rust":
       case "rs":
         return {
-          command: shellCommand(`${settings.rustExecutable.trim() || "rustc"} "$1" -o /tmp/loom-rust && /tmp/loom-rust`),
+          command: shellCommand(`${settings.rustExecutable.trim() || "rustc"} "$1" -o /tmp/lotus-rust && /tmp/lotus-rust`),
           extension: ".rs",
         };
       case "java": {
         const compiler = settings.javaCompilerExecutable.trim() || "javac";
         return {
-          command: shellCommand(`tmp=/tmp/loom-java-$$ && mkdir -p "$tmp" && cp "$1" "$tmp/Main.java" && ${compiler} "$tmp/Main.java" && ${settings.javaExecutable.trim() || "java"} -cp "$tmp" Main`),
+          command: shellCommand(`tmp=/tmp/lotus-java-$$ && mkdir -p "$tmp" && cp "$1" "$tmp/Main.java" && ${compiler} "$tmp/Main.java" && ${settings.javaExecutable.trim() || "java"} -cp "$tmp" Main`),
           extension: ".java",
         };
       }
@@ -1713,7 +1713,7 @@ async function sleepWithSignal(durationMs: number, signal: AbortSignal): Promise
   });
 }
 
-function runtimeLabel(runtime: loomContainerRuntime): string {
+function runtimeLabel(runtime: lotusContainerRuntime): string {
   switch (runtime) {
     case "docker":
       return "Docker";

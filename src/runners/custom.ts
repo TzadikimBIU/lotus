@@ -1,18 +1,18 @@
 import { runTempFileProcess } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
-import type { loomCodeBlock, loomCustomLanguage, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusCustomLanguage, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class CustomLanguageRunner implements loomRunner {
+export class CustomLanguageRunner implements lotusRunner {
   id = "custom";
   displayName = "Custom language";
   languages = [] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     return Boolean(this.getCustomLanguage(block, settings)?.executable.trim());
   }
 
-  run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const language = this.getCustomLanguage(block, settings);
     if (!language) {
       throw new Error(`Unsupported custom language: ${block.language}`);
@@ -32,7 +32,7 @@ export class CustomLanguageRunner implements loomRunner {
     });
   }
 
-  private getCustomLanguage(block: loomCodeBlock, settings: loomPluginSettings): loomCustomLanguage | undefined {
+  private getCustomLanguage(block: lotusCodeBlock, settings: lotusPluginSettings): lotusCustomLanguage | undefined {
     return findEnabledCommandLanguage(settings, block.language, block.languageAlias);
   }
 }

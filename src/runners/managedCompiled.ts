@@ -1,13 +1,13 @@
 import { join } from "path";
 import { runProcess, withNamedTempSourceFile, withTempSourceFile } from "../execution/processRunner";
-import type { loomCodeBlock, loomPluginSettings, loomRunContext, loomRunResult, loomRunner } from "../types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
-export class ManagedCompiledRunner implements loomRunner {
+export class ManagedCompiledRunner implements lotusRunner {
   id = "managed-compiled";
   displayName = "Managed compiler";
   languages = ["rust", "java"] as const;
 
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean {
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean {
     if (block.language === "rust") {
       return Boolean(settings.rustExecutable.trim());
     }
@@ -19,7 +19,7 @@ export class ManagedCompiledRunner implements loomRunner {
     return false;
   }
 
-  async run(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     if (block.language === "rust") {
       return this.runRust(block, context, settings);
     }
@@ -31,7 +31,7 @@ export class ManagedCompiledRunner implements loomRunner {
     throw new Error(`Unsupported language: ${block.language}`);
   }
 
-  private async runRust(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  private async runRust(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     return withTempSourceFile(".rs", block.content, async ({ tempDir, tempFile }) => {
       const binaryPath = join(tempDir, "snippet.out");
       const compileResult = await runProcess({
@@ -61,7 +61,7 @@ export class ManagedCompiledRunner implements loomRunner {
     });
   }
 
-  private async runJava(block: loomCodeBlock, context: loomRunContext, settings: loomPluginSettings): Promise<loomRunResult> {
+  private async runJava(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     return withNamedTempSourceFile("Main.java", block.content, async ({ tempDir, tempFile }) => {
       if (!settings.javaCompilerExecutable.trim()) {
         return runProcess({

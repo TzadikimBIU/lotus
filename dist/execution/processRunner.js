@@ -8,7 +8,7 @@ const os_1 = require("os");
 const path_1 = require("path");
 const child_process_1 = require("child_process");
 async function withTempSourceFile(fileExtension, source, callback) {
-    const tempDir = await (0, promises_1.mkdtemp)((0, path_1.join)((0, os_1.tmpdir)(), "loom-"));
+    const tempDir = await (0, promises_1.mkdtemp)((0, path_1.join)((0, os_1.tmpdir)(), "lotus-"));
     const tempFile = (0, path_1.join)(tempDir, `snippet${fileExtension}`);
     try {
         await (0, promises_1.writeFile)(tempFile, source, "utf8");

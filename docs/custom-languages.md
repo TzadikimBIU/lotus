@@ -1,6 +1,6 @@
 # Custom Languages
 
-Loom includes built-in runners for common interpreted, compiled, systems, and proof-oriented languages. Additional local languages can be added from the settings tab under **Custom Languages**. 
+Lotus includes built-in runners for common interpreted, compiled, systems, and proof-oriented languages. Additional local languages can be added from the settings tab under **Custom Languages**.
 
 A custom language configuration defines:
 - **Name**
@@ -39,7 +39,7 @@ Custom languages can support runnable partial source extraction. Each custom lan
 
 ### Extractor Command Contract
 
-Loom writes a JSON request file and passes its path to the configured command. The command must print JSON to `stdout`.
+Lotus writes a JSON request file and passes its path to the configured command. The command must print JSON to `stdout`.
 
 #### Request JSON Shape
 
@@ -51,8 +51,8 @@ Loom writes a JSON request file and passes its path to the configured command. T
   "lineStart": null,
   "lineEnd": null,
   "traceDependencies": true,
-  "sourceFile": "/tmp/loom-extract/source.txt",
-  "harnessFile": "/tmp/loom-extract/harness.txt"
+  "sourceFile": "/tmp/lotus-extract/source.txt",
+  "harnessFile": "/tmp/lotus-extract/harness.txt"
 }
 ```
 
@@ -111,4 +111,4 @@ The transpile to C strategy returns generated C or C++ and a symbol map:
 
 ## Fallback Behavior
 
-If no extractor is configured for a custom language, loom falls back to generic line extraction and simple symbol slicing.
+If no extractor is configured for a custom language, lotus falls back to generic line extraction and simple symbol slicing.

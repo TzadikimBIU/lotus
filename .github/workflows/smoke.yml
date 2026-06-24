@@ -45,7 +45,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install local Actions Chrome
+        if: ${{ env.ACT }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates wget
+          wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y /tmp/google-chrome-stable_current_amd64.deb
+          echo "LOTUS_CHROME_PATH=/usr/bin/google-chrome-stable" >> "${GITHUB_ENV}"
       - uses: browser-actions/setup-chrome@v1
+        if: ${{ env.ACT != 'true' }}
         id: setup-chrome
       - name: Install smoke toolchain packages
         if: matrix.profile == 'proofs' || matrix.profile == 'ebpf' || matrix.profile == 'full' || matrix.container == 'podman-test'
@@ -69,8 +78,9 @@ jobs:
           git checkout vault
           group="${{ matrix.container }}"
           runtime="${group%-test}"
-          group_dir=".obsidian/plugins/loom/containers/${group}"
+          group_dir=".obsidian/plugins/lotus/containers/${group}"
           mkdir -p "${group_dir}"
+          rm -f "${group_dir}/Dockerfile"
           cat > "${group_dir}/config.json" <<JSON
           {
             "runtime": "${runtime}",
@@ -97,7 +107,7 @@ jobs:
             }
           }
           JSON
-          printf -- "---\nloom-execution: ${{ matrix.container }}\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
+          printf -- "---\nlotus-execution: ${{ matrix.container }}\n---\n\n" | cat - "Smoke Suite.md" > temp_suite.md
           mv temp_suite.md "Smoke Suite.md"
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
@@ -113,13 +123,13 @@ jobs:
       - run: npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
         if: matrix.profile != 'ebpf' && matrix.profile != 'full' && matrix.container == 'none'
         env:
-          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-      - run: sudo --preserve-env=PATH,LOOM_CHROME_PATH npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
+          LOTUS_CHROME_PATH: ${{ env.LOTUS_CHROME_PATH || steps.setup-chrome.outputs.chrome-path }}
+      - run: sudo env "PATH=${PATH}" "LOTUS_CHROME_PATH=${LOTUS_CHROME_PATH}" npm run smoke -- --profile ${{ matrix.profile }} --require-pdf --require-all
         if: matrix.profile == 'ebpf' || matrix.profile == 'full' || matrix.container != 'none'
         env:
-          LOOM_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          LOTUS_CHROME_PATH: ${{ env.LOTUS_CHROME_PATH || steps.setup-chrome.outputs.chrome-path }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loom-smoke-${{ matrix.profile }}-${{ matrix.container }}
-          path: .loom/artifacts/smoke/${{ matrix.profile }}
+          name: lotus-smoke-${{ matrix.profile }}-${{ matrix.container }}
+          path: .lotus/artifacts/smoke/${{ matrix.profile }}

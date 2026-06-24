@@ -1,6 +1,6 @@
-import type { loomCodeBlock } from "./types";
+import type { lotusCodeBlock } from "./types";
 
-export function buildSourceReferenceHarness(block: loomCodeBlock, inputOverride?: string): string {
+export function buildSourceReferenceHarness(block: lotusCodeBlock, inputOverride?: string): string {
   const call = block.sourceReference?.call;
   if (!call) {
     return block.content;
@@ -17,7 +17,7 @@ export function buildSourceReferenceHarness(block: loomCodeBlock, inputOverride?
 
 function renderDefaultSourceCall(symbolName: string | undefined, args: string | undefined, input: string): string {
   if (!symbolName) {
-    throw new Error("loom-call needs loom-symbol when no call expression is provided.");
+    throw new Error("lotus-call needs lotus-symbol when no call expression is provided.");
   }
 
   const renderedArgs = renderSourceCallTemplate(args?.trim() || "{input}", input, symbolName);
@@ -49,7 +49,7 @@ function renderLanguageCallHarness(language: string, expression: string, print: 
     case "ocaml":
       return `let () = print_endline (${expression})`;
     default:
-      throw new Error(`loom-call cannot generate a printed harness for ${language}. Use loom-print=false or write the harness in the block body.`);
+      throw new Error(`lotus-call cannot generate a printed harness for ${language}. Use lotus-print=false or write the harness in the block body.`);
   }
 }
 

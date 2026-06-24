@@ -3,15 +3,15 @@ import { spawn, type ChildProcess } from "child_process";
 import { dirname } from "path";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
-import type { loomCodeBlock, loomPluginSettings, loomRunResult } from "./types";
+import type { lotusCodeBlock, lotusPluginSettings, lotusRunResult } from "./types";
 
-export interface loomLogInput {
+export interface lotusLogInput {
   type: string;
   message?: string;
   notePath?: string;
   noteHash?: string;
-  block?: loomCodeBlock;
-  target?: loomLogTarget;
+  block?: lotusCodeBlock;
+  target?: lotusLogTarget;
   data?: Record<string, unknown>;
   code?: string;
   stdin?: string;
@@ -21,7 +21,7 @@ export interface loomLogInput {
   error?: string;
 }
 
-export interface loomLogTarget {
+export interface lotusLogTarget {
   runnerId?: string;
   runnerName?: string;
   containerGroup?: string;
@@ -30,7 +30,7 @@ export interface loomLogTarget {
   source?: Record<string, unknown>;
 }
 
-interface loomLogEvent {
+interface lotusLogEvent {
   version: 1;
   id: string;
   timestamp: string;
@@ -51,7 +51,7 @@ interface loomLogEvent {
     alias: string;
     hash: string;
   };
-  target?: loomLogTarget;
+  target?: lotusLogTarget;
   data?: Record<string, unknown>;
   code?: string;
   stdin?: string;
@@ -62,16 +62,16 @@ interface loomLogEvent {
   truncated?: boolean;
 }
 
-export class loomLogger {
+export class lotusLogger {
   private processChild: ChildProcess | null = null;
   private processCommand = "";
 
   constructor(
     private readonly app: App,
-    private readonly getSettings: () => loomPluginSettings,
+    private readonly getSettings: () => lotusPluginSettings,
   ) {}
 
-  async log(input: loomLogInput): Promise<void> {
+  async log(input: lotusLogInput): Promise<void> {
     const settings = this.getSettings();
     if (!settings.loggingEnabled) {
       return;
@@ -103,14 +103,14 @@ export class loomLogger {
     const results = await Promise.allSettled(tasks);
     for (const result of results) {
       if (result.status === "rejected") {
-        console.warn("loom logging sink failed", result.reason);
+        console.warn("lotus logging sink failed", result.reason);
       }
     }
   }
 
-  async logRunFinished(filePath: string, block: loomCodeBlock, runnerName: string, result: loomRunResult, data: Record<string, unknown> = {}, target?: loomLogTarget, noteHash?: string): Promise<void> {
+  async logRunFinished(filePath: string, block: lotusCodeBlock, runnerName: string, result: lotusRunResult, data: Record<string, unknown> = {}, target?: lotusLogTarget, noteHash?: string): Promise<void> {
     await this.log({
-      type: result.success ? "loom.run.finished" : "loom.run.failed",
+      type: result.success ? "lotus.run.finished" : "lotus.run.failed",
       message: result.success ? "Code block finished" : "Code block failed",
       notePath: filePath,
       noteHash,
@@ -142,8 +142,8 @@ export class loomLogger {
     this.processCommand = "";
   }
 
-  private createEvent(input: loomLogInput, settings: loomPluginSettings): loomLogEvent {
-    const event: loomLogEvent = {
+  private createEvent(input: lotusLogInput, settings: lotusPluginSettings): lotusLogEvent {
+    const event: lotusLogEvent = {
       version: 1,
       id: createLogId(),
       timestamp: new Date().toISOString(),
@@ -185,14 +185,14 @@ export class loomLogger {
     return event;
   }
 
-  private stringifyEvent(event: loomLogEvent, settings: loomPluginSettings): string {
+  private stringifyEvent(event: lotusLogEvent, settings: lotusPluginSettings): string {
     let serialized = JSON.stringify(event);
     const maxBytes = normalizeMaxEventBytes(settings.loggingMaxEventBytes);
     if (!maxBytes || encodedLength(serialized) <= maxBytes) {
       return serialized;
     }
 
-    const trimmed: loomLogEvent = {
+    const trimmed: lotusLogEvent = {
       ...event,
       code: undefined,
       stdin: undefined,
@@ -220,7 +220,7 @@ export class loomLogger {
     });
   }
 
-  private formatNote(notePath: string, mode: loomPluginSettings["loggingNotePathMode"], noteHash?: string): loomLogEvent["note"] {
+  private formatNote(notePath: string, mode: lotusPluginSettings["loggingNotePathMode"], noteHash?: string): lotusLogEvent["note"] {
     const pathHash = sha256Hash(notePath);
     const noteName = notePath.split("/").pop() ?? notePath;
     const nameHash = sha256Hash(noteName);
@@ -310,11 +310,11 @@ export class loomLogger {
     child.stderr?.on("data", (chunk) => {
       const message = chunk.toString().trim();
       if (message) {
-        console.warn(`loom logging process stderr: ${message}`);
+        console.warn(`lotus logging process stderr: ${message}`);
       }
     });
     child.on("error", (error) => {
-      console.warn("loom logging process failed", error);
+      console.warn("lotus logging process failed", error);
     });
     child.on("exit", () => {
       if (this.processChild === child) {
@@ -328,7 +328,7 @@ export class loomLogger {
     return child;
   }
 
-  private async writeHttpSink(endpoint: string, event: loomLogEvent, rawHeaders: string): Promise<void> {
+  private async writeHttpSink(endpoint: string, event: lotusLogEvent, rawHeaders: string): Promise<void> {
     await requestUrl({
       url: endpoint.trim(),
       method: "POST",
@@ -339,7 +339,7 @@ export class loomLogger {
   }
 }
 
-function renderTextLogLine(event: loomLogEvent): string {
+function renderTextLogLine(event: lotusLogEvent): string {
   const note = event.note?.path ? ` note=${event.note.path}` : event.note?.pathHash ? ` noteHash=${event.note.pathHash.slice(0, 16)}` : "";
   const noteContent = event.note?.contentHash ? ` contentHash=${event.note.contentHash.slice(0, 16)}` : "";
   const block = event.block ? ` block=${event.block.ordinal}:${event.block.language}:${event.block.hash.slice(0, 12)}` : "";

@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { loomNormalizedLanguage, loomSourceReference } from "./types";
+import type { lotusNormalizedLanguage, lotusSourceReference } from "./types";
 import { splitCommandLine } from "./utils/command";
 
 interface SourceRange {
@@ -46,14 +46,14 @@ interface PythonDependencyState {
   needsNamespaceRuntime: boolean;
 }
 
-export interface loomSourceExtractionHost {
+export interface lotusSourceExtractionHost {
   pythonExecutable?: string;
-  externalExtractor?: loomExternalSourceExtractor;
+  externalExtractor?: lotusExternalSourceExtractor;
   readFile(filePath: string): Promise<string | null>;
   resolvePythonImport(fromFilePath: string, moduleName: string, level: number): Promise<string | null>;
 }
 
-export interface loomExternalSourceExtractor {
+export interface lotusExternalSourceExtractor {
   mode: "command" | "transpile-c";
   language: string;
   executable: string;
@@ -78,18 +78,18 @@ interface TranspileToCResult {
   description?: string;
 }
 
-export interface loomResolvedSource {
+export interface lotusResolvedSource {
   content: string;
   description: string;
 }
 
 export async function resolveReferencedSource(
   source: string,
-  reference: loomSourceReference,
-  language: loomNormalizedLanguage,
+  reference: lotusSourceReference,
+  language: lotusNormalizedLanguage,
   harness: string,
-  host?: loomSourceExtractionHost,
-): Promise<loomResolvedSource> {
+  host?: lotusSourceExtractionHost,
+): Promise<lotusResolvedSource> {
   if (host?.externalExtractor?.executable.trim()) {
     return host.externalExtractor.mode === "transpile-c"
       ? resolveTranspileToCReferencedSource(source, reference, language, harness, host.externalExtractor)
@@ -105,10 +105,10 @@ export async function resolveReferencedSource(
 
 function resolveReferencedSourceFallback(
   source: string,
-  reference: loomSourceReference,
-  language: loomNormalizedLanguage,
+  reference: lotusSourceReference,
+  language: lotusNormalizedLanguage,
   harness: string,
-): loomResolvedSource {
+): lotusResolvedSource {
   const lines = source.split(/\r?\n/);
   const selectedRange = reference.symbolName
     ? findSymbolRange(lines, language, reference.symbolName)
@@ -135,12 +135,12 @@ function resolveReferencedSourceFallback(
 
 async function resolveExternalReferencedSource(
   source: string,
-  reference: loomSourceReference,
-  language: loomNormalizedLanguage,
+  reference: lotusSourceReference,
+  language: lotusNormalizedLanguage,
   harness: string,
-  extractor: loomExternalSourceExtractor,
-): Promise<loomResolvedSource> {
-  const tempDir = await mkdtemp(join(tmpdir(), "loom-extract-"));
+  extractor: lotusExternalSourceExtractor,
+): Promise<lotusResolvedSource> {
+  const tempDir = await mkdtemp(join(tmpdir(), "lotus-extract-"));
   const sourceFile = join(tempDir, "source.txt");
   const harnessFile = join(tempDir, "harness.txt");
   const requestFile = join(tempDir, "request.json");
@@ -190,12 +190,12 @@ async function resolveExternalReferencedSource(
 
 async function resolveTranspileToCReferencedSource(
   source: string,
-  reference: loomSourceReference,
-  language: loomNormalizedLanguage,
+  reference: lotusSourceReference,
+  language: lotusNormalizedLanguage,
   harness: string,
-  extractor: loomExternalSourceExtractor,
-): Promise<loomResolvedSource> {
-  const tempDir = await mkdtemp(join(tmpdir(), "loom-extract-"));
+  extractor: lotusExternalSourceExtractor,
+): Promise<lotusResolvedSource> {
+  const tempDir = await mkdtemp(join(tmpdir(), "lotus-extract-"));
   const sourceFile = join(tempDir, "source.txt");
   const harnessFile = join(tempDir, "harness.txt");
   const requestFile = join(tempDir, "request.json");
@@ -226,7 +226,7 @@ async function resolveTranspileToCReferencedSource(
     const result = parseTranspileToCResult(output);
     const generatedLanguage = result.language === "cpp" ? "cpp" : "c";
     const mappedSymbol = reference.symbolName ? result.symbols?.[reference.symbolName] ?? reference.symbolName : undefined;
-    const generatedReference: loomSourceReference = {
+    const generatedReference: lotusSourceReference = {
       ...reference,
       filePath: `${reference.filePath}:generated.${generatedLanguage === "cpp" ? "cpp" : "c"}`,
       symbolName: mappedSymbol,
@@ -243,13 +243,13 @@ async function resolveTranspileToCReferencedSource(
 }
 
 async function runExternalExtractor(
-  extractor: loomExternalSourceExtractor,
+  extractor: lotusExternalSourceExtractor,
   values: {
     language: string;
     sourceFile: string;
     harnessFile: string;
     requestFile: string;
-    reference: loomSourceReference;
+    reference: lotusSourceReference;
   },
 ): Promise<string> {
   const args = extractor.args.map((arg) => arg
@@ -342,10 +342,10 @@ function parseTranspileToCResult(output: string): TranspileToCResult {
 
 async function resolvePythonReferencedSource(
   source: string,
-  reference: loomSourceReference,
+  reference: lotusSourceReference,
   harness: string,
-  host: loomSourceExtractionHost,
-): Promise<loomResolvedSource> {
+  host: lotusSourceExtractionHost,
+): Promise<lotusResolvedSource> {
   const lines = source.split(/\r?\n/);
   const moduleInfo = await inspectPythonModule(source, host);
   const selectedRange = reference.symbolName
@@ -389,7 +389,7 @@ async function collectPythonDependencySource(
   selectedRange: SourceRange,
   selected: string,
   harness: string,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
 ): Promise<string> {
   const parts: string[] = [];
@@ -405,7 +405,7 @@ async function collectPythonDependencies(
   filePath: string,
   selectedRange: SourceRange,
   seed: string,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
   parts: string[],
 ): Promise<string> {
@@ -453,7 +453,7 @@ async function resolvePythonImportDependency(
   lines: string[],
   filePath: string,
   usage: PythonUsage,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
   parts: string[],
 ): Promise<string> {
@@ -469,7 +469,7 @@ async function resolvePythonFromImportDependency(
   lines: string[],
   filePath: string,
   usage: PythonUsage,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
   parts: string[],
 ): Promise<string> {
@@ -540,7 +540,7 @@ async function resolvePythonPlainImportDependency(
   lines: string[],
   filePath: string,
   usage: PythonUsage,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
   parts: string[],
 ): Promise<string> {
@@ -574,7 +574,7 @@ async function resolvePythonPlainImportDependency(
 async function extractPythonSymbolFromFile(
   filePath: string,
   symbolName: string,
-  host: loomSourceExtractionHost,
+  host: lotusSourceExtractionHost,
   state: PythonDependencyState,
   parts: string[],
 ): Promise<string> {
@@ -655,9 +655,9 @@ function renderPythonNamespaceBindings(state: PythonDependencyState): string {
     return "";
   }
 
-  const lines = state.needsNamespaceRuntime ? ["import types as _loom_types"] : [];
+  const lines = state.needsNamespaceRuntime ? ["import types as _lotus_types"] : [];
   for (const [binding, attributes] of state.namespaceBindings) {
-    lines.push(`${binding} = _loom_types.SimpleNamespace()`);
+    lines.push(`${binding} = _lotus_types.SimpleNamespace()`);
     for (const attribute of attributes) {
       lines.push(`${binding}.${attribute} = ${attribute}`);
     }
@@ -682,15 +682,15 @@ function joinPythonModule(moduleName: string, name: string): string {
   return moduleName ? `${moduleName}.${name}` : name;
 }
 
-async function inspectPythonModule(source: string, host: loomSourceExtractionHost): Promise<PythonModuleInfo> {
+async function inspectPythonModule(source: string, host: lotusSourceExtractionHost): Promise<PythonModuleInfo> {
   return runPythonAst<PythonModuleInfo>(source, "module", host);
 }
 
-async function inspectPythonUsage(source: string, host: loomSourceExtractionHost): Promise<PythonUsage> {
+async function inspectPythonUsage(source: string, host: lotusSourceExtractionHost): Promise<PythonUsage> {
   return runPythonAst<PythonUsage>(source, "usage", host);
 }
 
-async function runPythonAst<T>(source: string, mode: "module" | "usage", host: loomSourceExtractionHost): Promise<T> {
+async function runPythonAst<T>(source: string, mode: "module" | "usage", host: lotusSourceExtractionHost): Promise<T> {
   const command = splitCommandLine(host.pythonExecutable?.trim() || "python3");
   const executable = command[0] ?? "python3";
   const args = [...command.slice(1), "-c", PYTHON_AST_HELPER];
@@ -725,7 +725,7 @@ async function runPythonAst<T>(source: string, mode: "module" | "usage", host: l
   });
 }
 
-function findLineRange(lines: string[], reference: loomSourceReference): SourceRange | null {
+function findLineRange(lines: string[], reference: lotusSourceReference): SourceRange | null {
   const start = Math.max((reference.lineStart ?? 1) - 1, 0);
   const end = Math.min((reference.lineEnd ?? reference.lineStart ?? lines.length) - 1, lines.length - 1);
   if (start > end || start >= lines.length) {
@@ -734,7 +734,7 @@ function findLineRange(lines: string[], reference: loomSourceReference): SourceR
   return { start, end };
 }
 
-function findSymbolRange(lines: string[], language: loomNormalizedLanguage, symbolName: string): SourceRange | null {
+function findSymbolRange(lines: string[], language: lotusNormalizedLanguage, symbolName: string): SourceRange | null {
   const definitions = collectDefinitions(lines, language);
   const exact = definitions.find((definition) => definitionNames(definition).includes(symbolName));
   if (exact) {
@@ -749,7 +749,7 @@ function findSymbolRange(lines: string[], language: loomNormalizedLanguage, symb
   return lines[line].includes("{") ? { start: line, end: findBraceRangeEnd(lines, line) } : { start: line, end: line };
 }
 
-function collectDependencySource(lines: string[], language: loomNormalizedLanguage, selectedRange: SourceRange, selected: string): string {
+function collectDependencySource(lines: string[], language: lotusNormalizedLanguage, selectedRange: SourceRange, selected: string): string {
   const prologue = collectPrologue(lines, language, selectedRange.start);
   const definitions = collectDefinitions(lines, language)
     .filter((definition) => !rangesOverlap(definition, selectedRange));
@@ -785,7 +785,7 @@ function traceDefinitions(seed: string, definitions: SourceDefinition[], lines: 
   return selected.sort((left, right) => left.start - right.start);
 }
 
-function collectPrologue(lines: string[], language: loomNormalizedLanguage, beforeLine: number): string[] {
+function collectPrologue(lines: string[], language: lotusNormalizedLanguage, beforeLine: number): string[] {
   const prologue: string[] = [];
   const max = Math.max(beforeLine, 0);
   for (let index = 0; index < max; index += 1) {
@@ -797,7 +797,7 @@ function collectPrologue(lines: string[], language: loomNormalizedLanguage, befo
   return prologue.length ? [prologue.join("\n")] : [];
 }
 
-function isPrologueLine(line: string, language: loomNormalizedLanguage): boolean {
+function isPrologueLine(line: string, language: lotusNormalizedLanguage): boolean {
   const trimmed = line.trim();
   if (!trimmed) {
     return false;
@@ -824,7 +824,7 @@ function isPrologueLine(line: string, language: loomNormalizedLanguage): boolean
   }
 }
 
-function collectDefinitions(lines: string[], language: loomNormalizedLanguage): SourceDefinition[] {
+function collectDefinitions(lines: string[], language: lotusNormalizedLanguage): SourceDefinition[] {
   switch (language) {
     case "python":
       return collectPythonDefinitions(lines);
@@ -1216,7 +1216,7 @@ function sourceUsesName(source: string, name: string): boolean {
   return new RegExp(`\\b${escapeRegex(name)}\\b`).test(source);
 }
 
-function formatSourceDescription(reference: loomSourceReference, range: SourceRange | null): string {
+function formatSourceDescription(reference: lotusSourceReference, range: SourceRange | null): string {
   if (reference.symbolName) {
     return `${reference.filePath}#${reference.symbolName}`;
   }

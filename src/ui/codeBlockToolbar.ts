@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 
-export interface loomToolbarHandlers {
+export interface lotusToolbarHandlers {
   onRun: () => void;
   onEdit: () => void;
   onCopy: () => void;
@@ -9,19 +9,19 @@ export interface loomToolbarHandlers {
   onToggleOutput: () => void;
 }
 
-export interface loomToolbarOptions {
+export interface lotusToolbarOptions {
   inputButtonLabel?: string;
 }
 
 export function createCodeBlockToolbar(
   blockId: string,
   isRunning: boolean,
-  handlers: loomToolbarHandlers,
-  options: loomToolbarOptions = {},
+  handlers: lotusToolbarHandlers,
+  options: lotusToolbarOptions = {},
 ): HTMLDivElement {
   const toolbar = document.createElement("div");
-  toolbar.className = "loom-code-toolbar";
-  toolbar.dataset.loomBlockId = blockId;
+  toolbar.className = "lotus-code-toolbar";
+  toolbar.dataset.lotusBlockId = blockId;
 
   toolbar.appendChild(createButton(isRunning ? "Cancel block" : "Run block", isRunning ? "square" : "play", handlers.onRun, false));
   toolbar.appendChild(createButton("Edit block", "pencil", handlers.onEdit, false));
@@ -35,7 +35,7 @@ export function createCodeBlockToolbar(
 
 function createButton(label: string, iconName: string, onClick: () => void, spinning: boolean): HTMLButtonElement {
   const button = document.createElement("button");
-  button.className = `loom-toolbar-button${spinning ? " is-running" : ""}`;
+  button.className = `lotus-toolbar-button${spinning ? " is-running" : ""}`;
   button.type = "button";
   button.setAttribute("aria-label", label);
   button.title = label;

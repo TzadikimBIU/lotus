@@ -1,14 +1,14 @@
-import type { loomNormalizedLanguage } from "./types";
+import type { lotusNormalizedLanguage } from "./types";
 
-export interface loomLanguageCapability {
-  language: loomNormalizedLanguage;
+export interface lotusLanguageCapability {
+  language: lotusNormalizedLanguage;
   symbolExtraction: "ast" | "top-level" | "generic" | "external";
   dependencyTracing: "ast" | "top-level" | "generic" | "external";
   callHarness: "built-in" | "raw" | "external";
   sourcePreview: boolean;
 }
 
-const BUILT_IN_CAPABILITIES: Record<string, loomLanguageCapability> = {
+const BUILT_IN_CAPABILITIES: Record<string, lotusLanguageCapability> = {
   python: {
     language: "python",
     symbolExtraction: "ast",
@@ -95,7 +95,7 @@ const BUILT_IN_CAPABILITIES: Record<string, loomLanguageCapability> = {
   },
 };
 
-export function getLanguageCapability(language: loomNormalizedLanguage, hasExternalExtractor = false): loomLanguageCapability {
+export function getLanguageCapability(language: lotusNormalizedLanguage, hasExternalExtractor = false): lotusLanguageCapability {
   if (hasExternalExtractor) {
     return {
       language,
@@ -115,6 +115,6 @@ export function getLanguageCapability(language: loomNormalizedLanguage, hasExter
   };
 }
 
-export function getBuiltInLanguageCapabilities(): loomLanguageCapability[] {
+export function getBuiltInLanguageCapabilities(): lotusLanguageCapability[] {
   return Object.values(BUILT_IN_CAPABILITIES);
 }

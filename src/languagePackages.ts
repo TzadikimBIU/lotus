@@ -4,22 +4,22 @@ import {
   isCompileLanguageAllowed,
   isCompileLanguagePackageAllowed,
 } from "./buildProfile";
-import type { loomCustomLanguage, loomNormalizedLanguage, loomPluginSettings } from "./types";
+import type { lotusCustomLanguage, lotusNormalizedLanguage, lotusPluginSettings } from "./types";
 
-export interface loomLanguageDefinition {
-  id: loomNormalizedLanguage;
+export interface lotusLanguageDefinition {
+  id: lotusNormalizedLanguage;
   displayName: string;
   aliases: string[];
 }
 
-export interface loomLanguagePackage {
+export interface lotusLanguagePackage {
   id: string;
   displayName: string;
   description: string;
-  languages: loomLanguageDefinition[];
+  languages: lotusLanguageDefinition[];
 }
 
-export const BUILT_IN_LANGUAGE_PACKAGES: loomLanguagePackage[] = [
+export const BUILT_IN_LANGUAGE_PACKAGES: lotusLanguagePackage[] = [
   {
     id: "interpreted",
     displayName: "Interpreted",
@@ -107,7 +107,7 @@ export function getDefaultLanguageIds(): string[] {
   return getCompileAllowedBuiltInLanguagePackages().flatMap((pack) => pack.languages.map((language) => language.id));
 }
 
-export function normalizeLanguageConfiguration(settings: loomPluginSettings): void {
+export function normalizeLanguageConfiguration(settings: lotusPluginSettings): void {
   if (!Array.isArray(settings.externalLanguagePacks)) {
     settings.externalLanguagePacks = [];
   }
@@ -130,7 +130,7 @@ export function normalizeLanguageConfiguration(settings: loomPluginSettings): vo
   filterDisallowedCompileSelections(settings);
 }
 
-function enableLanguagePackage(settings: loomPluginSettings, packageId: string): void {
+function enableLanguagePackage(settings: lotusPluginSettings, packageId: string): void {
   const pack = BUILT_IN_LANGUAGE_PACKAGES.find((candidate) => candidate.id === packageId);
   if (!pack) {
     return;
@@ -147,7 +147,7 @@ function appendUnique(values: string[], value: string): void {
   }
 }
 
-function getCompileAllowedBuiltInLanguagePackages(): loomLanguagePackage[] {
+function getCompileAllowedBuiltInLanguagePackages(): lotusLanguagePackage[] {
   return BUILT_IN_LANGUAGE_PACKAGES
     .filter((pack) => isCompileLanguagePackageAllowed(pack.id))
     .map((pack) => ({
@@ -157,7 +157,7 @@ function getCompileAllowedBuiltInLanguagePackages(): loomLanguagePackage[] {
     .filter((pack) => pack.languages.length > 0);
 }
 
-function filterDisallowedCompileSelections(settings: loomPluginSettings): void {
+function filterDisallowedCompileSelections(settings: lotusPluginSettings): void {
   const allowedPackIds = new Set([
     ...getCompileAllowedBuiltInLanguagePackages().map((pack) => pack.id),
     ...(isCompileExternalLanguagePacksAllowed() ? settings.externalLanguagePacks.map((pack) => pack.id).filter((packId) => isCompileLanguagePackageAllowed(packId)) : []),
@@ -181,7 +181,7 @@ function filterDisallowedCompileSelections(settings: loomPluginSettings): void {
   }
 }
 
-export function getEnabledLanguageDefinitions(settings: loomPluginSettings): loomLanguageDefinition[] {
+export function getEnabledLanguageDefinitions(settings: lotusPluginSettings): lotusLanguageDefinition[] {
   normalizeLanguageConfiguration(settings);
   const enabledPacks = new Set(settings.enabledLanguagePacks);
   const enabledLanguages = new Set(settings.enabledLanguages);
@@ -192,7 +192,7 @@ export function getEnabledLanguageDefinitions(settings: loomPluginSettings): loo
     .filter((language) => enabledLanguages.has(language.id));
 }
 
-export function getAvailableLanguagePackages(settings: loomPluginSettings): loomLanguagePackage[] {
+export function getAvailableLanguagePackages(settings: lotusPluginSettings): lotusLanguagePackage[] {
   normalizeLanguageConfiguration(settings);
   return [
     ...getCompileAllowedBuiltInLanguagePackages(),
@@ -209,7 +209,7 @@ export function getAvailableLanguagePackages(settings: loomPluginSettings): loom
   ];
 }
 
-export function getEnabledLanguageAliasMap(settings: loomPluginSettings): Record<string, loomNormalizedLanguage> {
+export function getEnabledLanguageAliasMap(settings: lotusPluginSettings): Record<string, lotusNormalizedLanguage> {
   return Object.fromEntries(
     getEnabledLanguageDefinitions(settings).flatMap((language) =>
       language.aliases.map((alias) => [alias.toLowerCase(), language.id] as const),
@@ -217,17 +217,17 @@ export function getEnabledLanguageAliasMap(settings: loomPluginSettings): Record
   );
 }
 
-export function isLanguageEnabled(languageId: loomNormalizedLanguage, settings: loomPluginSettings): boolean {
+export function isLanguageEnabled(languageId: lotusNormalizedLanguage, settings: lotusPluginSettings): boolean {
   normalizeLanguageConfiguration(settings);
   return getEnabledLanguageDefinitions(settings).some((language) => language.id === languageId);
 }
 
-export function areCustomLanguagesEnabled(settings: loomPluginSettings): boolean {
+export function areCustomLanguagesEnabled(settings: lotusPluginSettings): boolean {
   normalizeLanguageConfiguration(settings);
   return isCompileCustomLanguagesAllowed() && settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID);
 }
 
-export function getEnabledCommandLanguages(settings: loomPluginSettings): loomCustomLanguage[] {
+export function getEnabledCommandLanguages(settings: lotusPluginSettings): lotusCustomLanguage[] {
   normalizeLanguageConfiguration(settings);
   const enabledPacks = new Set(settings.enabledLanguagePacks);
   const enabledLanguages = new Set(settings.enabledLanguages);
@@ -240,7 +240,7 @@ export function getEnabledCommandLanguages(settings: loomPluginSettings): loomCu
   return [...customLanguages, ...externalLanguages];
 }
 
-export function findEnabledCommandLanguage(settings: loomPluginSettings, normalizedLanguage: string, sourceAlias?: string): loomCustomLanguage | undefined {
+export function findEnabledCommandLanguage(settings: lotusPluginSettings, normalizedLanguage: string, sourceAlias?: string): lotusCustomLanguage | undefined {
   const normalized = normalizedLanguage.trim().toLowerCase();
   const alias = sourceAlias?.trim().toLowerCase();
   return getEnabledCommandLanguages(settings).find((language) => {

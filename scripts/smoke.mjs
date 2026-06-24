@@ -1,7 +1,8 @@
 import esbuild from "esbuild";
 import { spawn } from "child_process";
 import { createHash } from "crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
+import { existsSync } from "fs";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "fs/promises";
 import path from "path";
 import process from "process";
 import { fileURLToPath } from "url";
@@ -13,9 +14,9 @@ const requirePdf = args["require-pdf"] === "true";
 const requireAll = args["require-all"] === "true";
 const skipBuild = args["skip-build"] === "true";
 const fixtureRef = args["fixture-ref"] ?? "vault";
-const runtimeVaultDir = path.join(rootDir, ".loom", `smoke-vault-${profile}`);
-const artifactDir = path.join(rootDir, ".loom", "artifacts", "smoke", profile);
-const pluginDir = path.join(runtimeVaultDir, ".obsidian", "plugins", "loom");
+const runtimeVaultDir = path.join(rootDir, ".lotus", `smoke-vault-${profile}`);
+const artifactDir = path.join(rootDir, ".lotus", "artifacts", "smoke", profile);
+const pluginDir = path.join(runtimeVaultDir, ".obsidian", "plugins", "lotus");
 const smokeRunnerOut = path.join(artifactDir, "smoke-runner.mjs");
 
 await rm(runtimeVaultDir, { recursive: true, force: true });
@@ -23,6 +24,7 @@ await rm(artifactDir, { recursive: true, force: true });
 await mkdir(artifactDir, { recursive: true });
 await mkdir(runtimeVaultDir, { recursive: true });
 await materializeVaultFixture(fixtureRef, runtimeVaultDir);
+await migrateFixtureBrand(runtimeVaultDir);
 await mkdir(pluginDir, { recursive: true });
 
 if (!skipBuild) {
@@ -30,7 +32,7 @@ if (!skipBuild) {
     cwd: rootDir,
     env: {
       ...process.env,
-      LOOM_PLUGIN_DIRS: pluginDir,
+      LOTUS_PLUGIN_DIRS: pluginDir,
     },
   });
 }
@@ -122,6 +124,106 @@ async function waitForProcess(child) {
 
 async function materializeVaultFixture(ref, destinationDir) {
   await runPiped("git", ["archive", "--format=tar", ref], "tar", ["-x", "-C", destinationDir], { cwd: rootDir });
+}
+
+async function migrateFixtureBrand(dir) {
+  await rewriteFixtureText(dir);
+  await renameFixtureEntries(dir);
+}
+
+async function rewriteFixtureText(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await rewriteFixtureText(fullPath);
+      continue;
+    }
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    let content;
+    try {
+      content = await readFile(fullPath, "utf8");
+    } catch {
+      continue;
+    }
+    const rewritten = replacePreviousBrand(content);
+    if (rewritten !== content) {
+      await writeFile(fullPath, rewritten, "utf8");
+    }
+  }
+}
+
+async function renameFixtureEntries(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await renameFixtureEntries(fullPath);
+    }
+
+    const newName = replacePreviousBrand(entry.name);
+    if (newName !== entry.name) {
+      await moveFixtureEntry(fullPath, path.join(dir, newName), entry.isDirectory());
+    }
+  }
+}
+
+async function moveFixtureEntry(source, destination, isDirectory) {
+  try {
+    await rename(source, destination);
+    return;
+  } catch (error) {
+    if (!isDirectory || (error?.code !== "ENOTEMPTY" && error?.code !== "EEXIST")) {
+      throw error;
+    }
+  }
+
+  await mergeFixtureDirectory(source, destination);
+  await rm(source, { recursive: true, force: true });
+}
+
+async function mergeFixtureDirectory(sourceDir, destinationDir) {
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationName = replacePreviousBrand(entry.name);
+    const destinationPath = path.join(destinationDir, destinationName);
+
+    if (entry.isDirectory()) {
+      await moveFixtureEntry(sourcePath, destinationPath, true);
+      continue;
+    }
+
+    if (entry.name === "Dockerfile") {
+      await rm(sourcePath, { force: true });
+      continue;
+    }
+
+    if (existsSync(destinationPath)) {
+      await rm(sourcePath, { force: true });
+      continue;
+    }
+
+    try {
+      await rename(sourcePath, destinationPath);
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+      await rm(sourcePath, { force: true });
+    }
+  }
+}
+
+function replacePreviousBrand(value) {
+  const previous = ["lo", "om"].join("");
+  return value
+    .replaceAll(previous.toUpperCase(), "LOTUS")
+    .replaceAll(`${previous[0].toUpperCase()}${previous.slice(1)}`, "Lotus")
+    .replaceAll(previous, "lotus");
 }
 
 async function runCapture(command, commandArgs, options) {

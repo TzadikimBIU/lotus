@@ -10,24 +10,24 @@ const compileMode = normalizeCompileMode(
   readOption("compile-mode")
   ?? readOption("compile")
   ?? readOption("mode")
-  ?? process.env.LOOM_COMPILE_MODE
-  ?? process.env.LOOM_COMPILE
+  ?? process.env.LOTUS_COMPILE_MODE
+  ?? process.env.LOTUS_COMPILE
   ?? (readFlag("light") ? "light" : readFlag("strict") ? "strict" : "strict"),
 );
-const lightLanguages = readListOption("languages", "LOOM_LIGHT_LANGUAGES");
-const lightLanguagePacks = readListOption("language-packs", "LOOM_LIGHT_LANGUAGE_PACKS");
-const lightFeatures = readListOption("features", "LOOM_LIGHT_FEATURES");
-const lightContainerGroups = readListOption("container-groups", "LOOM_LIGHT_CONTAINER_GROUPS");
-const lightContainerRuntimes = readListOption("container-runtimes", "LOOM_LIGHT_CONTAINER_RUNTIMES");
-const pluginName = "loom";
+const lightLanguages = readListOption("languages", "LOTUS_LIGHT_LANGUAGES");
+const lightLanguagePacks = readListOption("language-packs", "LOTUS_LIGHT_LANGUAGE_PACKS");
+const lightFeatures = readListOption("features", "LOTUS_LIGHT_FEATURES");
+const lightContainerGroups = readListOption("container-groups", "LOTUS_LIGHT_CONTAINER_GROUPS");
+const lightContainerRuntimes = readListOption("container-runtimes", "LOTUS_LIGHT_CONTAINER_RUNTIMES");
+const pluginName = "lotus";
 const explicitDeployDirs = [
-  ...(process.env.LOOM_PLUGIN_DIRS ?? "")
+  ...(process.env.LOTUS_PLUGIN_DIRS ?? "")
     .split(path.delimiter)
     .map((value) => value.trim())
     .filter(Boolean)
 ];
 
-console.log(`Building loom compile profile: ${formatCompileProfile()}`);
+console.log(`Building lotus compile profile: ${formatCompileProfile()}`);
 
 await esbuild.build({
   entryPoints: ["src/main.ts"],
@@ -47,12 +47,12 @@ await esbuild.build({
     "@codemirror/language",
   ],
   define: {
-    __LOOM_COMPILE_MODE__: JSON.stringify(compileMode),
-    __LOOM_LIGHT_LANGUAGES__: JSON.stringify(lightLanguages),
-    __LOOM_LIGHT_LANGUAGE_PACKS__: JSON.stringify(lightLanguagePacks),
-    __LOOM_LIGHT_FEATURES__: JSON.stringify(lightFeatures),
-    __LOOM_LIGHT_CONTAINER_GROUPS__: JSON.stringify(lightContainerGroups),
-    __LOOM_LIGHT_CONTAINER_RUNTIMES__: JSON.stringify(lightContainerRuntimes),
+    __LOTUS_COMPILE_MODE__: JSON.stringify(compileMode),
+    __LOTUS_LIGHT_LANGUAGES__: JSON.stringify(lightLanguages),
+    __LOTUS_LIGHT_LANGUAGE_PACKS__: JSON.stringify(lightLanguagePacks),
+    __LOTUS_LIGHT_FEATURES__: JSON.stringify(lightFeatures),
+    __LOTUS_LIGHT_CONTAINER_GROUPS__: JSON.stringify(lightContainerGroups),
+    __LOTUS_LIGHT_CONTAINER_RUNTIMES__: JSON.stringify(lightContainerRuntimes),
   },
   logLevel: "info",
 });

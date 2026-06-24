@@ -1,8 +1,8 @@
-.loom-codeblock-shell {
+.lotus-codeblock-shell {
   position: relative;
 }
 
-.loom-code-toolbar {
+.lotus-code-toolbar {
   position: absolute;
   top: 0.6rem;
   right: 0.6rem;
@@ -19,7 +19,7 @@
   white-space: normal;
 }
 
-.loom-toolbar-button {
+.lotus-toolbar-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -33,21 +33,21 @@
   cursor: pointer;
 }
 
-.loom-toolbar-button:hover {
+.lotus-toolbar-button:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.loom-toolbar-button.is-running svg,
-.loom-spinner {
-  animation: loom-spin 0.9s linear infinite;
+.lotus-toolbar-button.is-running svg,
+.lotus-spinner {
+  animation: lotus-spin 0.9s linear infinite;
 }
 
-.loom-inline-output-host {
+.lotus-inline-output-host {
   margin-top: 0.65rem;
 }
 
-.loom-stdin-panel {
+.lotus-stdin-panel {
   display: grid;
   gap: 0.5rem;
   margin-top: 0.5rem;
@@ -57,7 +57,7 @@
   background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
 }
 
-.loom-stdin-header {
+.lotus-stdin-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -68,17 +68,17 @@
   color: var(--text-faint);
 }
 
-.loom-stdin-actions {
+.lotus-stdin-actions {
   display: flex;
   gap: 0.4rem;
 }
 
-.loom-stdin-actions button {
+.lotus-stdin-actions button {
   font-size: 0.78rem;
   padding: 0.25rem 0.55rem;
 }
 
-.loom-stdin-input {
+.lotus-stdin-input {
   min-height: 4.5rem;
   resize: vertical;
   font-family: var(--font-monospace);
@@ -86,7 +86,7 @@
   line-height: 1.45;
 }
 
-.loom-output-panel {
+.lotus-output-panel {
   margin-top: 0.5rem;
   border-radius: 14px;
   border: 1px solid var(--background-modifier-border);
@@ -94,27 +94,27 @@
   overflow: hidden;
 }
 
-.loom-output-panel.is-hidden {
+.lotus-output-panel.is-hidden {
   display: none;
 }
 
-.loom-output-panel.is-success {
+.lotus-output-panel.is-success {
   border-color: color-mix(in srgb, var(--color-green) 40%, var(--background-modifier-border));
 }
 
-.loom-output-panel.is-warning {
+.lotus-output-panel.is-warning {
   border-color: color-mix(in srgb, var(--color-orange) 45%, var(--background-modifier-border));
 }
 
-.loom-output-panel.is-failure {
+.lotus-output-panel.is-failure {
   border-color: color-mix(in srgb, var(--color-red) 48%, var(--background-modifier-border));
 }
 
-.loom-output-panel.is-running {
+.lotus-output-panel.is-running {
   border-style: dashed;
 }
 
-.loom-output-header {
+.lotus-output-header {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -123,42 +123,42 @@
   background: color-mix(in srgb, var(--background-primary-alt) 65%, transparent);
 }
 
-.loom-output-badge,
-.loom-spinner {
+.lotus-output-badge,
+.lotus-spinner {
   width: 1.1rem;
   height: 1.1rem;
   color: var(--text-muted);
 }
 
-.loom-output-title {
+.lotus-output-title {
   font-weight: 600;
   color: var(--text-normal);
 }
 
-.loom-output-meta {
+.lotus-output-meta {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
 
-.loom-output-body {
+.lotus-output-body {
   padding: 0.8rem 0.9rem 0.95rem;
   display: grid;
   gap: 0.8rem;
 }
 
-.loom-output-stream {
+.lotus-output-stream {
   display: grid;
   gap: 0.35rem;
 }
 
-.loom-output-stream-label {
+.lotus-output-stream-label {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
 
-.loom-output-pre {
+.lotus-output-pre {
   margin: 0;
   padding: 0.75rem 0.8rem;
   border-radius: 10px;
@@ -171,22 +171,22 @@
   line-height: 1.45;
 }
 
-.loom-output-pre.is-scroll-limited {
-  max-height: calc((var(--loom-output-visible-lines) * 1.45em) + 1.5rem);
+.lotus-output-pre.is-scroll-limited {
+  max-height: calc((var(--lotus-output-visible-lines) * 1.45em) + 1.5rem);
   overflow: auto;
 }
 
-.loom-output-empty {
+.lotus-output-empty {
   color: var(--text-muted);
   font-style: italic;
 }
 
-.loom-source-preview {
+.lotus-source-preview {
   display: grid;
   gap: 0.45rem;
 }
 
-.loom-source-preview-summary {
+.lotus-source-preview-summary {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -197,7 +197,7 @@
   color: var(--text-faint);
 }
 
-.loom-source-preview-meta {
+.lotus-source-preview-meta {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -207,43 +207,43 @@
   color: var(--text-muted);
 }
 
-.loom-source-preview-pre {
+.lotus-source-preview-pre {
   max-height: 24rem;
   overflow: auto;
 }
 
-.loom-modal-actions {
+.lotus-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 1rem;
 }
 
-.loom-settings-section {
+.lotus-settings-section {
   border-top: 1px solid var(--background-modifier-border);
   padding: 0.35rem 0;
 }
 
-.loom-settings-section:last-child {
+.lotus-settings-section:last-child {
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.loom-settings-summary {
+.lotus-settings-summary {
   cursor: pointer;
   font-weight: 600;
   color: var(--text-normal);
   padding: 0.65rem 0;
 }
 
-.loom-settings-summary:hover {
+.lotus-settings-summary:hover {
   color: var(--text-accent);
 }
 
-.loom-settings-section-body {
+.lotus-settings-section-body {
   padding: 0.1rem 0 0.6rem;
 }
 
-.loom-custom-language {
+.lotus-custom-language {
   margin: 0.45rem 0;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--background-modifier-border);
@@ -251,12 +251,12 @@
   background: var(--background-secondary);
 }
 
-.loom-custom-language > summary {
+.lotus-custom-language > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.loom-language-package {
+.lotus-language-package {
   margin: 0.45rem 0;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--background-modifier-border);
@@ -264,99 +264,99 @@
   background: var(--background-secondary);
 }
 
-.loom-language-package > summary {
+.lotus-language-package > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.loom-custom-language-body {
+.lotus-custom-language-body {
   margin-top: 0.5rem;
 }
 
-.loom-llvm-code .loom-llvm-comment,
-.cm-line .loom-llvm-comment {
+.lotus-llvm-code .lotus-llvm-comment,
+.cm-line .lotus-llvm-comment {
   color: var(--text-faint);
   font-style: italic;
 }
 
-.loom-llvm-code .loom-llvm-string,
-.cm-line .loom-llvm-string {
+.lotus-llvm-code .lotus-llvm-string,
+.cm-line .lotus-llvm-string {
   color: var(--color-green);
 }
 
-.loom-llvm-code .loom-llvm-string-prefix,
-.loom-llvm-code .loom-llvm-type,
-.cm-line .loom-llvm-string-prefix,
-.cm-line .loom-llvm-type {
+.lotus-llvm-code .lotus-llvm-string-prefix,
+.lotus-llvm-code .lotus-llvm-type,
+.cm-line .lotus-llvm-string-prefix,
+.cm-line .lotus-llvm-type {
   color: var(--color-cyan);
 }
 
-.loom-llvm-code .loom-llvm-keyword-control,
-.loom-llvm-code .loom-llvm-keyword-declaration,
-.loom-llvm-code .loom-llvm-keyword-memory,
-.loom-llvm-code .loom-llvm-keyword-arithmetic,
-.loom-llvm-code .loom-llvm-keyword-comparison,
-.loom-llvm-code .loom-llvm-keyword-cast,
-.loom-llvm-code .loom-llvm-keyword-other,
-.cm-line .loom-llvm-keyword-control,
-.cm-line .loom-llvm-keyword-declaration,
-.cm-line .loom-llvm-keyword-memory,
-.cm-line .loom-llvm-keyword-arithmetic,
-.cm-line .loom-llvm-keyword-comparison,
-.cm-line .loom-llvm-keyword-cast,
-.cm-line .loom-llvm-keyword-other {
+.lotus-llvm-code .lotus-llvm-keyword-control,
+.lotus-llvm-code .lotus-llvm-keyword-declaration,
+.lotus-llvm-code .lotus-llvm-keyword-memory,
+.lotus-llvm-code .lotus-llvm-keyword-arithmetic,
+.lotus-llvm-code .lotus-llvm-keyword-comparison,
+.lotus-llvm-code .lotus-llvm-keyword-cast,
+.lotus-llvm-code .lotus-llvm-keyword-other,
+.cm-line .lotus-llvm-keyword-control,
+.cm-line .lotus-llvm-keyword-declaration,
+.cm-line .lotus-llvm-keyword-memory,
+.cm-line .lotus-llvm-keyword-arithmetic,
+.cm-line .lotus-llvm-keyword-comparison,
+.cm-line .lotus-llvm-keyword-cast,
+.cm-line .lotus-llvm-keyword-other {
   color: var(--color-red);
   font-weight: 600;
 }
 
-.loom-llvm-code .loom-llvm-keyword-modifier,
-.loom-llvm-code .loom-llvm-attribute,
-.loom-llvm-code .loom-llvm-attribute-group,
-.cm-line .loom-llvm-keyword-modifier,
-.cm-line .loom-llvm-attribute,
-.cm-line .loom-llvm-attribute-group {
+.lotus-llvm-code .lotus-llvm-keyword-modifier,
+.lotus-llvm-code .lotus-llvm-attribute,
+.lotus-llvm-code .lotus-llvm-attribute-group,
+.cm-line .lotus-llvm-keyword-modifier,
+.cm-line .lotus-llvm-attribute,
+.cm-line .lotus-llvm-attribute-group {
   color: var(--color-orange);
 }
 
-.loom-llvm-code .loom-llvm-global,
-.loom-llvm-code .loom-llvm-intrinsic,
-.cm-line .loom-llvm-global,
-.cm-line .loom-llvm-intrinsic {
+.lotus-llvm-code .lotus-llvm-global,
+.lotus-llvm-code .lotus-llvm-intrinsic,
+.cm-line .lotus-llvm-global,
+.cm-line .lotus-llvm-intrinsic {
   color: var(--color-blue);
 }
 
-.loom-llvm-code .loom-llvm-local,
-.cm-line .loom-llvm-local {
+.lotus-llvm-code .lotus-llvm-local,
+.cm-line .lotus-llvm-local {
   color: var(--color-purple);
 }
 
-.loom-llvm-code .loom-llvm-label,
-.loom-llvm-code .loom-llvm-comdat,
-.loom-llvm-code .loom-llvm-metadata,
-.cm-line .loom-llvm-label,
-.cm-line .loom-llvm-comdat,
-.cm-line .loom-llvm-metadata {
+.lotus-llvm-code .lotus-llvm-label,
+.lotus-llvm-code .lotus-llvm-comdat,
+.lotus-llvm-code .lotus-llvm-metadata,
+.cm-line .lotus-llvm-label,
+.cm-line .lotus-llvm-comdat,
+.cm-line .lotus-llvm-metadata {
   color: var(--color-pink);
 }
 
-.loom-llvm-code .loom-llvm-number,
-.loom-llvm-code .loom-llvm-predicate,
-.cm-line .loom-llvm-number,
-.cm-line .loom-llvm-predicate {
+.lotus-llvm-code .lotus-llvm-number,
+.lotus-llvm-code .lotus-llvm-predicate,
+.cm-line .lotus-llvm-number,
+.cm-line .lotus-llvm-predicate {
   color: var(--color-yellow);
 }
 
-.loom-llvm-code .loom-llvm-constant,
-.cm-line .loom-llvm-constant {
+.lotus-llvm-code .lotus-llvm-constant,
+.cm-line .lotus-llvm-constant {
   color: var(--color-accent);
 }
 
-.loom-llvm-code .loom-llvm-punctuation,
-.cm-line .loom-llvm-punctuation {
+.lotus-llvm-code .lotus-llvm-punctuation,
+.cm-line .lotus-llvm-punctuation {
   color: var(--text-muted);
 }
 
-@keyframes loom-spin {
+@keyframes lotus-spin {
   from {
     transform: rotate(0deg);
   }
@@ -367,31 +367,31 @@
 }
 
 @media print {
-  .loom-code-toolbar,
-  .loom-stdin-panel,
-  .loom-inline-output-host:empty {
+  .lotus-code-toolbar,
+  .lotus-stdin-panel,
+  .lotus-inline-output-host:empty {
     display: none !important;
   }
-  .loom-output-panel {
+  .lotus-output-panel {
     page-break-inside: avoid;
     break-inside: avoid;
   }
-  .loom-print-hide-code {
+  .lotus-print-hide-code {
     display: none !important;
   }
-  .loom-print-hide-output {
+  .lotus-print-hide-output {
     display: none !important;
   }
 }
 
 /* Tabbed Interface for Container Group Editor */
-.loom-tab-container {
+.lotus-tab-container {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.loom-tab-header {
+.lotus-tab-header {
   display: flex;
   gap: 0.5rem;
   border-bottom: 1px solid var(--background-modifier-border);
@@ -399,7 +399,7 @@
   overflow-x: auto;
 }
 
-.loom-tab-btn {
+.lotus-tab-btn {
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -411,22 +411,22 @@
   white-space: nowrap;
 }
 
-.loom-tab-btn:hover {
+.lotus-tab-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.loom-tab-btn.is-active {
+.lotus-tab-btn.is-active {
   background: var(--background-modifier-active-hover);
   color: var(--text-accent);
   font-weight: 600;
 }
 
-.loom-tab-content {
+.lotus-tab-content {
   min-height: 250px;
 }
 
-.loom-language-card {
+.lotus-language-card {
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 0.75rem;

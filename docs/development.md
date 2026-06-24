@@ -9,20 +9,20 @@ This document covers developer-facing integrations, the runner API contract, and
 Runners implement this interface:
 
 ```ts
-interface loomRunner {
+interface lotusRunner {
   id: string;
   displayName: string;
-  languages: readonly loomNormalizedLanguage[];
-  canRun(block: loomCodeBlock, settings: loomPluginSettings): boolean;
+  languages: readonly lotusNormalizedLanguage[];
+  canRun(block: lotusCodeBlock, settings: lotusPluginSettings): boolean;
   run(
-    block: loomCodeBlock,
-    context: loomRunContext,
-    settings: loomPluginSettings
-  ): Promise<loomRunResult>;
+    block: lotusCodeBlock,
+    context: lotusRunContext,
+    settings: lotusPluginSettings
+  ): Promise<lotusRunResult>;
 }
 ```
 
-A runner determines whether it can handle a block based on its language and settings, then returns a `Promise<loomRunResult>`.
+A runner determines whether it can handle a block based on its language and settings, then returns a `Promise<lotusRunResult>`.
 
 ---
 
@@ -61,7 +61,7 @@ await note.updateJsonBetween("<!-- state:start -->", "<!-- state:end -->", (stat
 ```
 
 > [!IMPORTANT]
-> While timeouts can stop loom from waiting for asynchronous work, they cannot safely interrupt a synchronous infinite loop once it has started running inside the Obsidian renderer.
+> While timeouts can stop lotus from waiting for asynchronous work, they cannot safely interrupt a synchronous infinite loop once it has started running inside the Obsidian renderer.
 
 ---
 
@@ -70,12 +70,12 @@ await note.updateJsonBetween("<!-- state:start -->", "<!-- state:end -->", (stat
 External language packs reside under the plugin directory:
 
 ```text
-.obsidian/plugins/loom/language-packs/*.json
+.obsidian/plugins/lotus/language-packs/*.json
 ```
 
-Each JSON file describes one optional package. You can import a `.zip`, `.tar`, `.tgz`, or `.tar.gz` bundle from **Language Packages** in the settings. Loom unpacks these under `language-packs` and scans them.
+Each JSON file describes one optional package. You can import a `.zip`, `.tar`, `.tgz`, or `.tar.gz` bundle from **Language Packages** in the settings. Lotus unpacks these under `language-packs` and scans them.
 
-### Manifest Example (`loom-language-pack.json`)
+### Manifest Example (`lotus-language-pack.json`)
 
 ```json
 {
@@ -95,11 +95,11 @@ Each JSON file describes one optional package. You can import a `.zip`, `.tar`, 
 }
 ```
 
-Keep the manifest at the archive root. If the archive has a single top-level folder, Loom strips it during import.
+Keep the manifest at the archive root. If the archive has a single top-level folder, Lotus strips it during import.
 
 ```text
-loom-language-pack-julia/
-  loom-language-pack.json
+lotus-language-pack-julia/
+  lotus-language-pack.json
   highlighting/
     julia.tmLanguage.json
   examples/
@@ -112,7 +112,7 @@ External languages use the same execution contract as custom languages. They can
 
 ## Smoke Test Matrix
 
-The smoke runner materializes a fixture vault from the `vault` branch, builds Loom, installs the compiled plugin artifacts into a temporary copy of that vault, runs tagged code blocks, and writes reports under `.loom/artifacts/smoke/<profile>`.
+The smoke runner materializes a fixture vault from the `vault` branch, builds Lotus, installs the compiled plugin artifacts into a temporary copy of that vault, runs tagged code blocks, and writes reports under `.lotus/artifacts/smoke/<profile>`.
 
 ```bash
 npm run smoke
@@ -150,7 +150,7 @@ The temporary test vault loads `main.js` via a small Obsidian shim and verifies 
 Local PDF export uses the same path if Chrome, Chromium, Google Chrome, or `wkhtmltopdf` is installed. The path can also be provided explicitly:
 
 ```bash
-LOOM_CHROME_PATH=/path/to/chrome npm run smoke -- --profile minimal --require-pdf
+LOTUS_CHROME_PATH=/path/to/chrome npm run smoke -- --profile minimal --require-pdf
 ```
 
 Without a browser, local smoke writes `pdf-skipped.txt` unless `--require-pdf` is specified.
@@ -159,7 +159,7 @@ Without a browser, local smoke writes `pdf-skipped.txt` unless `--require-pdf` i
 
 ## Compilation Profiles
 
-Loom can be built with different compiler profiles via `esbuild.config.mjs`:
+Lotus can be built with different compiler profiles via `esbuild.config.mjs`:
 
 - **`strict` (Default)**: All languages, runtimes, and features are fully compiled and bundled.
 - **`light`**: Strips out languages, packs, runtimes, or features at compile-time to produce a stripped-down, lighter plugin bundle.
@@ -181,9 +181,9 @@ When building the `light` profile, configuration options can be passed via comma
 
 | Parameter | CLI Flag | Environment Variable | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Mode** | `--compile-mode=light` | `LOOM_COMPILE_MODE=light` | Set compile profile (`strict` or `light`). |
-| **Languages** | `--languages=python,shell` | `LOOM_LIGHT_LANGUAGES` | Comma-separated list of allowed languages. |
-| **Language Packs** | `--language-packs=interpreted` | `LOOM_LIGHT_LANGUAGE_PACKS` | Comma-separated list of allowed language packs. |
-| **Features** | `--features=container-groups` | `LOOM_LIGHT_FEATURES` | Allowed features: `custom-languages`, `external-language-packs`, `container-groups`, `output-filters`. |
-| **Container Groups**| `--container-groups=py-sandbox` | `LOOM_LIGHT_CONTAINER_GROUPS` | Specific permitted container groups. |
-| **Runtimes** | `--container-runtimes=docker,wsl` | `LOOM_LIGHT_CONTAINER_RUNTIMES` | Permitted container runtimes (`docker`, `podman`, `qemu`, `wsl`, `ssh`, `custom`). |
+| **Mode** | `--compile-mode=light` | `LOTUS_COMPILE_MODE=light` | Set compile profile (`strict` or `light`). |
+| **Languages** | `--languages=python,shell` | `LOTUS_LIGHT_LANGUAGES` | Comma-separated list of allowed languages. |
+| **Language Packs** | `--language-packs=interpreted` | `LOTUS_LIGHT_LANGUAGE_PACKS` | Comma-separated list of allowed language packs. |
+| **Features** | `--features=container-groups` | `LOTUS_LIGHT_FEATURES` | Allowed features: `custom-languages`, `external-language-packs`, `container-groups`, `output-filters`. |
+| **Container Groups**| `--container-groups=py-sandbox` | `LOTUS_LIGHT_CONTAINER_GROUPS` | Specific permitted container groups. |
+| **Runtimes** | `--container-runtimes=docker,wsl` | `LOTUS_LIGHT_CONTAINER_RUNTIMES` | Permitted container runtimes (`docker`, `podman`, `qemu`, `wsl`, `ssh`, `custom`). |

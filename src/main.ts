@@ -16,11 +16,11 @@ import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import JSZip from "jszip";
 import { dirname } from "path";
-import { loomContainerRunner } from "./execution/containerRunner";
+import { lotusContainerRunner } from "./execution/containerRunner";
 import { isCompileContainerGroupAllowed, isCompileFeatureAllowed } from "./buildProfile";
-import { resolveExecutionContext as resolveLoomExecutionContext } from "./executionContext";
+import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
 import { addLlvmDecorations } from "./llvmHighlight";
-import { loomLogger, type loomLogInput, type loomLogTarget } from "./logging";
+import { lotusLogger, type lotusLogInput, type lotusLogTarget } from "./logging";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
 import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
@@ -35,51 +35,51 @@ import { NativeCompiledRunner } from "./runners/nativeCompiled";
 import { OcamlRunner } from "./runners/ocaml";
 import { PythonRunner } from "./runners/python";
 import { ProofRunner } from "./runners/proof";
-import { loomRunnerRegistry } from "./runners/registry";
+import { lotusRunnerRegistry } from "./runners/registry";
 import { DEFAULT_SETTINGS } from "./defaultSettings";
-import { loomSettingTab, showExecutionDisabledNotice } from "./settings";
+import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
 import { resolveReferencedSource } from "./sourceExtract";
 import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
-import type { loomCodeBlock, loomExternalLanguage, loomExternalLanguagePack, loomPluginSettings, loomResolvedExecutionContext, loomStoredOutput } from "./types";
+import type { lotusCodeBlock, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStoredOutput } from "./types";
 
-const loomRefreshEffect = StateEffect.define<void>();
+const lotusRefreshEffect = StateEffect.define<void>();
 const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
-const LANGUAGE_PACK_MANIFEST_NAMES = new Set(["loom-language-pack.json", "language-pack.json", "manifest.json"]);
-const NOTE_HASH_FRONTMATTER_KEY = "loom-note-hash";
-const CODE_BLOCK_HASHES_FRONTMATTER_KEY = "loom-code-block-hashes";
-const LOOM_HASH_FRONTMATTER_KEYS = new Set([NOTE_HASH_FRONTMATTER_KEY, CODE_BLOCK_HASHES_FRONTMATTER_KEY]);
-const REPRODUCIBILITY_FRONTMATTER_KEY = "loom-reproducibility";
-const HASH_POLICY_FRONTMATTER_KEY = "loom-hash-policy";
-const HASH_IGNORE_FRONTMATTER_KEY = "loom-hash-ignore-frontmatter";
-const HASH_IGNORE_BLOCK_ATTRIBUTES_KEY = "loom-hash-ignore-block-attributes";
+const LANGUAGE_PACK_MANIFEST_NAMES = new Set(["lotus-language-pack.json", "language-pack.json", "manifest.json"]);
+const NOTE_HASH_FRONTMATTER_KEY = "lotus-note-hash";
+const CODE_BLOCK_HASHES_FRONTMATTER_KEY = "lotus-code-block-hashes";
+const LOTUS_HASH_FRONTMATTER_KEYS = new Set([NOTE_HASH_FRONTMATTER_KEY, CODE_BLOCK_HASHES_FRONTMATTER_KEY]);
+const REPRODUCIBILITY_FRONTMATTER_KEY = "lotus-reproducibility";
+const HASH_POLICY_FRONTMATTER_KEY = "lotus-hash-policy";
+const HASH_IGNORE_FRONTMATTER_KEY = "lotus-hash-ignore-frontmatter";
+const HASH_IGNORE_BLOCK_ATTRIBUTES_KEY = "lotus-hash-ignore-block-attributes";
 const REPRODUCIBILITY_SNAPSHOT_VERSION = 1;
-const SUPPORTED_PDF_EXPORT_MODES = new Set<loomPluginSettings["pdfExportMode"]>(["both", "code", "output"]);
-const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<loomPluginSettings["loggingNotePathMode"]>(["plain", "hash", "omit"]);
-type loomOutputFileMode = "replace" | "append";
-type loomOutputFileFormat = "text" | "json";
-type loomOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
-type loomHashPolicyPreset = "strict" | "runtime-flexible" | "runtime-inputs" | "runtime-inputs-outputs" | "custom";
-type loomReproducibilityStatus = "verified" | "changed" | "missing-snapshot";
+const SUPPORTED_PDF_EXPORT_MODES = new Set<lotusPluginSettings["pdfExportMode"]>(["both", "code", "output"]);
+const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<lotusPluginSettings["loggingNotePathMode"]>(["plain", "hash", "omit"]);
+type lotusOutputFileMode = "replace" | "append";
+type lotusOutputFileFormat = "text" | "json";
+type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
+type lotusHashPolicyPreset = "strict" | "runtime-flexible" | "runtime-inputs" | "runtime-inputs-outputs" | "custom";
+type lotusReproducibilityStatus = "verified" | "changed" | "missing-snapshot";
 
-interface loomHashPolicy {
-  preset: loomHashPolicyPreset;
+interface lotusHashPolicy {
+  preset: lotusHashPolicyPreset;
   ignoreFrontmatter: string[];
   ignoreBlockAttributes: string[];
 }
 
-interface loomHashPolicyPresetDefinition {
-  id: Exclude<loomHashPolicyPreset, "custom">;
+interface lotusHashPolicyPresetDefinition {
+  id: Exclude<lotusHashPolicyPreset, "custom">;
   label: string;
   description: string;
   ignoreFrontmatter: string[];
   ignoreBlockAttributes: string[];
 }
 
-interface loomCodeBlockHashEntry {
+interface lotusCodeBlockHashEntry {
   id: string;
   ordinal: number;
   language: string;
@@ -89,8 +89,8 @@ interface loomCodeBlockHashEntry {
   endLine: number;
 }
 
-interface loomReproducibilityVerification {
-  status: loomReproducibilityStatus;
+interface lotusReproducibilityVerification {
+  status: lotusReproducibilityStatus;
   checkedAt: string;
   summary: string;
   issues: string[];
@@ -106,28 +106,28 @@ interface loomReproducibilityVerification {
   };
 }
 
-interface loomReproducibilitySnapshot {
+interface lotusReproducibilitySnapshot {
   version: number;
   updatedAt: string;
   noteHash: string;
   policy: ReturnType<typeof serializeHashPolicy>;
-  blocks: loomCodeBlockHashEntry[];
-  verification?: loomReproducibilityVerification;
+  blocks: lotusCodeBlockHashEntry[];
+  verification?: lotusReproducibilityVerification;
 }
 
-interface loomOutputFileTarget {
+interface lotusOutputFileTarget {
   path: string;
-  mode: loomOutputFileMode;
-  format: loomOutputFileFormat;
-  streams: loomOutputFileStream[];
+  mode: lotusOutputFileMode;
+  format: lotusOutputFileFormat;
+  streams: lotusOutputFileStream[];
 }
 
-interface loomArchiveEntry {
+interface lotusArchiveEntry {
   path: string;
   data: Uint8Array;
 }
 
-const HASH_POLICY_PRESETS: loomHashPolicyPresetDefinition[] = [
+const HASH_POLICY_PRESETS: lotusHashPolicyPresetDefinition[] = [
   {
     id: "strict",
     label: "Strict",
@@ -139,22 +139,22 @@ const HASH_POLICY_PRESETS: loomHashPolicyPresetDefinition[] = [
     id: "runtime-flexible",
     label: "Runtime Flexible",
     description: "Allow execution target, working directory, and timeout changes while locking code and prose.",
-    ignoreFrontmatter: ["loom-execution", "loom-container", "loom-cwd", "loom-working-directory", "loom-timeout"],
-    ignoreBlockAttributes: ["loom-execution", "execution", "loom-container", "container", "loom-cwd", "cwd", "working-directory", "loom-timeout", "timeout"],
+    ignoreFrontmatter: ["lotus-execution", "lotus-container", "lotus-cwd", "lotus-working-directory", "lotus-timeout"],
+    ignoreBlockAttributes: ["lotus-execution", "execution", "lotus-container", "container", "lotus-cwd", "cwd", "working-directory", "lotus-timeout", "timeout"],
   },
   {
     id: "runtime-inputs",
     label: "Runtime + Inputs",
     description: "Allow runtime fields plus stdin/input wiring changes.",
-    ignoreFrontmatter: ["loom-execution", "loom-container", "loom-cwd", "loom-working-directory", "loom-timeout"],
-    ignoreBlockAttributes: ["loom-execution", "execution", "loom-container", "container", "loom-cwd", "cwd", "working-directory", "loom-timeout", "timeout", "loom-stdin", "stdin", "loom-stdin-file", "stdin-file", "loom-input", "input"],
+    ignoreFrontmatter: ["lotus-execution", "lotus-container", "lotus-cwd", "lotus-working-directory", "lotus-timeout"],
+    ignoreBlockAttributes: ["lotus-execution", "execution", "lotus-container", "container", "lotus-cwd", "cwd", "working-directory", "lotus-timeout", "timeout", "lotus-stdin", "stdin", "lotus-stdin-file", "stdin-file", "lotus-input", "input"],
   },
   {
     id: "runtime-inputs-outputs",
     label: "Runtime + Inputs + Outputs",
     description: "Allow runtime, stdin/input, and output destination plumbing changes.",
-    ignoreFrontmatter: ["loom-execution", "loom-container", "loom-cwd", "loom-working-directory", "loom-timeout"],
-    ignoreBlockAttributes: ["loom-execution", "execution", "loom-container", "container", "loom-cwd", "cwd", "working-directory", "loom-timeout", "timeout", "loom-stdin", "stdin", "loom-stdin-file", "stdin-file", "loom-input", "input", "loom-output-file", "output-file", "loom-output-file-mode", "output-file-mode", "loom-output-file-format", "output-file-format", "loom-output-file-streams", "output-file-streams", "loom-output-append", "output-append", "loom-output-lines", "output-lines"],
+    ignoreFrontmatter: ["lotus-execution", "lotus-container", "lotus-cwd", "lotus-working-directory", "lotus-timeout"],
+    ignoreBlockAttributes: ["lotus-execution", "execution", "lotus-container", "container", "lotus-cwd", "cwd", "working-directory", "lotus-timeout", "timeout", "lotus-stdin", "stdin", "lotus-stdin-file", "stdin-file", "lotus-input", "input", "lotus-output-file", "output-file", "lotus-output-file-mode", "output-file-mode", "lotus-output-file-format", "output-file-format", "lotus-output-file-streams", "output-file-streams", "lotus-output-append", "output-append", "lotus-output-lines", "output-lines"],
   },
 ];
 
@@ -169,12 +169,12 @@ class ExecutionConsentModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Enable loom local execution?" });
+    contentEl.createEl("h2", { text: "Enable lotus local execution?" });
     contentEl.createEl("p", {
-      text: "loom runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
+      text: "lotus runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
     });
 
-    const actions = contentEl.createDiv({ cls: "loom-modal-actions" });
+    const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
     const cancelButton = actions.createEl("button", { text: "Cancel" });
     const enableButton = actions.createEl("button", { text: "Enable and run", cls: "mod-cta" });
 
@@ -187,13 +187,13 @@ class ExecutionConsentModal extends Modal {
 }
 
 class ReproducibilityPolicyModal extends Modal {
-  private selectedPreset: Exclude<loomHashPolicyPreset, "custom">;
+  private selectedPreset: Exclude<lotusHashPolicyPreset, "custom">;
   private descriptionEl: HTMLElement | null = null;
 
   constructor(
     app: Plugin["app"],
-    currentPolicy: loomHashPolicy,
-    private readonly onChoose: (preset: Exclude<loomHashPolicyPreset, "custom">) => Promise<void>,
+    currentPolicy: lotusHashPolicy,
+    private readonly onChoose: (preset: Exclude<lotusHashPolicyPreset, "custom">) => Promise<void>,
   ) {
     super(app);
     this.selectedPreset = currentPolicy.preset === "custom" ? "runtime-flexible" : currentPolicy.preset;
@@ -202,7 +202,7 @@ class ReproducibilityPolicyModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Loom Reproducibility Policy" });
+    contentEl.createEl("h2", { text: "Lotus Reproducibility Policy" });
     contentEl.createEl("p", {
       text: "Choose what may change without invalidating a saved reproducibility snapshot.",
     });
@@ -218,12 +218,12 @@ class ReproducibilityPolicyModal extends Modal {
         }
         dropdown.setValue(this.selectedPreset);
         dropdown.onChange((value) => {
-          this.selectedPreset = value as Exclude<loomHashPolicyPreset, "custom">;
+          this.selectedPreset = value as Exclude<lotusHashPolicyPreset, "custom">;
           this.renderPresetDescription();
         });
       });
 
-    const actions = contentEl.createDiv({ cls: "loom-modal-actions" });
+    const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
     const cancelButton = actions.createEl("button", { text: "Cancel" });
     const applyButton = actions.createEl("button", { text: "Apply policy", cls: "mod-cta" });
     cancelButton.addEventListener("click", () => this.close());
@@ -243,32 +243,32 @@ class ReproducibilityPolicyModal extends Modal {
   }
 }
 
-class loomToolbarRenderChild extends MarkdownRenderChild {
+class lotusToolbarRenderChild extends MarkdownRenderChild {
   private panelContainer: HTMLDivElement | null = null;
   private toolbarElement: HTMLElement | null = null;
   private unregisterOutputListener: (() => void) | null = null;
 
   constructor(
     containerEl: HTMLElement,
-    private readonly plugin: loomPlugin,
-    private readonly block: loomCodeBlock,
+    private readonly plugin: lotusPlugin,
+    private readonly block: lotusCodeBlock,
     private readonly codeElement: HTMLElement,
   ) {
     super(containerEl);
   }
 
   onload(): void {
-    this.codeElement.classList.add("loom-codeblock-shell");
+    this.codeElement.classList.add("lotus-codeblock-shell");
     this.toolbarElement = this.plugin.createToolbarElement(this.block);
     this.codeElement.appendChild(this.toolbarElement);
 
     if (this.plugin.settings.pdfExportMode === "output") {
-      this.codeElement.classList.add("loom-print-hide-code");
+      this.codeElement.classList.add("lotus-print-hide-code");
     }
 
-    const hostClasses = ["loom-inline-output-host"];
+    const hostClasses = ["lotus-inline-output-host"];
     if (this.plugin.settings.pdfExportMode === "code") {
-      hostClasses.push("loom-print-hide-output");
+      hostClasses.push("lotus-print-hide-output");
     }
     this.panelContainer = document.createElement("div");
     this.panelContainer.className = hostClasses.join(" ");
@@ -289,18 +289,18 @@ class loomToolbarRenderChild extends MarkdownRenderChild {
   }
 }
 
-class loomToolbarWidget extends WidgetType {
+class lotusToolbarWidget extends WidgetType {
   private readonly isRunning: boolean;
 
   constructor(
-    private readonly plugin: loomPlugin,
-    private readonly block: loomCodeBlock,
+    private readonly plugin: lotusPlugin,
+    private readonly block: lotusCodeBlock,
   ) {
     super();
     this.isRunning = plugin.isBlockRunning(block.id);
   }
 
-  eq(other: loomToolbarWidget): boolean {
+  eq(other: lotusToolbarWidget): boolean {
     return other.block.id === this.block.id && other.isRunning === this.isRunning;
   }
 
@@ -309,29 +309,29 @@ class loomToolbarWidget extends WidgetType {
   }
 }
 
-class loomOutputWidget extends WidgetType {
+class lotusOutputWidget extends WidgetType {
   constructor(
-    private readonly plugin: loomPlugin,
-    private readonly block: loomCodeBlock,
+    private readonly plugin: lotusPlugin,
+    private readonly block: lotusCodeBlock,
   ) {
     super();
   }
 
-  eq(other: loomOutputWidget): boolean {
+  eq(other: lotusOutputWidget): boolean {
     return false;
   }
 
   toDOM(): HTMLElement {
     const wrapper = document.createElement("div");
-    wrapper.className = "loom-inline-output-host";
+    wrapper.className = "lotus-inline-output-host";
     this.plugin.renderOutputInto(this.block, wrapper);
     return wrapper;
   }
 }
 
-export default class loomPlugin extends Plugin {
-  settings: loomPluginSettings = DEFAULT_SETTINGS;
-  readonly registry = new loomRunnerRegistry([
+export default class lotusPlugin extends Plugin {
+  settings: lotusPluginSettings = DEFAULT_SETTINGS;
+  readonly registry = new lotusRunnerRegistry([
     new PythonRunner(),
     new NodeRunner(),
     new ObsidianContextRunner({ app: this.app, plugin: this }),
@@ -345,9 +345,9 @@ export default class loomPlugin extends Plugin {
     new CustomLanguageRunner(),
   ]);
   // Exposed as public and readonly so the settings panel and modals can access container configurations and default language mapping helpers.
-  public readonly containerRunner = new loomContainerRunner(this.app, this.manifest.dir ?? ".obsidian/plugins/loom");
+  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? ".obsidian/plugins/lotus");
   private hasRegisteredMarkdownDecorator = false;
-  private readonly outputs = new Map<string, loomStoredOutput>();
+  private readonly outputs = new Map<string, lotusStoredOutput>();
   private readonly stdinInputs = new Map<string, string>();
   private readonly stdinPanels = new Set<string>();
   private readonly running = new Map<string, AbortController>();
@@ -355,11 +355,11 @@ export default class loomPlugin extends Plugin {
   private statusBarItemEl!: HTMLElement;
   private editorViews = new Set<EditorView>();
   private lastMarkdownFilePath: string | null = null;
-  private readonly logger = new loomLogger(this.app, () => this.settings);
+  private readonly logger = new lotusLogger(this.app, () => this.settings);
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    this.addSettingTab(new loomSettingTab(this));
+    this.addSettingTab(new lotusSettingTab(this));
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
     this.app.workspace.onLayoutReady(() => {
@@ -368,8 +368,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-run-current-code-block",
-      name: "loom: Run Current Code Block",
+      id: "lotus-run-current-code-block",
+      name: "lotus: Run Current Code Block",
       editorCallback: async (editor, view) => {
         const file = view.file;
         if (!file) {
@@ -379,7 +379,7 @@ export default class loomPlugin extends Plugin {
         const blocks = parseMarkdownCodeBlocks(file.path, editor.getValue(), this.settings);
         const block = findBlockAtLine(blocks, editor.getCursor().line);
         if (!block) {
-          new Notice("No supported loom block at the current cursor.");
+          new Notice("No supported lotus block at the current cursor.");
           return;
         }
         await this.runBlock(file, block);
@@ -387,8 +387,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-run-all-code-blocks",
-      name: "loom: Run All Supported Code Blocks in Current Note",
+      id: "lotus-run-all-code-blocks",
+      name: "lotus: Run All Supported Code Blocks in Current Note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -402,8 +402,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-cancel-current-code-block",
-      name: "loom: Cancel Current Code Block Run",
+      id: "lotus-cancel-current-code-block",
+      name: "lotus: Cancel Current Code Block Run",
       editorCheckCallback: (checking, editor, view) => {
         const file = view.file;
         if (!file) {
@@ -422,8 +422,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-cancel-all-code-blocks",
-      name: "loom: Cancel All Running Code Blocks",
+      id: "lotus-cancel-all-code-blocks",
+      name: "lotus: Cancel All Running Code Blocks",
       checkCallback: (checking) => {
         if (!this.running.size) {
           return false;
@@ -436,8 +436,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-clear-note-outputs",
-      name: "loom: Clear loom Outputs in Current Note",
+      id: "lotus-clear-note-outputs",
+      name: "lotus: Clear lotus Outputs in Current Note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -451,8 +451,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-save-reproducibility-snapshot",
-      name: "loom: Save Reproducibility Snapshot",
+      id: "lotus-save-reproducibility-snapshot",
+      name: "lotus: Save Reproducibility Snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -466,8 +466,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-verify-reproducibility-snapshot",
-      name: "loom: Verify Reproducibility Snapshot",
+      id: "lotus-verify-reproducibility-snapshot",
+      name: "lotus: Verify Reproducibility Snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -481,8 +481,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-set-reproducibility-policy",
-      name: "loom: Set Reproducibility Policy",
+      id: "lotus-set-reproducibility-policy",
+      name: "lotus: Set Reproducibility Policy",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -496,8 +496,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-copy-reproducibility-snapshot",
-      name: "loom: Copy Reproducibility Snapshot",
+      id: "lotus-copy-reproducibility-snapshot",
+      name: "lotus: Copy Reproducibility Snapshot",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -511,8 +511,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-copy-note-hash",
-      name: "loom: Copy Note Hash",
+      id: "lotus-copy-note-hash",
+      name: "lotus: Copy Note Hash",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -526,8 +526,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-copy-verification-report",
-      name: "loom: Copy Reproducibility Verification Report",
+      id: "lotus-copy-verification-report",
+      name: "lotus: Copy Reproducibility Verification Report",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -541,8 +541,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-hash-current-note",
-      name: "loom: Hash Current Note",
+      id: "lotus-hash-current-note",
+      name: "lotus: Hash Current Note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -556,8 +556,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-verify-current-note-hash",
-      name: "loom: Verify Current Note Hash",
+      id: "lotus-verify-current-note-hash",
+      name: "lotus: Verify Current Note Hash",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -571,8 +571,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-hash-current-code-block",
-      name: "loom: Hash Current Code Block",
+      id: "lotus-hash-current-code-block",
+      name: "lotus: Hash Current Code Block",
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view?.file) {
@@ -586,8 +586,8 @@ export default class loomPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "loom-verify-code-block-hashes",
-      name: "loom: Verify Code Block Hashes in Current Note",
+      id: "lotus-verify-code-block-hashes",
+      name: "lotus: Verify Code Block Hashes in Current Note",
       checkCallback: (checking) => {
         const file = this.getActiveMarkdownFile();
         if (!file) {
@@ -617,11 +617,11 @@ export default class loomPlugin extends Plugin {
 
     if (isCompileFeatureAllowed("container-groups")) {
       this.addCommand({
-        id: "loom-validate-container-groups",
-        name: "loom: Validate Container Groups",
+        id: "lotus-validate-container-groups",
+        name: "lotus: Validate Container Groups",
         callback: async () => {
           const groups = await this.getContainerGroupSummaries();
-          new Notice(groups.length ? groups.map((group) => `${group.name}: ${group.status}`).join("\n") : "No loom container groups found.", 8000);
+          new Notice(groups.length ? groups.map((group) => `${group.name}: ${group.status}`).join("\n") : "No lotus container groups found.", 8000);
         },
       });
     }
@@ -659,16 +659,16 @@ export default class loomPlugin extends Plugin {
     await this.loadExternalLanguagePacks();
     this.normalizeSettings();
     if (!hadMachineId) {
-      const persistedSettings: Partial<loomPluginSettings> = { ...this.settings };
+      const persistedSettings: Partial<lotusPluginSettings> = { ...this.settings };
       delete persistedSettings.externalLanguagePacks;
       await this.saveData(persistedSettings);
     }
   }
 
   async loadExternalLanguagePacks(showNotice = false): Promise<void> {
-    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/loom"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
+    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/lotus"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
     const adapter = this.app.vault.adapter;
-    const packs: loomExternalLanguagePack[] = [];
+    const packs: lotusExternalLanguagePack[] = [];
     let failures = 0;
 
     try {
@@ -694,12 +694,12 @@ export default class loomPlugin extends Plugin {
           }
         } catch (error) {
           failures += 1;
-          console.warn(`Failed to load loom language pack ${filePath}`, error);
+          console.warn(`Failed to load lotus language pack ${filePath}`, error);
         }
       }
     } catch (error) {
       this.settings.externalLanguagePacks = [];
-      console.warn(`Failed to scan loom language packs in ${packDir}`, error);
+      console.warn(`Failed to scan lotus language packs in ${packDir}`, error);
       if (showNotice) {
         new Notice(`Failed to load external language packs from ${packDir}`);
       }
@@ -721,7 +721,7 @@ export default class loomPlugin extends Plugin {
 
     const manifestEntry = findBundleManifest(entries);
     if (!manifestEntry) {
-      throw new Error("Language bundle archive must include loom-language-pack.json, language-pack.json, manifest.json, or a valid root JSON pack manifest.");
+      throw new Error("Language bundle archive must include lotus-language-pack.json, language-pack.json, manifest.json, or a valid root JSON pack manifest.");
     }
 
     const manifest = readBundleManifest(manifestEntry);
@@ -735,7 +735,7 @@ export default class loomPlugin extends Plugin {
     }
 
     const adapter = this.app.vault.adapter;
-    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/loom"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
+    const packDir = normalizePath(`${this.manifest.dir ?? ".obsidian/plugins/lotus"}/${EXTERNAL_LANGUAGE_PACK_DIR}`);
     const bundleDir = normalizePath(`${packDir}/${packId}`);
     await this.ensureVaultFolder(bundleDir);
 
@@ -754,12 +754,12 @@ export default class loomPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     this.normalizeSettings();
-    const persistedSettings: Partial<loomPluginSettings> = { ...this.settings };
+    const persistedSettings: Partial<lotusPluginSettings> = { ...this.settings };
     delete persistedSettings.externalLanguagePacks;
     await this.saveData(persistedSettings);
     await this.logEvent({
-      type: "loom.settings.changed",
-      message: "Loom settings saved",
+      type: "lotus.settings.changed",
+      message: "Lotus settings saved",
       data: {
         loggingEnabled: this.settings.loggingEnabled,
         enableLocalExecution: this.settings.enableLocalExecution,
@@ -784,11 +784,11 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private async logEvent(input: loomLogInput): Promise<void> {
+  private async logEvent(input: lotusLogInput): Promise<void> {
     await this.logger.log(await this.enrichLogEvent(input));
   }
 
-  private async enrichLogEvent(input: loomLogInput): Promise<loomLogInput> {
+  private async enrichLogEvent(input: lotusLogInput): Promise<lotusLogInput> {
     if (!input.notePath || input.noteHash) {
       return input;
     }
@@ -806,12 +806,12 @@ export default class loomPlugin extends Plugin {
     try {
       return sha256Hash(canonicalizeNoteForHash(await this.app.vault.cachedRead(file)));
     } catch (error) {
-      console.warn("loom: failed to compute note hash for log event", error);
+      console.warn("lotus: failed to compute note hash for log event", error);
       return undefined;
     }
   }
 
-  createToolbarElement(block: loomCodeBlock): HTMLElement {
+  createToolbarElement(block: lotusCodeBlock): HTMLElement {
     const isFunctionInput = this.isFunctionInputBlock(block);
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
       onRun: () => void this.runOrCancelBlockById(block.id),
@@ -849,13 +849,13 @@ export default class loomPlugin extends Plugin {
   async editBlockById(blockId: string): Promise<void> {
     const block = this.findActiveBlockById(blockId);
     if (!block) {
-      new Notice("Could not find this loom block.");
+      new Notice("Could not find this lotus block.");
       return;
     }
 
     const file = this.app.vault.getAbstractFileByPath(block.filePath);
     if (!(file instanceof TFile)) {
-      new Notice("Could not open the note for this loom block.");
+      new Notice("Could not open the note for this lotus block.");
       return;
     }
 
@@ -871,7 +871,7 @@ export default class loomPlugin extends Plugin {
 
     const view = leaf.view;
     if (!(view instanceof MarkdownView) || !view.editor) {
-      new Notice("Open the note in editing mode to edit this loom block.");
+      new Notice("Open the note in editing mode to edit this lotus block.");
       return;
     }
 
@@ -883,7 +883,7 @@ export default class loomPlugin extends Plugin {
     }, true);
   }
 
-  renderOutputInto(block: loomCodeBlock, container: HTMLElement): void {
+  renderOutputInto(block: lotusCodeBlock, container: HTMLElement): void {
     container.empty();
     const blockId = block.id;
 
@@ -924,7 +924,7 @@ export default class loomPlugin extends Plugin {
     await this.runActiveBlockById(blockId);
   }
 
-  async cancelBlockRun(blockId: string, source: string, block?: loomCodeBlock, filePath?: string): Promise<void> {
+  async cancelBlockRun(blockId: string, source: string, block?: lotusCodeBlock, filePath?: string): Promise<void> {
     const controller = this.running.get(blockId);
     if (!controller) {
       return;
@@ -933,7 +933,7 @@ export default class loomPlugin extends Plugin {
     controller.abort();
     const output = this.outputs.get(blockId);
     await this.logEvent({
-      type: "loom.run.cancel.requested",
+      type: "lotus.run.cancel.requested",
       message: "Cancellation requested",
       notePath: filePath ?? block?.filePath ?? output?.block.filePath ?? this.getCurrentEditorFilePath() ?? undefined,
       block: block ?? output?.block,
@@ -944,7 +944,7 @@ export default class loomPlugin extends Plugin {
     });
     this.notifyOutputChanged(blockId);
     this.updateStatusBar();
-    new Notice("loom cancellation requested.");
+    new Notice("lotus cancellation requested.");
   }
 
   async cancelAllRuns(): Promise<void> {
@@ -954,7 +954,7 @@ export default class loomPlugin extends Plugin {
       this.notifyOutputChanged(blockId);
     }
     await this.logEvent({
-      type: "loom.run.cancel.requested",
+      type: "lotus.run.cancel.requested",
       message: "Cancellation requested for all running blocks",
       notePath: this.getCurrentEditorFilePath() ?? undefined,
       data: {
@@ -963,7 +963,7 @@ export default class loomPlugin extends Plugin {
       },
     });
     this.updateStatusBar();
-    new Notice(`loom cancellation requested for ${blockIds.length} run${blockIds.length === 1 ? "" : "s"}.`);
+    new Notice(`lotus cancellation requested for ${blockIds.length} run${blockIds.length === 1 ? "" : "s"}.`);
   }
 
   async removeSnippetById(blockId: string): Promise<void> {
@@ -1001,8 +1001,8 @@ export default class loomPlugin extends Plugin {
       return lines.join("\n");
     });
     await this.logEvent({
-      type: "loom.note.modified",
-      message: "Removed Loom snippet",
+      type: "lotus.note.modified",
+      message: "Removed Lotus snippet",
       notePath: file.path,
       block,
       data: {
@@ -1012,7 +1012,7 @@ export default class loomPlugin extends Plugin {
 
     this.notifyOutputChanged(blockId);
     this.updateStatusBar();
-    new Notice("loom snippet removed.");
+    new Notice("lotus snippet removed.");
   }
 
   async runAllBlocksInFile(file: TFile): Promise<void> {
@@ -1024,7 +1024,7 @@ export default class loomPlugin extends Plugin {
     });
 
     if (!supportedBlocks.length) {
-      new Notice("No supported loom blocks found in the current note.");
+      new Notice("No supported lotus blocks found in the current note.");
       return;
     }
 
@@ -1042,15 +1042,15 @@ export default class loomPlugin extends Plugin {
       await this.removeManagedOutputBlock(file.path, block.id);
     }
     await this.logEvent({
-      type: "loom.note.modified",
-      message: "Cleared Loom outputs",
+      type: "lotus.note.modified",
+      message: "Cleared Lotus outputs",
       notePath: file.path,
       data: {
         action: "outputs.cleared",
         blocks: blocks.length,
       },
     });
-    new Notice("loom outputs cleared.");
+    new Notice("lotus outputs cleared.");
   }
 
   async saveReproducibilitySnapshot(file: TFile): Promise<void> {
@@ -1064,7 +1064,7 @@ export default class loomPlugin extends Plugin {
       target[CODE_BLOCK_HASHES_FRONTMATTER_KEY] = snapshot.blocks;
     });
     await this.logEvent({
-      type: "loom.repro.snapshot.saved",
+      type: "lotus.repro.snapshot.saved",
       message: "Reproducibility snapshot saved",
       notePath: file.path,
       data: {
@@ -1074,7 +1074,7 @@ export default class loomPlugin extends Plugin {
       },
     });
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Wrote reproducibility snapshot frontmatter",
       notePath: file.path,
       data: {
@@ -1082,7 +1082,7 @@ export default class loomPlugin extends Plugin {
       },
     });
 
-    new Notice(`loom reproducibility snapshot saved (${snapshot.blocks.length} block${snapshot.blocks.length === 1 ? "" : "s"}).`);
+    new Notice(`lotus reproducibility snapshot saved (${snapshot.blocks.length} block${snapshot.blocks.length === 1 ? "" : "s"}).`);
   }
 
   async verifyReproducibilitySnapshot(file: TFile): Promise<void> {
@@ -1090,7 +1090,7 @@ export default class loomPlugin extends Plugin {
     const verification = this.createReproducibilityVerification(file.path, source);
     await this.writeReproducibilityVerification(file, verification);
     await this.logEvent({
-      type: "loom.repro.verify.finished",
+      type: "lotus.repro.verify.finished",
       message: verification.summary,
       notePath: file.path,
       data: {
@@ -1101,7 +1101,7 @@ export default class loomPlugin extends Plugin {
       },
     });
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Wrote reproducibility verification frontmatter",
       notePath: file.path,
       data: {
@@ -1119,7 +1119,7 @@ export default class loomPlugin extends Plugin {
     }).open();
   }
 
-  async applyReproducibilityPolicyPreset(file: TFile, presetId: Exclude<loomHashPolicyPreset, "custom">): Promise<void> {
+  async applyReproducibilityPolicyPreset(file: TFile, presetId: Exclude<lotusHashPolicyPreset, "custom">): Promise<void> {
     const policy = hashPolicyFromPreset(presetId);
     await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
       const target = frontmatter as Record<string, unknown>;
@@ -1134,7 +1134,7 @@ export default class loomPlugin extends Plugin {
       };
     });
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Updated reproducibility policy",
       notePath: file.path,
       data: {
@@ -1142,7 +1142,7 @@ export default class loomPlugin extends Plugin {
         policy: presetId,
       },
     });
-    new Notice(`loom reproducibility policy set to ${getHashPolicyPresetDefinition(presetId).label}.`);
+    new Notice(`lotus reproducibility policy set to ${getHashPolicyPresetDefinition(presetId).label}.`);
   }
 
   async copyReproducibilitySnapshot(file: TFile): Promise<void> {
@@ -1194,7 +1194,7 @@ export default class loomPlugin extends Plugin {
       }
     });
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Wrote note hash",
       notePath: file.path,
       data: {
@@ -1207,24 +1207,24 @@ export default class loomPlugin extends Plugin {
       await this.writeCodeBlockHashesToFrontmatter(file);
     }
 
-    new Notice(`loom note hash written: ${noteHash}`);
+    new Notice(`lotus note hash written: ${noteHash}`);
   }
 
   async verifyCurrentNoteHash(file: TFile): Promise<void> {
     const source = await this.app.vault.cachedRead(file);
     const storedHash = readStoredNoteHash(source);
     if (!storedHash) {
-      new Notice("No loom-note-hash found. Run loom: Hash Current Note first.");
+      new Notice("No lotus-note-hash found. Run lotus: Hash Current Note first.");
       return;
     }
 
     const currentHash = sha256Hash(canonicalizeNoteForHash(source));
     if (storedHash === currentHash) {
-      new Notice("loom note hash verified.");
+      new Notice("lotus note hash verified.");
       return;
     }
 
-    new Notice(`loom note hash mismatch. stored=${storedHash.slice(0, 12)} current=${currentHash.slice(0, 12)}`, 10000);
+    new Notice(`lotus note hash mismatch. stored=${storedHash.slice(0, 12)} current=${currentHash.slice(0, 12)}`, 10000);
   }
 
   async hashCurrentCodeBlock(): Promise<void> {
@@ -1240,14 +1240,14 @@ export default class loomPlugin extends Plugin {
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
     const block = findBlockAtLine(blocks, editor.getCursor().line);
     if (!block) {
-      new Notice("No supported loom block at the current cursor.");
+      new Notice("No supported lotus block at the current cursor.");
       return;
     }
 
     const entries = await this.writeCodeBlockHashesToFrontmatter(file, source);
     const currentEntry = entries.find((entry) => entry.ordinal === block.ordinal);
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Wrote code block hashes",
       notePath: file.path,
       block,
@@ -1257,14 +1257,14 @@ export default class loomPlugin extends Plugin {
         currentHash: currentEntry?.hash ?? this.createCodeBlockHashEntry(block, readHashPolicy(source)).hash,
       },
     });
-    new Notice(`loom block hash: ${currentEntry?.hash ?? this.createCodeBlockHashEntry(block, readHashPolicy(source)).hash}`);
+    new Notice(`lotus block hash: ${currentEntry?.hash ?? this.createCodeBlockHashEntry(block, readHashPolicy(source)).hash}`);
   }
 
   async verifyCodeBlockHashes(file: TFile): Promise<void> {
     const source = await this.app.vault.cachedRead(file);
     const storedEntries = readStoredCodeBlockHashEntries(source);
     if (!storedEntries.length) {
-      new Notice("No loom-code-block-hashes found. Run loom: Hash Current Code Block first.");
+      new Notice("No lotus-code-block-hashes found. Run lotus: Hash Current Code Block first.");
       return;
     }
 
@@ -1296,14 +1296,14 @@ export default class loomPlugin extends Plugin {
     }
 
     if (!issues.length) {
-      new Notice(`loom verified ${verified} code block hash${verified === 1 ? "" : "es"}.`);
+      new Notice(`lotus verified ${verified} code block hash${verified === 1 ? "" : "es"}.`);
       return;
     }
 
-    new Notice(`loom block hash verification failed: ${issues.slice(0, 4).join("; ")}${issues.length > 4 ? `; +${issues.length - 4} more` : ""}`, 12000);
+    new Notice(`lotus block hash verification failed: ${issues.slice(0, 4).join("; ")}${issues.length > 4 ? `; +${issues.length - 4} more` : ""}`, 12000);
   }
 
-  private createReproducibilitySnapshot(filePath: string, source: string): loomReproducibilitySnapshot {
+  private createReproducibilitySnapshot(filePath: string, source: string): lotusReproducibilitySnapshot {
     const policy = readHashPolicy(source);
     const blocks = parseMarkdownCodeBlocks(filePath, source, this.settings)
       .map((block) => this.createCodeBlockHashEntry(block, policy));
@@ -1316,7 +1316,7 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private createReproducibilityVerification(filePath: string, source: string): loomReproducibilityVerification {
+  private createReproducibilityVerification(filePath: string, source: string): lotusReproducibilityVerification {
     const storedHash = readStoredNoteHash(source) ?? "";
     const currentHash = sha256Hash(canonicalizeNoteForHash(source));
     const storedEntries = readStoredCodeBlockHashEntries(source);
@@ -1336,14 +1336,14 @@ export default class loomPlugin extends Plugin {
     }
     issues.push(...blockComparison.issues);
 
-    const status: loomReproducibilityStatus = !storedHash && !storedEntries.length
+    const status: lotusReproducibilityStatus = !storedHash && !storedEntries.length
       ? "missing-snapshot"
       : issues.length ? "changed" : "verified";
     const summary = status === "verified"
-      ? `loom reproducibility verified (${blockComparison.verified} block${blockComparison.verified === 1 ? "" : "s"}).`
+      ? `lotus reproducibility verified (${blockComparison.verified} block${blockComparison.verified === 1 ? "" : "s"}).`
       : status === "missing-snapshot"
-        ? "No loom reproducibility snapshot found. Save a snapshot first."
-        : `loom reproducibility changed: ${issues.slice(0, 3).join("; ")}${issues.length > 3 ? `; +${issues.length - 3} more` : ""}`;
+        ? "No lotus reproducibility snapshot found. Save a snapshot first."
+        : `lotus reproducibility changed: ${issues.slice(0, 3).join("; ")}${issues.length > 3 ? `; +${issues.length - 3} more` : ""}`;
 
     return {
       status,
@@ -1363,7 +1363,7 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private async writeReproducibilityVerification(file: TFile, verification: loomReproducibilityVerification): Promise<void> {
+  private async writeReproducibilityVerification(file: TFile, verification: lotusReproducibilityVerification): Promise<void> {
     await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
       const target = frontmatter as Record<string, unknown>;
       const existing = isRecord(target[REPRODUCIBILITY_FRONTMATTER_KEY])
@@ -1377,10 +1377,10 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  async runBlock(file: TFile, block: loomCodeBlock): Promise<void> {
+  async runBlock(file: TFile, block: lotusCodeBlock): Promise<void> {
     this.lastMarkdownFilePath = file.path;
     if (this.running.has(block.id)) {
-      new Notice("This loom block is already running.");
+      new Notice("This lotus block is already running.");
       return;
     }
 
@@ -1404,7 +1404,7 @@ export default class loomPlugin extends Plugin {
     const runnerName = containerGroup ? `execution group ${containerGroup}` : runner!.displayName;
     const runnerId = containerGroup ? `container:${containerGroup}` : runner!.id;
     const noteHash = await this.readCurrentNoteHash(file.path);
-    const logTarget: loomLogTarget = {
+    const logTarget: lotusLogTarget = {
       runnerId,
       runnerName,
       containerGroup,
@@ -1423,7 +1423,7 @@ export default class loomPlugin extends Plugin {
     this.notifyOutputChanged(block.id);
     this.updateStatusBar();
     await this.logEvent({
-      type: "loom.run.started",
+      type: "lotus.run.started",
       message: "Code block started",
       notePath: file.path,
       noteHash,
@@ -1484,7 +1484,7 @@ export default class loomPlugin extends Plugin {
         sourceReference: Boolean(block.sourceReference),
         noteHash,
       }, logTarget, await this.readCurrentNoteHash(file.path));
-      new Notice(result.success ? `loom ran ${runnerName} block.` : `loom run failed for ${runnerName}.`);
+      new Notice(result.success ? `lotus ran ${runnerName} block.` : `lotus run failed for ${runnerName}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.outputs.set(block.id, {
@@ -1507,7 +1507,7 @@ export default class loomPlugin extends Plugin {
         },
       });
       await this.logEvent({
-        type: "loom.run.failed",
+        type: "lotus.run.failed",
         message: "Code block failed before result",
         notePath: file.path,
         noteHash,
@@ -1522,7 +1522,7 @@ export default class loomPlugin extends Plugin {
           timeoutMs: executionContext.timeoutMs,
         },
       });
-      new Notice(`loom error: ${message}`);
+      new Notice(`lotus error: ${message}`);
     } finally {
       await this.writeCodeBlockHashesIfEnabled(file);
       this.running.delete(block.id);
@@ -1539,7 +1539,7 @@ export default class loomPlugin extends Plugin {
     try {
       const entries = await this.writeCodeBlockHashesToFrontmatter(file);
       await this.logEvent({
-        type: "loom.note.modified",
+        type: "lotus.note.modified",
         message: "Auto-wrote code block hashes",
         notePath: file.path,
         data: {
@@ -1548,11 +1548,11 @@ export default class loomPlugin extends Plugin {
         },
       });
     } catch (error) {
-      console.warn("loom: failed to write code block hashes", error);
+      console.warn("lotus: failed to write code block hashes", error);
     }
   }
 
-  private async writeCodeBlockHashesToFrontmatter(file: TFile, source?: string): Promise<loomCodeBlockHashEntry[]> {
+  private async writeCodeBlockHashesToFrontmatter(file: TFile, source?: string): Promise<lotusCodeBlockHashEntry[]> {
     const text = source ?? await this.app.vault.cachedRead(file);
     const policy = readHashPolicy(text);
     const entries = parseMarkdownCodeBlocks(file.path, text, this.settings)
@@ -1575,7 +1575,7 @@ export default class loomPlugin extends Plugin {
     return entries;
   }
 
-  private createCodeBlockHashEntry(block: loomCodeBlock, policy: loomHashPolicy): loomCodeBlockHashEntry {
+  private createCodeBlockHashEntry(block: lotusCodeBlock, policy: lotusHashPolicy): lotusCodeBlockHashEntry {
     return {
       id: block.id,
       ordinal: block.ordinal,
@@ -1622,7 +1622,7 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  private async resolveExecutableBlock(file: TFile, block: loomCodeBlock): Promise<{ block: loomCodeBlock; sourcePreview?: loomStoredOutput["sourcePreview"] }> {
+  private async resolveExecutableBlock(file: TFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusStoredOutput["sourcePreview"] }> {
     if (!block.sourceReference) {
       return { block };
     }
@@ -1736,16 +1736,16 @@ export default class loomPlugin extends Plugin {
 
   async buildContainerGroup(name: string): Promise<void> {
     if (!isCompileFeatureAllowed("container-groups")) {
-      new Notice("loom container groups are not included in this build.");
+      new Notice("lotus container groups are not included in this build.");
       return;
     }
     if (!isCompileContainerGroupAllowed(name)) {
-      new Notice(`loom container group ${name} is not included in this build.`);
+      new Notice(`lotus container group ${name} is not included in this build.`);
       return;
     }
     const controller = new AbortController();
     const result = await this.containerRunner.buildGroup(name, Math.max(this.settings.defaultTimeoutMs, 120_000), controller.signal);
-    new Notice(result.success ? `loom built container group ${name}.` : `loom container build failed for ${name}.`, 8000);
+    new Notice(result.success ? `lotus built container group ${name}.` : `lotus container build failed for ${name}.`, 8000);
   }
 
   registerCodeBlockProcessors(): void {
@@ -1780,7 +1780,7 @@ export default class loomPlugin extends Plugin {
     const usedBlockIds = new Set<string>();
     for (const code of codeElements) {
       const pre = code.parentElement;
-      if (!(pre instanceof HTMLElement) || pre.dataset.loomDecorated === "true") {
+      if (!(pre instanceof HTMLElement) || pre.dataset.lotusDecorated === "true") {
         continue;
       }
 
@@ -1790,18 +1790,18 @@ export default class loomPlugin extends Plugin {
       }
 
       usedBlockIds.add(block.id);
-      pre.dataset.loomDecorated = "true";
-      ctx.addChild(new loomToolbarRenderChild(pre, this, block, pre));
+      pre.dataset.lotusDecorated = "true";
+      ctx.addChild(new lotusToolbarRenderChild(pre, this, block, pre));
     }
   }
 
   private findRenderedCodeBlock(
-    blocks: loomCodeBlock[],
+    blocks: lotusCodeBlock[],
     code: HTMLElement,
     pre: HTMLElement,
     ctx: MarkdownPostProcessorContext,
     usedBlockIds: Set<string>,
-  ): loomCodeBlock | null {
+  ): lotusCodeBlock | null {
     const renderedLanguage = this.getRenderedCodeLanguage(code, pre);
     const renderedSource = code.textContent ?? "";
     const candidates = blocks.filter((block) =>
@@ -1836,7 +1836,7 @@ export default class loomPlugin extends Plugin {
     return null;
   }
 
-  private renderedLanguageMatchesBlock(renderedLanguage: string | null, block: loomCodeBlock): boolean {
+  private renderedLanguageMatchesBlock(renderedLanguage: string | null, block: lotusCodeBlock): boolean {
     if (!renderedLanguage) {
       return true;
     }
@@ -1850,7 +1850,7 @@ export default class loomPlugin extends Plugin {
 
   private updateStatusBar(): void {
     const activeRuns = this.running.size;
-    this.statusBarItemEl.setText(activeRuns ? `loom: ${activeRuns} Active Run${activeRuns === 1 ? "" : "s"}` : "loom: Idle");
+    this.statusBarItemEl.setText(activeRuns ? `lotus: ${activeRuns} Active Run${activeRuns === 1 ? "" : "s"}` : "lotus: Idle");
   }
 
   private notifyOutputChanged(blockId: string): void {
@@ -1874,7 +1874,7 @@ export default class loomPlugin extends Plugin {
     });
 
     for (const editorView of this.editorViews) {
-      editorView.dispatch({ effects: loomRefreshEffect.of(undefined) });
+      editorView.dispatch({ effects: lotusRefreshEffect.of(undefined) });
     }
   }
 
@@ -1994,7 +1994,7 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  private findActiveBlockById(blockId: string): loomCodeBlock | null {
+  private findActiveBlockById(blockId: string): lotusCodeBlock | null {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     const file = view?.file;
     const editor = view?.editor;
@@ -2019,7 +2019,7 @@ export default class loomPlugin extends Plugin {
         }
 
         update(update: ViewUpdate): void {
-          if (update.docChanged || update.viewportChanged || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(loomRefreshEffect)))) {
+          if (update.docChanged || update.viewportChanged || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(lotusRefreshEffect)))) {
             this.decorations = this.buildDecorations();
           }
         }
@@ -2044,7 +2044,7 @@ export default class loomPlugin extends Plugin {
               startLine.from,
               startLine.from,
               Decoration.widget({
-                widget: new loomToolbarWidget(plugin, block),
+                widget: new lotusToolbarWidget(plugin, block),
                 side: -1,
               }),
             );
@@ -2055,7 +2055,7 @@ export default class loomPlugin extends Plugin {
                 endLine.to,
                 endLine.to,
                 Decoration.widget({
-                  widget: new loomOutputWidget(plugin, block),
+                  widget: new lotusOutputWidget(plugin, block),
                   side: 1,
                 }),
               );
@@ -2075,8 +2075,8 @@ export default class loomPlugin extends Plugin {
     );
   }
 
-  private resolveExecutionContext(file: TFile, block: loomCodeBlock): loomResolvedExecutionContext {
-    const context = resolveLoomExecutionContext(this.app, file, block, this.settings);
+  private resolveExecutionContext(file: TFile, block: lotusCodeBlock): lotusResolvedExecutionContext {
+    const context = resolveLotusExecutionContext(this.app, file, block, this.settings);
     if (isCompileFeatureAllowed("container-groups") && (!context.containerGroup || isCompileContainerGroupAllowed(context.containerGroup))) {
       return context;
     }
@@ -2091,11 +2091,11 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private hasExplicitExecutionContext(context: loomResolvedExecutionContext): boolean {
+  private hasExplicitExecutionContext(context: lotusResolvedExecutionContext): boolean {
     return context.source.container !== "none" || context.source.workingDirectory !== "default" || context.source.timeout !== "global";
   }
 
-  private formatExecutionContextNotice(context: loomResolvedExecutionContext): string {
+  private formatExecutionContextNotice(context: lotusResolvedExecutionContext): string {
     const pieces = [
       `execution=${context.containerGroup ?? "native"} (${context.source.container})`,
       `cwd=${context.workingDirectory} (${context.source.workingDirectory})`,
@@ -2104,7 +2104,7 @@ export default class loomPlugin extends Plugin {
     return `Execution context: ${pieces.join(", ")}.`;
   }
 
-  private getCustomLanguageExtractor(block: loomCodeBlock, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
+  private getCustomLanguageExtractor(block: lotusCodeBlock, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
     const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
     if (!language) {
       return undefined;
@@ -2128,7 +2128,7 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private async writeManagedOutputBlock(file: TFile, block: loomCodeBlock, result: loomStoredOutput["result"]): Promise<void> {
+  private async writeManagedOutputBlock(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"]): Promise<void> {
     await this.app.vault.process(file, (content) => {
       const lines = content.split(/\r?\n/);
       const blocks = parseMarkdownCodeBlocks(file.path, content, this.settings);
@@ -2149,7 +2149,7 @@ export default class loomPlugin extends Plugin {
       return lines.join("\n");
     });
     await this.logEvent({
-      type: "loom.output.written",
+      type: "lotus.output.written",
       message: "Wrote managed output to note",
       notePath: file.path,
       block,
@@ -2163,7 +2163,7 @@ export default class loomPlugin extends Plugin {
       },
     });
     await this.logEvent({
-      type: "loom.note.modified",
+      type: "lotus.note.modified",
       message: "Inserted managed output section",
       notePath: file.path,
       block,
@@ -2173,7 +2173,7 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  private async writeOutputFileIfRequested(file: TFile, block: loomCodeBlock, result: loomStoredOutput["result"]): Promise<void> {
+  private async writeOutputFileIfRequested(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"]): Promise<void> {
     try {
       const target = this.readOutputFileTarget(file, block);
       if (!target) {
@@ -2192,8 +2192,8 @@ export default class loomPlugin extends Plugin {
         : rendered;
       await this.app.vault.adapter.write(target.path, next);
       await this.logEvent({
-        type: "loom.output.file.written",
-        message: "Wrote Loom output file",
+        type: "lotus.output.file.written",
+        message: "Wrote Lotus output file",
         notePath: file.path,
         block,
         stdout: result.stdout,
@@ -2219,8 +2219,8 @@ export default class loomPlugin extends Plugin {
     }
   }
 
-  private readOutputFileTarget(file: TFile, block: loomCodeBlock): loomOutputFileTarget | null {
-    const rawPath = block.attributes["loom-output-file"] ?? block.attributes["output-file"];
+  private readOutputFileTarget(file: TFile, block: lotusCodeBlock): lotusOutputFileTarget | null {
+    const rawPath = block.attributes["lotus-output-file"] ?? block.attributes["output-file"];
     if (!rawPath?.trim()) {
       return null;
     }
@@ -2233,32 +2233,32 @@ export default class loomPlugin extends Plugin {
     };
   }
 
-  private readOutputFileMode(block: loomCodeBlock): loomOutputFileMode {
-    const append = block.attributes["loom-output-append"] ?? block.attributes["output-append"];
+  private readOutputFileMode(block: lotusCodeBlock): lotusOutputFileMode {
+    const append = block.attributes["lotus-output-append"] ?? block.attributes["output-append"];
     if (append && !["0", "false", "no", "off"].includes(append.trim().toLowerCase())) {
       return "append";
     }
 
-    const mode = (block.attributes["loom-output-file-mode"] ?? block.attributes["output-file-mode"] ?? "replace").trim().toLowerCase();
+    const mode = (block.attributes["lotus-output-file-mode"] ?? block.attributes["output-file-mode"] ?? "replace").trim().toLowerCase();
     if (mode === "append") {
       return "append";
     }
     if (mode === "replace") {
       return "replace";
     }
-    throw new Error(`Unsupported loom-output-file-mode: ${mode}. Use replace or append.`);
+    throw new Error(`Unsupported lotus-output-file-mode: ${mode}. Use replace or append.`);
   }
 
-  private readOutputFileFormat(block: loomCodeBlock): loomOutputFileFormat {
-    const format = (block.attributes["loom-output-file-format"] ?? block.attributes["output-file-format"] ?? "text").trim().toLowerCase();
+  private readOutputFileFormat(block: lotusCodeBlock): lotusOutputFileFormat {
+    const format = (block.attributes["lotus-output-file-format"] ?? block.attributes["output-file-format"] ?? "text").trim().toLowerCase();
     if (format === "text" || format === "json") {
       return format;
     }
-    throw new Error(`Unsupported loom-output-file-format: ${format}. Use text or json.`);
+    throw new Error(`Unsupported lotus-output-file-format: ${format}. Use text or json.`);
   }
 
-  private readOutputFileStreams(block: loomCodeBlock): loomOutputFileStream[] {
-    const value = block.attributes["loom-output-file-streams"] ?? block.attributes["output-file-streams"] ?? "stdout";
+  private readOutputFileStreams(block: lotusCodeBlock): lotusOutputFileStream[] {
+    const value = block.attributes["lotus-output-file-streams"] ?? block.attributes["output-file-streams"] ?? "stdout";
     const parsed = value
       .split(",")
       .map((stream) => stream.trim().toLowerCase())
@@ -2270,7 +2270,7 @@ export default class loomPlugin extends Plugin {
       if (stream === "stdout" || stream === "stderr" || stream === "warning" || stream === "metadata") {
         return stream;
       }
-      throw new Error(`Unsupported loom-output-file-streams entry: ${stream}.`);
+      throw new Error(`Unsupported lotus-output-file-streams entry: ${stream}.`);
     });
     return streams.length ? [...new Set(streams)] : ["stdout"];
   }
@@ -2278,7 +2278,7 @@ export default class loomPlugin extends Plugin {
   private resolveOutputVaultPath(file: TFile, rawPath: string): string {
     const trimmed = rawPath.trim();
     if (!trimmed || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
-      throw new Error("loom-output-file must be a vault-relative path.");
+      throw new Error("lotus-output-file must be a vault-relative path.");
     }
 
     const path = trimmed.startsWith("/")
@@ -2286,7 +2286,7 @@ export default class loomPlugin extends Plugin {
       : normalizePath(dirname(file.path) === "." ? trimmed : `${dirname(file.path)}/${trimmed}`);
     const parts = path.split("/").filter(Boolean);
     if (!parts.length || parts.includes("..") || path.startsWith(".obsidian/") || path === ".obsidian" || path.startsWith(".git/") || path === ".git") {
-      throw new Error(`Invalid loom-output-file path: ${rawPath}`);
+      throw new Error(`Invalid lotus-output-file path: ${rawPath}`);
     }
     return path;
   }
@@ -2310,7 +2310,7 @@ export default class loomPlugin extends Plugin {
     }
   }
 
-  private renderOutputFileText(result: loomStoredOutput["result"], target: loomOutputFileTarget): string {
+  private renderOutputFileText(result: lotusStoredOutput["result"], target: lotusOutputFileTarget): string {
     const sections = target.streams.flatMap((stream) => {
       switch (stream) {
         case "metadata":
@@ -2331,7 +2331,7 @@ export default class loomPlugin extends Plugin {
     return `${sections.join("\n\n").replace(/\s*$/, "")}\n`;
   }
 
-  private renderOutputFileJson(file: TFile, block: loomCodeBlock, result: loomStoredOutput["result"], target: loomOutputFileTarget): string {
+  private renderOutputFileJson(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"], target: lotusOutputFileTarget): string {
     const payload = {
       note: file.path,
       blockId: block.id,
@@ -2368,7 +2368,7 @@ export default class loomPlugin extends Plugin {
     });
   }
 
-  private renderManagedOutputMarkdown(blockId: string, result: loomStoredOutput["result"]): string[] {
+  private renderManagedOutputMarkdown(blockId: string, result: lotusStoredOutput["result"]): string[] {
     const body = [
       `runner=${result.runnerName}`,
       `exit=${result.exitCode ?? "?"}`,
@@ -2382,23 +2382,23 @@ export default class loomPlugin extends Plugin {
       .join("\n\n");
 
     return [
-      `<!-- loom:output:start id=${blockId} -->`,
+      `<!-- lotus:output:start id=${blockId} -->`,
       "```text",
       body,
       "```",
-      "<!-- loom:output:end -->",
+      "<!-- lotus:output:end -->",
     ];
   }
 
   private findManagedOutputRange(lines: string[], blockId: string): { start: number; end: number } | null {
-    const startMarker = `<!-- loom:output:start id=${blockId} -->`;
+    const startMarker = `<!-- lotus:output:start id=${blockId} -->`;
     for (let i = 0; i < lines.length; i += 1) {
       if (lines[i].trim() !== startMarker) {
         continue;
       }
 
       for (let j = i + 1; j < lines.length; j += 1) {
-        if (lines[j].trim() === "<!-- loom:output:end -->") {
+        if (lines[j].trim() === "<!-- lotus:output:end -->") {
           return { start: i, end: j };
         }
       }
@@ -2406,37 +2406,37 @@ export default class loomPlugin extends Plugin {
     return null;
   }
 
-  shouldRenderStdinPanel(block: loomCodeBlock): boolean {
+  shouldRenderStdinPanel(block: lotusCodeBlock): boolean {
     return this.stdinPanels.has(block.id) || this.hasEnabledStdinAttribute(block);
   }
 
-  private hasEnabledStdinAttribute(block: loomCodeBlock): boolean {
-    const input = block.attributes["loom-input"] ?? block.attributes.input;
+  private hasEnabledStdinAttribute(block: lotusCodeBlock): boolean {
+    const input = block.attributes["lotus-input"] ?? block.attributes.input;
     if (this.isFunctionInputBlock(block) && input && !["0", "false", "no", "off"].includes(input.trim().toLowerCase())) {
       return true;
     }
-    return block.attributes["loom-stdin"] != null ||
+    return block.attributes["lotus-stdin"] != null ||
       block.attributes.stdin != null ||
-      block.attributes["loom-stdin-file"] != null ||
+      block.attributes["lotus-stdin-file"] != null ||
       block.attributes["stdin-file"] != null;
   }
 
-  private isFunctionInputBlock(block: loomCodeBlock): boolean {
+  private isFunctionInputBlock(block: lotusCodeBlock): boolean {
     return Boolean(block.sourceReference?.call);
   }
 
-  private createStdinPanel(block: loomCodeBlock): HTMLElement {
+  private createStdinPanel(block: lotusCodeBlock): HTMLElement {
     const panel = document.createElement("div");
-    panel.className = "loom-stdin-panel";
+    panel.className = "lotus-stdin-panel";
     const isFunctionInput = this.isFunctionInputBlock(block);
 
-    const header = panel.createDiv({ cls: "loom-stdin-header" });
+    const header = panel.createDiv({ cls: "lotus-stdin-header" });
     header.createSpan({ text: isFunctionInput ? "function input" : "stdin" });
-    const actions = header.createDiv({ cls: "loom-stdin-actions" });
+    const actions = header.createDiv({ cls: "lotus-stdin-actions" });
     const runButton = actions.createEl("button", { text: isFunctionInput ? "Run function" : "Run" });
     const clearButton = actions.createEl("button", { text: "Clear" });
 
-    const textarea = panel.createEl("textarea", { cls: "loom-stdin-input" });
+    const textarea = panel.createEl("textarea", { cls: "lotus-stdin-input" });
     textarea.placeholder = this.getStdinPlaceholder(block);
     textarea.value = this.getInputPanelValue(block);
     textarea.addEventListener("input", () => {
@@ -2458,25 +2458,25 @@ export default class loomPlugin extends Plugin {
     return panel;
   }
 
-  private getStdinPlaceholder(block: loomCodeBlock): string {
+  private getStdinPlaceholder(block: lotusCodeBlock): string {
     if (this.isFunctionInputBlock(block)) {
-      return "input passed to {input} in loom-call";
+      return "input passed to {input} in lotus-call";
     }
-    const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+    const stdinFile = block.attributes["lotus-stdin-file"] ?? block.attributes["stdin-file"];
     return stdinFile ? `stdin file: ${stdinFile}` : "standard input for this block";
   }
 
-  private getInputPanelValue(block: loomCodeBlock): string {
+  private getInputPanelValue(block: lotusCodeBlock): string {
     if (this.stdinInputs.has(block.id)) {
       return this.stdinInputs.get(block.id) ?? "";
     }
     if (this.isFunctionInputBlock(block)) {
       return this.resolveBlockFunctionInput(block) ?? "";
     }
-    return block.attributes["loom-stdin"] ?? block.attributes.stdin ?? "";
+    return block.attributes["lotus-stdin"] ?? block.attributes.stdin ?? "";
   }
 
-  private resolveBlockFunctionInput(block: loomCodeBlock): string | undefined {
+  private resolveBlockFunctionInput(block: lotusCodeBlock): string | undefined {
     if (!this.isFunctionInputBlock(block)) {
       return undefined;
     }
@@ -2484,21 +2484,21 @@ export default class loomPlugin extends Plugin {
       return this.stdinInputs.get(block.id);
     }
 
-    const inline = block.attributes["loom-input"] ?? block.attributes.input;
+    const inline = block.attributes["lotus-input"] ?? block.attributes.input;
     return inline != null ? decodeEscapedAttribute(inline) : block.content.trim();
   }
 
-  private async resolveBlockStdin(file: TFile, block: loomCodeBlock): Promise<string | undefined> {
+  private async resolveBlockStdin(file: TFile, block: lotusCodeBlock): Promise<string | undefined> {
     if (!this.isFunctionInputBlock(block) && this.stdinInputs.has(block.id)) {
       return this.stdinInputs.get(block.id);
     }
 
-    const inline = block.attributes["loom-stdin"] ?? block.attributes.stdin;
+    const inline = block.attributes["lotus-stdin"] ?? block.attributes.stdin;
     if (inline != null) {
       return decodeEscapedAttribute(inline);
     }
 
-    const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
+    const stdinFile = block.attributes["lotus-stdin-file"] ?? block.attributes["stdin-file"];
     if (!stdinFile?.trim()) {
       return undefined;
     }
@@ -2546,7 +2546,7 @@ async function listLanguagePackManifestPaths(adapter: DataAdapter, root: string)
   return manifests;
 }
 
-async function readLanguageBundleArchive(file: File): Promise<loomArchiveEntry[]> {
+async function readLanguageBundleArchive(file: File): Promise<lotusArchiveEntry[]> {
   const lowerName = file.name.toLowerCase();
   const bytes = new Uint8Array(await file.arrayBuffer());
 
@@ -2563,9 +2563,9 @@ async function readLanguageBundleArchive(file: File): Promise<loomArchiveEntry[]
   throw new Error("Language bundle must be a .zip, .tar, .tgz, or .tar.gz archive.");
 }
 
-async function readZipBundle(bytes: Uint8Array): Promise<loomArchiveEntry[]> {
+async function readZipBundle(bytes: Uint8Array): Promise<lotusArchiveEntry[]> {
   const zip = await JSZip.loadAsync(bytes);
-  const entries: loomArchiveEntry[] = [];
+  const entries: lotusArchiveEntry[] = [];
 
   for (const entry of Object.values(zip.files)) {
     if (entry.dir) {
@@ -2580,8 +2580,8 @@ async function readZipBundle(bytes: Uint8Array): Promise<loomArchiveEntry[]> {
   return entries;
 }
 
-function readTarBundle(bytes: Uint8Array): loomArchiveEntry[] {
-  const entries: loomArchiveEntry[] = [];
+function readTarBundle(bytes: Uint8Array): lotusArchiveEntry[] {
+  const entries: lotusArchiveEntry[] = [];
   let offset = 0;
 
   while (offset + 512 <= bytes.length) {
@@ -2634,13 +2634,13 @@ function readTarString(bytes: Uint8Array, offset: number, length: number): strin
   return new TextDecoder().decode(bytes.slice(offset, sliceEnd)).trim();
 }
 
-function normalizeBundleEntries(entries: loomArchiveEntry[], fileName: string): loomArchiveEntry[] {
+function normalizeBundleEntries(entries: lotusArchiveEntry[], fileName: string): lotusArchiveEntry[] {
   const cleaned = entries
     .map((entry) => ({
       path: normalizeArchivePath(entry.path),
       data: entry.data,
     }))
-    .filter((entry): entry is loomArchiveEntry => Boolean(entry.path));
+    .filter((entry): entry is lotusArchiveEntry => Boolean(entry.path));
 
   const stripped = stripCommonArchiveRoot(cleaned);
   if (!stripped.length) {
@@ -2661,7 +2661,7 @@ function normalizeArchivePath(path: string): string {
   return parts.join("/");
 }
 
-function stripCommonArchiveRoot(entries: loomArchiveEntry[]): loomArchiveEntry[] {
+function stripCommonArchiveRoot(entries: lotusArchiveEntry[]): lotusArchiveEntry[] {
   const roots = entries.map((entry) => entry.path.split("/"));
   if (!roots.length || roots.some((parts) => parts.length < 2)) {
     return entries;
@@ -2678,7 +2678,7 @@ function stripCommonArchiveRoot(entries: loomArchiveEntry[]): loomArchiveEntry[]
   }));
 }
 
-function findBundleManifest(entries: loomArchiveEntry[]): loomArchiveEntry | null {
+function findBundleManifest(entries: lotusArchiveEntry[]): lotusArchiveEntry | null {
   const named = entries.find((entry) => isBundleManifestCandidate(entry) && readBundleManifest(entry));
   if (named) {
     return named;
@@ -2692,12 +2692,12 @@ function findBundleManifest(entries: loomArchiveEntry[]): loomArchiveEntry | nul
   }) ?? null;
 }
 
-function isBundleManifestCandidate(entry: loomArchiveEntry): boolean {
+function isBundleManifestCandidate(entry: lotusArchiveEntry): boolean {
   const fileName = entry.path.split("/").pop()?.toLowerCase() ?? "";
   return LANGUAGE_PACK_MANIFEST_NAMES.has(fileName) || !entry.path.includes("/") && fileName.endsWith(".json");
 }
 
-function readBundleManifest(entry: loomArchiveEntry): Record<string, unknown> | null {
+function readBundleManifest(entry: lotusArchiveEntry): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(entry.data));
     return isRecord(parsed) && typeof parsed.id === "string" && Array.isArray(parsed.languages) ? parsed : null;
@@ -2710,28 +2710,28 @@ function isPathWithin(path: string, parent: string): boolean {
   return path === parent || path.startsWith(`${parent}/`);
 }
 
-function parseExternalLanguagePack(value: unknown, filePath: string): loomExternalLanguagePack | null {
+function parseExternalLanguagePack(value: unknown, filePath: string): lotusExternalLanguagePack | null {
   if (!isRecord(value)) {
-    console.warn(`Ignoring loom language pack ${filePath}: manifest must be an object`);
+    console.warn(`Ignoring lotus language pack ${filePath}: manifest must be an object`);
     return null;
   }
 
   const rawId = readString(value.id);
   const id = normalizeManifestId(rawId);
   if (!id) {
-    console.warn(`Ignoring loom language pack ${filePath}: missing package id`);
+    console.warn(`Ignoring lotus language pack ${filePath}: missing package id`);
     return null;
   }
   if (!Array.isArray(value.languages)) {
-    console.warn(`Ignoring loom language pack ${filePath}: languages must be an array`);
+    console.warn(`Ignoring lotus language pack ${filePath}: languages must be an array`);
     return null;
   }
 
   const languages = value.languages
     .map((language) => parseExternalLanguage(language, filePath))
-    .filter((language): language is loomExternalLanguage => Boolean(language));
+    .filter((language): language is lotusExternalLanguage => Boolean(language));
   if (!languages.length) {
-    console.warn(`Ignoring loom language pack ${filePath}: no valid languages`);
+    console.warn(`Ignoring lotus language pack ${filePath}: no valid languages`);
     return null;
   }
 
@@ -2743,7 +2743,7 @@ function parseExternalLanguagePack(value: unknown, filePath: string): loomExtern
   };
 }
 
-function parseExternalLanguage(value: unknown, filePath: string): loomExternalLanguage | null {
+function parseExternalLanguage(value: unknown, filePath: string): lotusExternalLanguage | null {
   if (!isRecord(value)) {
     console.warn(`Ignoring language entry in ${filePath}: entry must be an object`);
     return null;
@@ -2834,7 +2834,7 @@ function normalizeMachineId(value: unknown): string {
 
 function createMachineId(): string {
   const cryptoApi = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  return cryptoApi?.randomUUID?.() ?? `loom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  return cryptoApi?.randomUUID?.() ?? `lotus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
 function canonicalizeNoteForHash(source: string): string {
@@ -2859,7 +2859,7 @@ function canonicalizeNoteForHash(source: string): string {
   });
 }
 
-function readHashPolicy(source: string): loomHashPolicy {
+function readHashPolicy(source: string): lotusHashPolicy {
   const frontmatter = splitFrontmatter(source);
   const parsed = frontmatter ? parseFrontmatterRecord(frontmatter.yaml) : {};
   const rawPolicy = parsed[HASH_POLICY_FRONTMATTER_KEY];
@@ -2907,7 +2907,7 @@ function readReproducibilityFrontmatter(source: string): Record<string, unknown>
   return isRecord(value) ? value : null;
 }
 
-function readStoredCodeBlockHashEntries(source: string): loomCodeBlockHashEntry[] {
+function readStoredCodeBlockHashEntries(source: string): lotusCodeBlockHashEntry[] {
   const frontmatter = splitFrontmatter(source);
   if (!frontmatter) {
     return [];
@@ -2921,10 +2921,10 @@ function readStoredCodeBlockHashEntries(source: string): loomCodeBlockHashEntry[
 
   return value
     .map(readStoredCodeBlockHashEntry)
-    .filter((entry): entry is loomCodeBlockHashEntry => Boolean(entry));
+    .filter((entry): entry is lotusCodeBlockHashEntry => Boolean(entry));
 }
 
-function readStoredCodeBlockHashEntry(value: unknown): loomCodeBlockHashEntry | null {
+function readStoredCodeBlockHashEntry(value: unknown): lotusCodeBlockHashEntry | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -2986,9 +2986,9 @@ function parseFrontmatterRecord(yaml: string): Record<string, unknown> {
   }
 }
 
-function shouldIgnoreFrontmatterKey(key: string, policy: loomHashPolicy): boolean {
+function shouldIgnoreFrontmatterKey(key: string, policy: lotusHashPolicy): boolean {
   const normalized = normalizeHashPolicyToken(key);
-  if (LOOM_HASH_FRONTMATTER_KEYS.has(normalized) || normalized === REPRODUCIBILITY_FRONTMATTER_KEY) {
+  if (LOTUS_HASH_FRONTMATTER_KEYS.has(normalized) || normalized === REPRODUCIBILITY_FRONTMATTER_KEY) {
     return true;
   }
   if (normalized === HASH_POLICY_FRONTMATTER_KEY || normalized === HASH_IGNORE_FRONTMATTER_KEY || normalized === HASH_IGNORE_BLOCK_ATTRIBUTES_KEY) {
@@ -2997,7 +2997,7 @@ function shouldIgnoreFrontmatterKey(key: string, policy: loomHashPolicy): boolea
   return policy.ignoreFrontmatter.includes(normalized);
 }
 
-function hashPolicyFromPreset(presetId: Exclude<loomHashPolicyPreset, "custom">): loomHashPolicy {
+function hashPolicyFromPreset(presetId: Exclude<lotusHashPolicyPreset, "custom">): lotusHashPolicy {
   const preset = getHashPolicyPresetDefinition(presetId);
   return {
     preset: preset.id,
@@ -3006,18 +3006,18 @@ function hashPolicyFromPreset(presetId: Exclude<loomHashPolicyPreset, "custom">)
   };
 }
 
-function getHashPolicyPresetDefinition(presetId: Exclude<loomHashPolicyPreset, "custom">): loomHashPolicyPresetDefinition {
+function getHashPolicyPresetDefinition(presetId: Exclude<lotusHashPolicyPreset, "custom">): lotusHashPolicyPresetDefinition {
   return HASH_POLICY_PRESETS.find((preset) => preset.id === presetId) ?? HASH_POLICY_PRESETS[0];
 }
 
-function readHashPolicyPreset(value: string): Exclude<loomHashPolicyPreset, "custom"> | null {
+function readHashPolicyPreset(value: string): Exclude<lotusHashPolicyPreset, "custom"> | null {
   const normalized = normalizeHashPolicyToken(value);
   return HASH_POLICY_PRESETS.some((preset) => preset.id === normalized)
-    ? normalized as Exclude<loomHashPolicyPreset, "custom">
+    ? normalized as Exclude<lotusHashPolicyPreset, "custom">
     : null;
 }
 
-function matchHashPolicyPreset(policy: Pick<loomHashPolicy, "ignoreFrontmatter" | "ignoreBlockAttributes">): loomHashPolicyPreset | null {
+function matchHashPolicyPreset(policy: Pick<lotusHashPolicy, "ignoreFrontmatter" | "ignoreBlockAttributes">): lotusHashPolicyPreset | null {
   const frontmatter = normalizePolicyList(policy.ignoreFrontmatter);
   const blockAttributes = normalizePolicyList(policy.ignoreBlockAttributes);
   for (const preset of HASH_POLICY_PRESETS) {
@@ -3028,7 +3028,7 @@ function matchHashPolicyPreset(policy: Pick<loomHashPolicy, "ignoreFrontmatter" 
   return frontmatter.length || blockAttributes.length ? "custom" : "strict";
 }
 
-function serializeHashPolicy(policy: loomHashPolicy): { preset: loomHashPolicyPreset; "ignore-frontmatter": string[]; "ignore-block-attributes": string[] } {
+function serializeHashPolicy(policy: lotusHashPolicy): { preset: lotusHashPolicyPreset; "ignore-frontmatter": string[]; "ignore-block-attributes": string[] } {
   return {
     preset: policy.preset,
     "ignore-frontmatter": [...policy.ignoreFrontmatter],
@@ -3036,7 +3036,7 @@ function serializeHashPolicy(policy: loomHashPolicy): { preset: loomHashPolicyPr
   };
 }
 
-function compareCodeBlockHashEntries(storedEntries: loomCodeBlockHashEntry[], currentEntries: loomCodeBlockHashEntry[]): { verified: number; issues: string[] } {
+function compareCodeBlockHashEntries(storedEntries: lotusCodeBlockHashEntry[], currentEntries: lotusCodeBlockHashEntry[]): { verified: number; issues: string[] } {
   const storedByOrdinal = new Map(storedEntries.map((entry) => [entry.ordinal, entry]));
   const currentByOrdinal = new Map(currentEntries.map((entry) => [entry.ordinal, entry]));
   let verified = 0;
@@ -3101,7 +3101,7 @@ function codeTextVariants(value: string): string[] {
     : [normalized, withoutSingleTrailingNewline];
 }
 
-function canonicalizeFenceInfoForHash(source: string, policy: loomHashPolicy): string {
+function canonicalizeFenceInfoForHash(source: string, policy: lotusHashPolicy): string {
   if (!policy.ignoreBlockAttributes.length) {
     return source;
   }
@@ -3141,7 +3141,7 @@ function removeIgnoredInfoAttributes(input: string, ignored: Set<string>): strin
     .trim();
 }
 
-function filterHashPolicyAttributes(attributes: Record<string, string>, policy: loomHashPolicy): Record<string, string> {
+function filterHashPolicyAttributes(attributes: Record<string, string>, policy: lotusHashPolicy): Record<string, string> {
   const ignored = new Set(policy.ignoreBlockAttributes);
   return Object.fromEntries(
     Object.entries(attributes).filter(([key]) => !ignored.has(normalizeHashPolicyToken(key))),

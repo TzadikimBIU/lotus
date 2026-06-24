@@ -11,34 +11,34 @@ The context controls:
 - **Working directory**
 - **Timeout**
 
-Global values are defined in the Loom settings tab. Note-level values are configured via YAML frontmatter:
+Global values are defined in the Lotus settings tab. Note-level values are configured via YAML frontmatter:
 
 ```yaml
-loom-execution: py-sandbox
-loom-cwd: /tmp/research
-loom-timeout: 15000
+lotus-execution: py-sandbox
+lotus-cwd: /tmp/research
+lotus-timeout: 15000
 ```
 
 > [!NOTE]
-> `loom-container` is accepted as a compatibility alias for `loom-execution`.
+> `lotus-container` is accepted as a compatibility alias for `lotus-execution`.
 
 Block-level attributes override both note and global values:
 
 ````markdown
-```python loom-execution=py-sandbox loom-cwd=/tmp/research loom-timeout=15000
+```python lotus-execution=py-sandbox lotus-cwd=/tmp/research lotus-timeout=15000
 print("runs inside py-sandbox with this block context")
 ```
 ````
 
-Use `loom-execution=native`, `loom-execution=none`, or `loom-execution=off` to force a block back to native execution, bypassing note-level or global configurations.
+Use `lotus-execution=native`, `lotus-execution=none`, or `lotus-execution=off` to force a block back to native execution, bypassing note-level or global configurations.
 
 ### Override Priority
 
 | Layer | Execution group | Working directory | Timeout |
 | :--- | :--- | :--- | :--- |
 | **Global** | Default execution group | Working directory | Default timeout |
-| **Note** | `loom-execution` | `loom-cwd` | `loom-timeout` |
-| **Block** | `loom-execution` | `loom-cwd` | `loom-timeout` |
+| **Note** | `lotus-execution` | `lotus-cwd` | `lotus-timeout` |
+| **Block** | `lotus-execution` | `lotus-cwd` | `lotus-timeout` |
 
 ---
 
@@ -47,7 +47,7 @@ Use `loom-execution=native`, `loom-execution=none`, or `loom-execution=off` to f
 Execution groups reside in the plugin folder:
 
 ```text
-.obsidian/plugins/loom/containers/<group-name>/
+.obsidian/plugins/lotus/containers/<group-name>/
 ```
 
 Each group requires a `config.json` file:
@@ -86,29 +86,29 @@ Execution groups can opt into elevated execution without granting elevated privi
 }
 ```
 
-For Docker and Podman, `"mode": "root"` appends `--user root` to the container run command. For QEMU, WSL, and custom runtimes, you can define an optional command prefix like `"commandPrefix": "sudo -n"` if the target environment should elevate execution. Loom does not prompt for passwords or store credentials.
+For Docker and Podman, `"mode": "root"` appends `--user root` to the container run command. For QEMU, WSL, and custom runtimes, you can define an optional command prefix like `"commandPrefix": "sudo -n"` if the target environment should elevate execution. Lotus does not prompt for passwords or store credentials.
 
 ---
 
 ## Supported Runtimes
 
-Loom supports the following runtimes under `"runtime"` in `config.json`:
+Lotus supports the following runtimes under `"runtime"` in `config.json`:
 
-- `"docker"` / `"podman"`: Standard OCI container execution that mounts the group folder and runs your block command. If a `Dockerfile` exists inside the group folder, Loom builds and uses that image.
+- `"docker"` / `"podman"`: Standard OCI container execution that mounts the group folder and runs your block command. If a `Dockerfile` exists inside the group folder, Lotus builds and uses that image.
 - `"wsl"`: Runs commands inside Windows Subsystem for Linux. You can specify a WSL distribution name in the `"image"` field, or omit it to run in your default WSL distro.
 - `"ssh"`: Runs commands on a remote SSH target after uploading the temporary source file with SCP.
 - `"qemu"`: Runs commands on a remote VM using SSH, with optional automated QEMU local process management.
 - `"custom"`: Delegates container building, running, and teardown to a custom local executable wrapper.
 
 ### SSH Runtime Configuration
-Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). Loom writes the snippet locally, creates the remote workspace, uploads the temp source file via `scp`, runs the configured command over `ssh`, and removes the remote temp file afterward (unless cleanup is disabled).
+Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). Lotus writes the snippet locally, creates the remote workspace, uploads the temp source file via `scp`, runs the configured command over `ssh`, and removes the remote temp file afterward (unless cleanup is disabled).
 
 ```json
 {
   "runtime": "ssh",
   "ssh": {
     "target": "user@vps.example",
-    "workspace": "/tmp/loom",
+    "workspace": "/tmp/lotus",
     "sshArgs": "-p 2222",
     "sshAuthSock": "/path/to/agent.sock",
     "scpArgs": "-P 2222",
@@ -125,14 +125,14 @@ Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). Loom
   },
   "outputFilters": {
     "stripAnsi": true,
-    "stdoutStart": "LOOM_OUTPUT_START",
-    "stdoutEnd": "LOOM_OUTPUT_END",
+    "stdoutStart": "LOTUS_OUTPUT_START",
+    "stdoutEnd": "LOTUS_OUTPUT_END",
     "stripStderr": ["^Warning: Permanently added .*\\n"]
   }
 }
 ```
 
-Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., Bitwarden). Loom does not store keys or prompt for passphrases; it only passes `SSH_AUTH_SOCK` to the `ssh` and `scp` processes. QEMU uses the same upload/run/cleanup transport, so QEMU configs can also set `scpExecutable`, `scpArgs`, `sshAuthSock`, and `cleanupRemoteFile`.
+Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., Bitwarden). Lotus does not store keys or prompt for passphrases; it only passes `SSH_AUTH_SOCK` to the `ssh` and `scp` processes. QEMU uses the same upload/run/cleanup transport, so QEMU configs can also set `scpExecutable`, `scpArgs`, `sshAuthSock`, and `cleanupRemoteFile`.
 
 ### QEMU Runtime Configurations
 
@@ -142,19 +142,19 @@ Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., 
 {
   "runtime": "qemu",
   "qemu": {
-    "sshTarget": "loom-vm",
+    "sshTarget": "lotus-vm",
     "remoteWorkspace": "/workspace",
     "sshArgs": "-o BatchMode=yes",
     "startCommand": "./start-vm.sh",
     "buildCommand": "./build-image.sh",
     "teardownCommand": "./stop-vm.sh",
     "healthCheck": {
-      "command": "ssh loom-vm true"
+      "command": "ssh lotus-vm true"
     }
   },
   "languages": {
     "c": {
-      "command": "gcc {file} -o /tmp/loom-c && /tmp/loom-c",
+      "command": "gcc {file} -o /tmp/lotus-c && /tmp/lotus-c",
       "extension": ".c"
     }
   }
@@ -167,7 +167,7 @@ Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., 
 {
   "runtime": "qemu",
   "qemu": {
-    "sshTarget": "loom-vm",
+    "sshTarget": "lotus-vm",
     "remoteWorkspace": "/workspace",
     "sshArgs": "-o BatchMode=yes -p 2222",
     "manager": {
@@ -176,14 +176,14 @@ Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., 
       "args": "-m 2048 -smp 2 -nographic -netdev user,id=net0,hostfwd=tcp::2222-:22 -device virtio-net-pci,netdev=net0",
       "image": "vm.qcow2",
       "imageFormat": "qcow2",
-      "pidFile": ".loom-qemu.pid",
+      "pidFile": ".lotus-qemu.pid",
       "logFile": "qemu.log",
       "readinessTimeoutMs": 60000,
-      "shutdownCommand": "ssh -p 2222 loom-vm sudo poweroff",
+      "shutdownCommand": "ssh -p 2222 lotus-vm sudo poweroff",
       "persist": true
     },
     "healthCheck": {
-      "command": "ssh -p 2222 loom-vm true"
+      "command": "ssh -p 2222 lotus-vm true"
     }
   },
   "languages": {
@@ -195,7 +195,7 @@ Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., 
 }
 ```
 
-When `qemu.manager.enabled` is `true`, loom starts QEMU as a detached local process, writes a PID file, polls the QEMU health check until the guest is ready, executes through SSH, and optionally shuts down the VM when `"persist": false`.
+When `qemu.manager.enabled` is `true`, lotus starts QEMU as a detached local process, writes a PID file, polls the QEMU health check until the guest is ready, executes through SSH, and optionally shuts down the VM when `"persist": false`.
 
 ### Custom Runtimes
 
@@ -203,13 +203,13 @@ When `qemu.manager.enabled` is `true`, loom starts QEMU as a detached local proc
 {
   "runtime": "custom",
   "custom": {
-    "executable": "./loom-runtime.sh",
+    "executable": "./lotus-runtime.sh",
     "args": "{request}",
     "build": "./build.sh",
     "commandStructure": "{command}",
     "teardown": "./teardown.sh",
     "healthCheck": {
-      "command": "./loom-runtime.sh --health",
+      "command": "./lotus-runtime.sh --health",
       "positiveResponse": "ok"
     }
   },
@@ -222,7 +222,7 @@ When `qemu.manager.enabled` is `true`, loom starts QEMU as a detached local proc
 }
 ```
 
-For custom runtimes, Loom writes a JSON request file and passes its path through `{request}`. The variables `{group}` and `{groupPath}` are also available in wrapper arguments.
+For custom runtimes, Lotus writes a JSON request file and passes its path through `{request}`. The variables `{group}` and `{groupPath}` are also available in wrapper arguments.
 
 ---
 
@@ -244,7 +244,7 @@ Optional health checks can be added at the group level or under `ssh`, `qemu`, a
 
 ## Settings Dashboard
 
-Loom provides a tabbed dashboard in the plugin settings for managing execution environments. Click **Edit** next to any group to access:
+Lotus provides a tabbed dashboard in the plugin settings for managing execution environments. Click **Edit** next to any group to access:
 
 - **General**: Configures runtime type, fallback image or WSL distro name, SSH settings, elevation, and output filters.
 - **Languages**: Defines execution commands and source file extensions for individual languages.
