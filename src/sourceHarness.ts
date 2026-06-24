@@ -1,13 +1,13 @@
 import type { loomCodeBlock } from "./types";
 
-export function buildSourceReferenceHarness(block: loomCodeBlock): string {
+export function buildSourceReferenceHarness(block: loomCodeBlock, inputOverride?: string): string {
   const call = block.sourceReference?.call;
   if (!call) {
     return block.content;
   }
 
   const symbolName = block.sourceReference?.symbolName?.trim();
-  const input = block.content.trim();
+  const input = inputOverride ?? block.content.trim();
   const expression = call.expression?.trim()
     ? renderSourceCallTemplate(call.expression, input, symbolName)
     : renderDefaultSourceCall(symbolName, call.args, input);

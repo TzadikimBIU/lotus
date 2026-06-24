@@ -732,6 +732,7 @@ export default class loomPlugin extends Plugin {
   }
 
   createToolbarElement(block: loomCodeBlock): HTMLElement {
+    const isFunctionInput = this.isFunctionInputBlock(block);
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
       onRun: () => void this.runActiveBlockById(block.id),
       onEdit: () => void this.editBlockById(block.id),
@@ -760,6 +761,8 @@ export default class loomPlugin extends Plugin {
         output.visible = !output.visible;
         this.notifyOutputChanged(block.id);
       },
+    }, {
+      inputButtonLabel: isFunctionInput ? "Toggle function input" : "Toggle stdin input",
     });
   }
 
@@ -1355,7 +1358,7 @@ export default class loomPlugin extends Plugin {
       throw new Error(`Referenced source file not found: ${referencePath}`);
     }
 
-    const harness = buildSourceReferenceHarness(block);
+    const harness = buildSourceReferenceHarness(block, this.resolveBlockFunctionInput(block));
     const externalExtractor = this.getCustomLanguageExtractor(block, file);
     const resolved = await resolveReferencedSource(
       await this.app.vault.cachedRead(sourceFile),
@@ -2068,7 +2071,7 @@ export default class loomPlugin extends Plugin {
 
   private hasEnabledStdinAttribute(block: loomCodeBlock): boolean {
     const input = block.attributes["loom-input"] ?? block.attributes.input;
-    if (input && !["0", "false", "no", "off"].includes(input.trim().toLowerCase())) {
+    if (this.isFunctionInputBlock(block) && input && !["0", "false", "no", "off"].includes(input.trim().toLowerCase())) {
       return true;
     }
     return block.attributes["loom-stdin"] != null ||
@@ -2077,19 +2080,24 @@ export default class loomPlugin extends Plugin {
       block.attributes["stdin-file"] != null;
   }
 
+  private isFunctionInputBlock(block: loomCodeBlock): boolean {
+    return Boolean(block.sourceReference?.call);
+  }
+
   private createStdinPanel(block: loomCodeBlock): HTMLElement {
     const panel = document.createElement("div");
     panel.className = "loom-stdin-panel";
+    const isFunctionInput = this.isFunctionInputBlock(block);
 
     const header = panel.createDiv({ cls: "loom-stdin-header" });
-    header.createSpan({ text: "stdin" });
+    header.createSpan({ text: isFunctionInput ? "function input" : "stdin" });
     const actions = header.createDiv({ cls: "loom-stdin-actions" });
-    const runButton = actions.createEl("button", { text: "Run" });
+    const runButton = actions.createEl("button", { text: isFunctionInput ? "Run function" : "Run" });
     const clearButton = actions.createEl("button", { text: "Clear" });
 
     const textarea = panel.createEl("textarea", { cls: "loom-stdin-input" });
     textarea.placeholder = this.getStdinPlaceholder(block);
-    textarea.value = this.stdinInputs.get(block.id) ?? block.attributes["loom-stdin"] ?? block.attributes.stdin ?? "";
+    textarea.value = this.getInputPanelValue(block);
     textarea.addEventListener("input", () => {
       this.stdinInputs.set(block.id, textarea.value);
     });
@@ -2110,12 +2118,37 @@ export default class loomPlugin extends Plugin {
   }
 
   private getStdinPlaceholder(block: loomCodeBlock): string {
+    if (this.isFunctionInputBlock(block)) {
+      return "input passed to {input} in loom-call";
+    }
     const stdinFile = block.attributes["loom-stdin-file"] ?? block.attributes["stdin-file"];
     return stdinFile ? `stdin file: ${stdinFile}` : "standard input for this block";
   }
 
-  private async resolveBlockStdin(file: TFile, block: loomCodeBlock): Promise<string | undefined> {
+  private getInputPanelValue(block: loomCodeBlock): string {
     if (this.stdinInputs.has(block.id)) {
+      return this.stdinInputs.get(block.id) ?? "";
+    }
+    if (this.isFunctionInputBlock(block)) {
+      return this.resolveBlockFunctionInput(block) ?? "";
+    }
+    return block.attributes["loom-stdin"] ?? block.attributes.stdin ?? "";
+  }
+
+  private resolveBlockFunctionInput(block: loomCodeBlock): string | undefined {
+    if (!this.isFunctionInputBlock(block)) {
+      return undefined;
+    }
+    if (this.stdinInputs.has(block.id)) {
+      return this.stdinInputs.get(block.id);
+    }
+
+    const inline = block.attributes["loom-input"] ?? block.attributes.input;
+    return inline != null ? decodeEscapedAttribute(inline) : block.content.trim();
+  }
+
+  private async resolveBlockStdin(file: TFile, block: loomCodeBlock): Promise<string | undefined> {
+    if (!this.isFunctionInputBlock(block) && this.stdinInputs.has(block.id)) {
       return this.stdinInputs.get(block.id);
     }
 
