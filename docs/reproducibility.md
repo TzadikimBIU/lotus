@@ -17,6 +17,8 @@ Lotus computes cryptographic hashes for both entire notes and individual code bl
 
 A reproducibility snapshot records the state of a note and all its executable blocks at a specific point in time.
 
+Snapshots can also be signed with `lotus: Sign Current Note`. See [Observability, Logging, and Signing](observability.md) for OpenSSH, RSA-PSS, passphrase signing, and verification setup.
+
 ### Saving a Snapshot
 Running the command `lotus: Save Reproducibility Snapshot` writes the following snapshot structure to the note's frontmatter under the `lotus-reproducibility` key:
 

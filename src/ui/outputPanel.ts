@@ -5,6 +5,15 @@ interface lotusOutputPanelOptions {
   defaultVisibleLines: number;
 }
 
+export interface lotusRunningPanelOptions {
+  runnerName?: string;
+  stdout?: string;
+  stderr?: string;
+  inputEnabled?: boolean;
+  onSendInput?: (input: string) => void;
+  onCloseInput?: () => void;
+}
+
 function getStatusKind(output: lotusStoredOutput): "success" | "warning" | "failure" {
   if (output.result.success) {
     return output.result.stderr.trim() || output.result.warning?.trim() ? "warning" : "success";
@@ -116,7 +125,7 @@ function formatStreamLabel(label: string, lineCount: number, visibleLines: numbe
   return label;
 }
 
-export function createRunningPanel(): HTMLDivElement {
+export function createRunningPanel(options: lotusRunningPanelOptions = {}): HTMLDivElement {
   const panel = document.createElement("div");
   panel.className = "lotus-output-panel is-running";
 
@@ -124,10 +133,63 @@ export function createRunningPanel(): HTMLDivElement {
   const spinner = header.createDiv({ cls: "lotus-spinner" });
   setIcon(spinner, "loader-circle");
   const title = header.createDiv({ cls: "lotus-output-title" });
-  title.setText("Running");
+  title.setText(options.runnerName ? `Running ${options.runnerName}` : "Running");
   const meta = header.createDiv({ cls: "lotus-output-meta" });
   meta.setText("Executing...");
   spinner.setAttribute("aria-hidden", "true");
 
+  const body = panel.createDiv({ cls: "lotus-output-body" });
+  if (options.stdout?.length) {
+    createStream(body, "Stdout", options.stdout, 200);
+  }
+  if (options.stderr?.length) {
+    createStream(body, "Stderr", options.stderr, 200);
+  }
+  if (options.inputEnabled && options.onSendInput) {
+    createLiveInput(body, options);
+  }
+
   return panel;
+}
+
+function createLiveInput(container: HTMLElement, options: lotusRunningPanelOptions): void {
+  const form = container.createDiv({ cls: "lotus-live-input" });
+  const textarea = form.createEl("textarea", {
+    cls: "lotus-live-input-field",
+    attr: {
+      rows: "2",
+      placeholder: "stdin for the running process",
+    },
+  });
+  const actions = form.createDiv({ cls: "lotus-live-input-actions" });
+  const sendButton = actions.createEl("button", { text: "Send" });
+  const eofButton = actions.createEl("button", { text: "EOF" });
+
+  const send = () => {
+    const value = textarea.value;
+    if (!value.length) {
+      return;
+    }
+    options.onSendInput?.(value.endsWith("\n") ? value : `${value}\n`);
+    textarea.value = "";
+    textarea.focus();
+  };
+
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      send();
+    }
+  });
+  sendButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    send();
+  });
+  eofButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    options.onCloseInput?.();
+  });
 }

@@ -27,6 +27,9 @@ export class OcamlRunner implements lotusRunner {
         timeoutMs: context.timeoutMs,
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     }
 
@@ -42,6 +45,9 @@ export class OcamlRunner implements lotusRunner {
         timeoutMs: context.timeoutMs,
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     }
 
@@ -55,7 +61,6 @@ export class OcamlRunner implements lotusRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
-        stdin: context.stdin,
       });
 
       if (!compileResult.success) {
@@ -70,6 +75,10 @@ export class OcamlRunner implements lotusRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: context.timeoutMs,
         signal: context.signal,
+        stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     });
   }

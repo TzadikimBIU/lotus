@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -38,10 +41,10 @@ jobs:
             container: podman-test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -53,7 +56,7 @@ jobs:
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y /tmp/google-chrome-stable_current_amd64.deb
           echo "LOTUS_CHROME_PATH=/usr/bin/google-chrome-stable" >> "${GITHUB_ENV}"
-      - uses: browser-actions/setup-chrome@v1
+      - uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce
         if: ${{ env.ACT != 'true' }}
         id: setup-chrome
       - name: Install smoke toolchain packages
@@ -128,7 +131,7 @@ jobs:
         if: matrix.profile == 'ebpf' || matrix.profile == 'full' || matrix.container != 'none'
         env:
           LOTUS_CHROME_PATH: ${{ env.LOTUS_CHROME_PATH || steps.setup-chrome.outputs.chrome-path }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: lotus-smoke-${{ matrix.profile }}-${{ matrix.container }}

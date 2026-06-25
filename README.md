@@ -93,6 +93,12 @@ Use `lotus-output-file-mode=append`, `lotus-output-file-streams=metadata,stdout,
 ### Standard Input (Stdin)
 Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per-block input buffer. For reproducible notes, use `lotus-stdin="line one\nline two"` or `lotus-stdin-file="inputs/payload.txt"`. The attribute `lotus-input=true` keeps the input field visible whenever the note renders.
 
+## Observability
+
+Lotus can write execution, note mutation, reproducibility, and signature events to text logs, JSONL logs, per-note logs, a local process, or a remote HTTP endpoint. Structured event payloads support redaction rules before they leave the plugin.
+
+Use `lotus: Open Log Viewer` to inspect the configured JSONL log inside Obsidian. See [Observability, Logging, and Signing](docs/observability.md) for sink configuration, redaction rules, live input behavior, and cryptographic note signatures.
+
 ## Advanced Topics
 
 For more specialized setups, refer to the guides in the [docs/](docs/) directory:
@@ -102,6 +108,7 @@ For more specialized setups, refer to the guides in the [docs/](docs/) directory
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.
 - [eBPF Execution](docs/ebpf.md): Compile BPF programs, inspect ELF objects, and load probes safely.
 - [Hashing & Reproducibility](docs/reproducibility.md): Verify notes and code blocks against snapshots to guarantee document reproducibility.
+- [Observability, Logging, and Signing](docs/observability.md): Configure local/remote logs, redaction rules, log viewing, live input, and note signatures.
 - [Developer Guide](docs/development.md): Runner API contracts, Obsidian context (`obsidian-js`) integrations, and the smoke testing suite.
 
 ## Commands Reference
@@ -110,11 +117,21 @@ Lotus registers several commands in the Obsidian command palette (`Ctrl/Cmd + P`
 
 - **`lotus: Run Current Code Block`**: Executes the block under the cursor.
 - **`lotus: Run All Supported Code Blocks in Current Note`**: Executes all runnable blocks in the active file.
+- **`lotus: Cancel Current Code Block`**: Stops the running block under the cursor.
+- **`lotus: Cancel All Running Code Blocks`**: Stops all active block runs.
 - **`lotus: Clear lotus Outputs in Current Note`**: Removes all rendered output panels and written output blocks in the active file.
+- **`lotus: Open Log Viewer`**: Opens the structured JSONL log viewer.
 - **`lotus: Save Reproducibility Snapshot`**: Saves the current block and note hashes to the note's frontmatter.
 - **`lotus: Verify Reproducibility Snapshot`**: Compares the current note against the saved snapshot.
+- **`lotus: Sign Current Note`**: Signs the active note's reproducibility payload.
+- **`lotus: Verify Current Note Signature`**: Verifies the active note against `lotus-signature`.
+- **`lotus: Copy Current Note Signature`**: Copies the active note signature as JSON.
+- **`lotus: Sign All Notes`**: Signs every Markdown note in the vault.
+- **`lotus: Verify All Note Signatures`**: Verifies note signatures across the vault.
 
 *See [docs/reproducibility.md](docs/reproducibility.md) for the complete list of hashing and verification commands.*
+
+*See [docs/observability.md](docs/observability.md) for logging and signing configuration.*
 
 
 

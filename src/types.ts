@@ -58,6 +58,13 @@ export interface lotusRunContext {
   timeoutMs: number;
   signal: AbortSignal;
   stdin?: string;
+  stdinSession?: lotusStdinSession;
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
+}
+
+export interface lotusStdinSession {
+  attachWriter(writer: (chunk: string | null) => void): () => void;
 }
 
 export interface lotusRunResult {
@@ -146,6 +153,15 @@ export interface lotusPluginSettings {
   outputVisibleLines: number;
   autoRunOnFileOpen: boolean;
   hashCodeBlocks: boolean;
+  signingMode: "passphrase" | "rsa" | "ssh";
+  signingSignerId: string;
+  signingPublicKey: string;
+  signingPublicKeyPath: string;
+  signingSshKeyPath: string;
+  signingSshAuthSock: string;
+  signingSshAllowedSigners: string;
+  signingSshAllowedSignersPath: string;
+  signingSshNamespace: string;
   showObsidianContextWarning: boolean;
   extractedSourcePreviewMode: "collapsed" | "expanded" | "hidden";
   showLanguageCapabilityMetadata: boolean;
@@ -169,6 +185,8 @@ export interface lotusPluginSettings {
   loggingHttpEnabled: boolean;
   loggingHttpEndpoint: string;
   loggingHttpHeaders: string;
+  loggingViewerJsonlPath: string;
+  loggingRedactionRules: string;
   loggingNotePathMode: "plain" | "hash" | "omit";
   loggingIncludeCode: boolean;
   loggingIncludeOutput: boolean;

@@ -6,7 +6,7 @@ declare const __LOTUS_LIGHT_CONTAINER_GROUPS__: string[];
 declare const __LOTUS_LIGHT_CONTAINER_RUNTIMES__: string[];
 
 export type lotusCompileMode = "strict" | "light";
-export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters";
+export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters" | "signing";
 export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 
 const ALL_CONTAINER_RUNTIMES: lotusCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom"];

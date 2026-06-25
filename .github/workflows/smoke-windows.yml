@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -23,33 +26,21 @@ jobs:
           - proofs
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
 
-      - uses: browser-actions/setup-chrome@v1
+      - uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce
         id: setup-chrome
 
       - name: Install Z3 Prover on Windows Host
         if: matrix.profile == 'proofs'
         run: choco install z3 -y
-
-      # - name: Provision WSL (Ubuntu)
-      #   uses: Vampire/setup-wsl@v7
-      #   with:
-      #     distribution: Ubuntu-22.04
-      #     wsl-version: 2
-
-      # - name: Install dependencies in WSL
-      #   shell: powershell
-      #   run: |
-      #     wsl sudo apt-get update
-      #     wsl sudo apt-get install -y clang llvm bpftrace z3
 
       - name: Fetch vault branch
         run: git fetch --depth=1 origin vault:vault
@@ -62,26 +53,7 @@ jobs:
           $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
           npm run smoke -- --profile ${{ matrix.profile }}
 
-      # - name: Configure note for WSL container tests
-      #   shell: powershell
-      #   run: |
-      #     git checkout vault
-      #     $content = Get-Content "Smoke Suite.md" -Raw
-      #     $frontmatter = "---\r\nlotus-container: wsl-test\r\n---\r\n\r\n"
-      #     Set-Content -Path "Smoke Suite.md" -Value ($frontmatter + $content) -NoNewline
-      #     git config user.name "github-actions"
-      #     git config user.email "github-actions@github.com"
-      #     git commit -am "Prepend container frontmatter"
-      #     git checkout -f -
-
-      # - name: Run WSL container smoke tests (Systems & Proofs)
-      #   shell: powershell
-      #   run: |
-      #     $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
-      #     npm run smoke -- --profile systems --require-pdf --require-all
-      #     npm run smoke -- --profile proofs --require-pdf --require-all
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: lotus-smoke-windows-artifacts-${{ matrix.profile }}

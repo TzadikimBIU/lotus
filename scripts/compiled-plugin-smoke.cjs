@@ -120,6 +120,13 @@ function obsidianShim(dir) {
     }
   }
 
+  class ItemView {
+    constructor(leaf) {
+      this.leaf = leaf;
+      this.containerEl = fakeElement();
+    }
+  }
+
   class Setting {
     constructor(containerEl) {
       this.settingEl = containerEl ?? fakeElement();
@@ -142,6 +149,7 @@ function obsidianShim(dir) {
 
   return {
     App: class {},
+    ItemView,
     MarkdownRenderChild,
     Modal,
     Notice,

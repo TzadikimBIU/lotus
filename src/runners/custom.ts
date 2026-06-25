@@ -29,6 +29,9 @@ export class CustomLanguageRunner implements lotusRunner {
       timeoutMs: context.timeoutMs,
       signal: context.signal,
       stdin: context.stdin,
+      stdinSession: context.stdinSession,
+      onStdout: context.onStdout,
+      onStderr: context.onStderr,
     });
   }
 

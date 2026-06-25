@@ -22,6 +22,9 @@ export class LlvmRunner implements lotusRunner {
       timeoutMs: Math.max(context.timeoutMs, 30_000),
       signal: context.signal,
       stdin: context.stdin,
+      stdinSession: context.stdinSession,
+      onStdout: context.onStdout,
+      onStderr: context.onStderr,
     });
 
     if (!result.timedOut && !result.cancelled && result.exitCode != null && !result.stderr.trim()) {

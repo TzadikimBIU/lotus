@@ -28,6 +28,7 @@ export class lotusSettingTab extends PluginSettingTab {
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
 
     this.renderGeneralSettings(this.createSection(containerEl, "General Settings", true));
+    this.renderHashingAndObservabilitySettings(this.createSection(containerEl, "Hashing and Observability"));
     this.renderLoggingSettings(this.createSection(containerEl, "Logging"));
     this.renderLanguagePackages(this.createSection(containerEl, "Language Packages"));
     this.renderBuiltInRuntimes(this.createSection(containerEl, "Built-in Runtimes"));
@@ -138,16 +139,6 @@ export class lotusSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Write code block hashes to frontmatter")
-      .setDesc("Maintain lotus-code-block-hashes in note frontmatter when hashing notes or running blocks.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.lotusPlugin.settings.hashCodeBlocks ?? false).onChange(async (value) => {
-          this.lotusPlugin.settings.hashCodeBlocks = value;
-          await this.lotusPlugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
       .setName("Show Obsidian context warning")
       .setDesc('Show "No but seriously, you are risking your life" when obsidian-js blocks run.')
       .addToggle((toggle) =>
@@ -196,6 +187,77 @@ export class lotusSettingTab extends PluginSettingTab {
             await this.lotusPlugin.saveSettings();
           }),
       );
+  }
+
+  private renderHashingAndObservabilitySettings(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Write code block hashes to frontmatter")
+      .setDesc("Maintain lotus-code-block-hashes in note frontmatter when hashing notes or running blocks.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.lotusPlugin.settings.hashCodeBlocks ?? false).onChange(async (value) => {
+          this.lotusPlugin.settings.hashCodeBlocks = value;
+          await this.lotusPlugin.saveSettings();
+        }),
+      );
+
+    if (!isCompileFeatureAllowed("signing")) {
+      new Setting(containerEl)
+        .setName("Cryptographic signing")
+        .setDesc("This light build was compiled without the signing feature.");
+      return;
+    }
+
+    new Setting(containerEl)
+      .setName("Signature method")
+      .setDesc("Passphrase creates password-derived HMAC signatures. RSA uses PEM keys. OpenSSH can sign through ssh-agent and verify pinned public keys.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("passphrase", "Passphrase")
+          .addOption("rsa", "RSA-PSS")
+          .addOption("ssh", "OpenSSH / ssh-agent")
+          .setValue(this.lotusPlugin.settings.signingMode || "passphrase")
+          .onChange(async (value) => {
+            this.lotusPlugin.settings.signingMode = value as "passphrase" | "rsa" | "ssh";
+            await this.lotusPlugin.saveSettings();
+            this.display();
+          }),
+      );
+
+    this.addTextSetting(containerEl, "Signer identity", "Optional label stored with signatures. Example: team, analyst, or key owner.", "signingSignerId");
+
+    if (this.lotusPlugin.settings.signingMode === "rsa") {
+      this.addTextSetting(containerEl, "RSA public key file", "Vault-relative or absolute PEM file used for verification.", "signingPublicKeyPath");
+      new Setting(containerEl)
+        .setName("RSA public key")
+        .setDesc("Optional pasted PEM public key. Used when no public key file is configured.")
+        .addTextArea((text) => {
+          text.setValue(this.lotusPlugin.settings.signingPublicKey).onChange(async (value) => {
+            this.lotusPlugin.settings.signingPublicKey = value;
+            await this.lotusPlugin.saveSettings();
+          });
+          text.inputEl.rows = 5;
+          text.inputEl.style.fontFamily = "monospace";
+          text.inputEl.style.width = "100%";
+        });
+    }
+    if (this.lotusPlugin.settings.signingMode === "ssh") {
+      this.addTextSetting(containerEl, "OpenSSH signing key file", "Private key file, or public key file when the private half is available in ssh-agent.", "signingSshKeyPath");
+      this.addTextSetting(containerEl, "SSH agent socket", "Optional SSH_AUTH_SOCK override for signing with an agent.", "signingSshAuthSock");
+      this.addTextSetting(containerEl, "OpenSSH namespace", "Domain-separated signature namespace. This prevents signatures from being accepted for another protocol.", "signingSshNamespace");
+      this.addTextSetting(containerEl, "Allowed signers file", "Vault-relative or absolute allowed_signers file used for verification.", "signingSshAllowedSignersPath");
+      new Setting(containerEl)
+        .setName("Allowed signers")
+        .setDesc("Optional pasted OpenSSH allowed_signers content. Used when no allowed signers file is configured.")
+        .addTextArea((text) => {
+          text.setValue(this.lotusPlugin.settings.signingSshAllowedSigners).onChange(async (value) => {
+            this.lotusPlugin.settings.signingSshAllowedSigners = value;
+            await this.lotusPlugin.saveSettings();
+          });
+          text.inputEl.rows = 5;
+          text.inputEl.style.fontFamily = "monospace";
+          text.inputEl.style.width = "100%";
+        });
+    }
   }
 
   private renderLoggingSettings(containerEl: HTMLElement): void {
@@ -279,6 +341,20 @@ export class lotusSettingTab extends PluginSettingTab {
       );
     this.addTextSetting(containerEl, "HTTP endpoint", "Example: https://collector.example.com/lotus/events", "loggingHttpEndpoint");
     this.addTextSetting(containerEl, "HTTP headers JSON", "Optional JSON object of string headers.", "loggingHttpHeaders");
+    this.addTextSetting(containerEl, "Log viewer JSONL path", "Vault-relative JSONL file opened by the Lotus log viewer.", "loggingViewerJsonlPath");
+
+    new Setting(containerEl)
+      .setName("Redaction rules")
+      .setDesc("One rule per line. Use plain text or /regex/flags, optionally followed by => replacement.")
+      .addTextArea((text) => {
+        text.setValue(this.lotusPlugin.settings.loggingRedactionRules).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingRedactionRules = value;
+          await this.lotusPlugin.saveSettings();
+        });
+        text.inputEl.rows = 5;
+        text.inputEl.style.fontFamily = "monospace";
+        text.inputEl.style.width = "100%";
+      });
 
     new Setting(containerEl)
       .setName("Note path in logs")

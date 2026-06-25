@@ -134,6 +134,61 @@ Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). Lotu
 
 Define `sshAuthSock` if the group should use a specific SSH agent socket (e.g., Bitwarden). Lotus does not store keys or prompt for passphrases; it only passes `SSH_AUTH_SOCK` to the `ssh` and `scp` processes. QEMU uses the same upload/run/cleanup transport, so QEMU configs can also set `scpExecutable`, `scpArgs`, `sshAuthSock`, and `cleanupRemoteFile`.
 
+### Jump Hosts and SSH Config
+
+Lotus does not implement its own SSH transport. It delegates to your installed `ssh` and `scp`, so jump hosts, bastions, hardware tokens, agent forwarding, host key policy, and corporate SSH configuration should live in `~/.ssh/config` or in the group's SSH arguments.
+
+The most maintainable setup is an SSH host alias:
+
+```sshconfig
+Host prod-runner
+  HostName runner.internal
+  User lotus
+  ProxyJump bastion.example.com
+  IdentityAgent ~/.1password/agent.sock
+  StrictHostKeyChecking yes
+```
+
+Then the Lotus group can reference the alias directly:
+
+```json
+{
+  "runtime": "ssh",
+  "ssh": {
+    "target": "prod-runner",
+    "workspace": "/tmp/lotus",
+    "sshArgs": "-o BatchMode=yes",
+    "scpArgs": "",
+    "cleanupRemoteFile": true
+  },
+  "languages": {
+    "python": {
+      "useDefault": true
+    }
+  }
+}
+```
+
+If you do not want to use an SSH config alias, put the jump options in both `sshArgs` and `scpArgs`:
+
+```json
+{
+  "runtime": "ssh",
+  "ssh": {
+    "target": "lotus@runner.internal",
+    "workspace": "/tmp/lotus",
+    "sshArgs": "-J bastion.example.com -o BatchMode=yes",
+    "scpArgs": "-J bastion.example.com",
+    "cleanupRemoteFile": true
+  },
+  "languages": {
+    "shell": {
+      "useDefault": true
+    }
+  }
+}
+```
+
 ### QEMU Runtime Configurations
 
 #### Standard QEMU SSH Target

@@ -14,8 +14,10 @@ import {
 } from "obsidian";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
+import { readFile } from "fs/promises";
 import JSZip from "jszip";
-import { dirname } from "path";
+import { dirname, isAbsolute, join } from "path";
+import { homedir } from "os";
 import { lotusContainerRunner } from "./execution/containerRunner";
 import { isCompileContainerGroupAllowed, isCompileFeatureAllowed } from "./buildProfile";
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
@@ -41,17 +43,20 @@ import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
 import { resolveReferencedSource } from "./sourceExtract";
 import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
+import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
-import type { lotusCodeBlock, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStoredOutput } from "./types";
+import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
+import type { lotusCodeBlock, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
 
 const lotusRefreshEffect = StateEffect.define<void>();
 const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
 const LANGUAGE_PACK_MANIFEST_NAMES = new Set(["lotus-language-pack.json", "language-pack.json", "manifest.json"]);
 const NOTE_HASH_FRONTMATTER_KEY = "lotus-note-hash";
 const CODE_BLOCK_HASHES_FRONTMATTER_KEY = "lotus-code-block-hashes";
-const LOTUS_HASH_FRONTMATTER_KEYS = new Set([NOTE_HASH_FRONTMATTER_KEY, CODE_BLOCK_HASHES_FRONTMATTER_KEY]);
+const SIGNATURE_FRONTMATTER_KEY = "lotus-signature";
+const LOTUS_HASH_FRONTMATTER_KEYS = new Set([NOTE_HASH_FRONTMATTER_KEY, CODE_BLOCK_HASHES_FRONTMATTER_KEY, SIGNATURE_FRONTMATTER_KEY]);
 const REPRODUCIBILITY_FRONTMATTER_KEY = "lotus-reproducibility";
 const HASH_POLICY_FRONTMATTER_KEY = "lotus-hash-policy";
 const HASH_IGNORE_FRONTMATTER_KEY = "lotus-hash-ignore-frontmatter";
@@ -113,6 +118,33 @@ interface lotusReproducibilitySnapshot {
   policy: ReturnType<typeof serializeHashPolicy>;
   blocks: lotusCodeBlockHashEntry[];
   verification?: lotusReproducibilityVerification;
+}
+
+interface lotusSignaturePayload {
+  version: 1;
+  scope: "note";
+  noteHash: string;
+  policy: ReturnType<typeof serializeHashPolicy>;
+  blocks: lotusCodeBlockHashEntry[];
+}
+
+interface lotusSignatureMaterial {
+  mode: "passphrase" | "rsa" | "ssh";
+  passphrase?: string;
+  privateKeyPem?: string;
+  privateKeyPassphrase?: string;
+  rememberForSession?: boolean;
+}
+
+interface lotusLiveRunState {
+  inputSession: lotusLiveStdinSession | null;
+  stdout: string;
+  stderr: string;
+  startedAt: string;
+  runnerName: string;
+  notePath: string;
+  block: lotusCodeBlock;
+  target: lotusLogTarget;
 }
 
 interface lotusOutputFileTarget {
@@ -243,6 +275,156 @@ class ReproducibilityPolicyModal extends Modal {
   }
 }
 
+class SignatureMaterialModal extends Modal {
+  private settled = false;
+
+  constructor(
+    app: Plugin["app"],
+    private readonly options: {
+      title: string;
+      mode: "passphrase" | "rsa";
+      action: "sign" | "verify";
+      hasPrivateKeyPath: boolean;
+      cachedPassphrase?: string;
+      onSubmit: (material: lotusSignatureMaterial) => void;
+      onCancel: () => void;
+    },
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.options.title });
+
+    if (this.options.mode === "passphrase") {
+      this.renderPassphraseForm(contentEl);
+    } else {
+      this.renderRsaForm(contentEl);
+    }
+  }
+
+  onClose(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.options.onCancel();
+    }
+  }
+
+  private renderPassphraseForm(contentEl: HTMLElement): void {
+    contentEl.createEl("p", {
+      text: this.options.action === "sign"
+        ? "Enter a passphrase. The passphrase is not stored; Lotus stores only the salt, KDF parameters, payload hash, and HMAC."
+        : "Enter the passphrase used to sign this note.",
+    });
+    const passphrase = createPasswordInput(contentEl, "Passphrase");
+    if (this.options.cachedPassphrase) {
+      passphrase.value = this.options.cachedPassphrase;
+    }
+    const confirm = this.options.action === "sign" ? createPasswordInput(contentEl, "Confirm passphrase") : null;
+    const remember = contentEl.createEl("label", { cls: "lotus-signing-session-cache" });
+    const rememberInput = remember.createEl("input", { attr: { type: "checkbox" } });
+    remember.createSpan({ text: "Keep in memory until Obsidian reloads" });
+    const error = contentEl.createDiv({ cls: "setting-item-description" });
+    this.renderActions(contentEl, () => {
+      if (!passphrase.value) {
+        error.setText("Passphrase is required.");
+        return;
+      }
+      if (confirm && passphrase.value !== confirm.value) {
+        error.setText("Passphrases do not match.");
+        return;
+      }
+      this.submit({ mode: "passphrase", passphrase: passphrase.value, rememberForSession: rememberInput.checked });
+    });
+  }
+
+  private renderRsaForm(contentEl: HTMLElement): void {
+    contentEl.createEl("p", {
+      text: this.options.hasPrivateKeyPath
+        ? "Lotus will read the configured private key file for signing. Enter a key passphrase only if the key is encrypted."
+        : "Paste an RSA private key PEM. The private key is used for this signing operation and is not stored.",
+    });
+    const privateKey = this.options.hasPrivateKeyPath
+      ? null
+      : contentEl.createEl("textarea", {
+        cls: "lotus-signing-key-input",
+        attr: {
+          rows: "8",
+          placeholder: "-----BEGIN PRIVATE KEY-----",
+        },
+      });
+    const keyPassphrase = createPasswordInput(contentEl, "Private key passphrase, if encrypted");
+    const error = contentEl.createDiv({ cls: "setting-item-description" });
+    this.renderActions(contentEl, () => {
+      if (privateKey && !privateKey.value.trim()) {
+        error.setText("Private key PEM is required unless a private key file is configured.");
+        return;
+      }
+      this.submit({
+        mode: "rsa",
+        privateKeyPem: privateKey?.value,
+        privateKeyPassphrase: keyPassphrase.value,
+      });
+    });
+  }
+
+  private renderActions(contentEl: HTMLElement, submit: () => void): void {
+    const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
+    const cancelButton = actions.createEl("button", { text: "Cancel" });
+    const submitButton = actions.createEl("button", { text: this.options.action === "sign" ? "Sign" : "Verify", cls: "mod-cta" });
+    cancelButton.addEventListener("click", () => this.close());
+    submitButton.addEventListener("click", submit);
+  }
+
+  private submit(material: lotusSignatureMaterial): void {
+    if (this.settled) {
+      return;
+    }
+    this.settled = true;
+    this.options.onSubmit(material);
+    this.close();
+  }
+}
+
+class lotusLiveStdinSession implements lotusStdinSession {
+  private readonly writers = new Set<(chunk: string | null) => void>();
+  private closed = false;
+
+  attachWriter(writer: (chunk: string | null) => void): () => void {
+    if (this.closed) {
+      writer(null);
+      return () => undefined;
+    }
+    this.writers.add(writer);
+    return () => {
+      this.writers.delete(writer);
+    };
+  }
+
+  send(input: string): boolean {
+    if (this.closed) {
+      return false;
+    }
+    for (const writer of this.writers) {
+      writer(input);
+    }
+    return this.writers.size > 0;
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    for (const writer of this.writers) {
+      writer(null);
+    }
+    this.writers.clear();
+  }
+}
+
 class lotusToolbarRenderChild extends MarkdownRenderChild {
   private panelContainer: HTMLDivElement | null = null;
   private toolbarElement: HTMLElement | null = null;
@@ -348,6 +530,8 @@ export default class lotusPlugin extends Plugin {
   public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? ".obsidian/plugins/lotus");
   private hasRegisteredMarkdownDecorator = false;
   private readonly outputs = new Map<string, lotusStoredOutput>();
+  private readonly liveRuns = new Map<string, lotusLiveRunState>();
+  private cachedSigningPassphrase: string | null = null;
   private readonly stdinInputs = new Map<string, string>();
   private readonly stdinPanels = new Set<string>();
   private readonly running = new Map<string, AbortController>();
@@ -362,6 +546,10 @@ export default class lotusPlugin extends Plugin {
     this.addSettingTab(new lotusSettingTab(this));
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
+    this.registerView(LOTUS_LOG_VIEW_TYPE, (leaf) => new lotusLogView(leaf, this));
+    this.addRibbonIcon("list-filter", "Open Lotus logs", () => {
+      void this.openLogView();
+    });
     this.app.workspace.onLayoutReady(() => {
       this.lastMarkdownFilePath = this.getActiveMarkdownFile()?.path ?? this.lastMarkdownFilePath;
       void this.enforceSourceModeForActiveView();
@@ -432,6 +620,14 @@ export default class lotusPlugin extends Plugin {
           void this.cancelAllRuns();
         }
         return true;
+      },
+    });
+
+    this.addCommand({
+      id: "lotus-open-log-viewer",
+      name: "lotus: Open Log Viewer",
+      callback: () => {
+        void this.openLogView();
       },
     });
 
@@ -509,6 +705,70 @@ export default class lotusPlugin extends Plugin {
         return true;
       },
     });
+
+    if (isCompileFeatureAllowed("signing")) {
+      this.addCommand({
+        id: "lotus-sign-current-note",
+        name: "lotus: Sign Current Note",
+        checkCallback: (checking) => {
+          const file = this.getActiveMarkdownFile();
+          if (!file) {
+            return false;
+          }
+          if (!checking) {
+            void this.signCurrentNote(file);
+          }
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: "lotus-verify-current-note-signature",
+        name: "lotus: Verify Current Note Signature",
+        checkCallback: (checking) => {
+          const file = this.getActiveMarkdownFile();
+          if (!file) {
+            return false;
+          }
+          if (!checking) {
+            void this.verifyCurrentNoteSignature(file);
+          }
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: "lotus-copy-current-note-signature",
+        name: "lotus: Copy Current Note Signature",
+        checkCallback: (checking) => {
+          const file = this.getActiveMarkdownFile();
+          if (!file) {
+            return false;
+          }
+          if (!checking) {
+            void this.copyCurrentNoteSignature(file);
+          }
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: "lotus-sign-all-notes",
+        name: "lotus: Sign All Notes",
+        callback: () => {
+          void this.signAllNotes();
+        },
+      });
+
+      this.addCommand({
+        id: "lotus-verify-all-note-signatures",
+        name: "lotus: Verify All Note Signatures",
+        callback: () => {
+          void this.verifyAllNoteSignatures();
+        },
+      });
+
+    }
 
     this.addCommand({
       id: "lotus-copy-note-hash",
@@ -784,6 +1044,22 @@ export default class lotusPlugin extends Plugin {
     };
   }
 
+  async openLogView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(LOTUS_LOG_VIEW_TYPE)[0];
+    const leaf = existing ?? this.app.workspace.getRightLeaf(false);
+    if (!leaf) {
+      new Notice("Unable to open Lotus log viewer.");
+      return;
+    }
+
+    await leaf.setViewState({ type: LOTUS_LOG_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+    const view = leaf.view;
+    if (view instanceof lotusLogView) {
+      await view.refresh();
+    }
+  }
+
   private async logEvent(input: lotusLogInput): Promise<void> {
     await this.logger.log(await this.enrichLogEvent(input));
   }
@@ -893,7 +1169,15 @@ export default class lotusPlugin extends Plugin {
 
     const output = this.outputs.get(blockId);
     if (this.running.has(blockId)) {
-      container.appendChild(createRunningPanel());
+      const liveRun = this.liveRuns.get(blockId);
+      container.appendChild(createRunningPanel({
+        runnerName: liveRun?.runnerName,
+        stdout: liveRun?.stdout,
+        stderr: liveRun?.stderr,
+        inputEnabled: Boolean(liveRun?.inputSession),
+        onSendInput: (input) => void this.sendLiveInput(blockId, input),
+        onCloseInput: () => void this.closeLiveInput(blockId),
+      }));
       return;
     }
 
@@ -904,6 +1188,50 @@ export default class lotusPlugin extends Plugin {
     container.appendChild(createOutputPanel(output, {
       defaultVisibleLines: this.settings.outputVisibleLines ?? 0,
     }));
+  }
+
+  private async sendLiveInput(blockId: string, input: string): Promise<void> {
+    const liveRun = this.liveRuns.get(blockId);
+    if (!liveRun?.inputSession) {
+      new Notice("This running block is not accepting live input.");
+      return;
+    }
+
+    const sent = liveRun.inputSession.send(input);
+    if (!sent) {
+      new Notice("The process stdin is not ready.");
+      return;
+    }
+
+    await this.logEvent({
+      type: "lotus.run.input",
+      message: "Input sent to running block",
+      notePath: liveRun.notePath,
+      block: liveRun.block,
+      target: liveRun.target,
+      stdin: input,
+      data: {
+        bytes: input.length,
+      },
+    });
+  }
+
+  private async closeLiveInput(blockId: string): Promise<void> {
+    const liveRun = this.liveRuns.get(blockId);
+    if (!liveRun?.inputSession) {
+      return;
+    }
+
+    liveRun.inputSession.close();
+    liveRun.inputSession = null;
+    this.notifyOutputChanged(blockId);
+    await this.logEvent({
+      type: "lotus.run.input.closed",
+      message: "Closed running block input",
+      notePath: liveRun.notePath,
+      block: liveRun.block,
+      target: liveRun.target,
+    });
   }
 
   async runActiveBlockById(blockId: string): Promise<void> {
@@ -1110,6 +1438,376 @@ export default class lotusPlugin extends Plugin {
       },
     });
     new Notice(verification.summary, verification.status === "verified" ? 6000 : 12000);
+  }
+
+  async signCurrentNote(file: TFile): Promise<void> {
+    const material = await this.requestSignatureMaterial("Sign Current Note", this.settings.signingMode || "passphrase", "sign");
+    if (!material) {
+      return;
+    }
+
+    try {
+      const signature = await this.signNote(file, material);
+      new Notice(`lotus note signed with ${formatSignatureScheme(signature.scheme)} (${signature.keyId}).`);
+    } catch (error) {
+      new Notice(`lotus signing failed: ${formatErrorMessage(error)}`, 12000);
+    }
+  }
+
+  async verifyCurrentNoteSignature(file: TFile): Promise<void> {
+    try {
+      const source = await this.app.vault.cachedRead(file);
+      const signature = readStoredSignature(source);
+      if (!signature) {
+        new Notice("No lotus-signature found. Run lotus: Sign Current Note first.");
+        return;
+      }
+
+      const material = signature.scheme === "passphrase-hmac-sha256"
+        ? await this.requestSignatureMaterial("Verify Current Note Signature", "passphrase", "verify")
+        : null;
+      if (signature.scheme === "passphrase-hmac-sha256" && !material) {
+        return;
+      }
+
+      const result = await this.verifyNoteSignature(file, source, signature, material ?? undefined);
+      new Notice(result.summary, result.verified ? 6000 : 12000);
+    } catch (error) {
+      new Notice(`lotus signature verification failed: ${formatErrorMessage(error)}`, 12000);
+    }
+  }
+
+  async copyCurrentNoteSignature(file: TFile): Promise<void> {
+    const signature = readStoredSignature(await this.app.vault.cachedRead(file));
+    if (!signature) {
+      new Notice("No valid lotus-signature found. Run lotus: Sign Current Note first.");
+      return;
+    }
+    await this.copyTextToClipboard(JSON.stringify(signature, null, 2), "Note signature copied.");
+  }
+
+  async signAllNotes(): Promise<void> {
+    const material = await this.requestSignatureMaterial("Sign All Notes", this.settings.signingMode || "passphrase", "sign");
+    if (!material) {
+      return;
+    }
+
+    const files = this.app.vault.getMarkdownFiles();
+    let signed = 0;
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        await this.signNote(file, material);
+        signed += 1;
+      } catch (error) {
+        failures.push(`${file.path}: ${formatErrorMessage(error)}`);
+      }
+    }
+
+    const summary = failures.length
+      ? `lotus signed ${signed}/${files.length} notes; ${failures.length} failed.`
+      : `lotus signed ${signed} note${signed === 1 ? "" : "s"}.`;
+    await this.logEvent({
+      type: "lotus.signature.all.created",
+      message: summary,
+      data: {
+        signed,
+        total: files.length,
+        failures: failures.length,
+      },
+    });
+    new Notice(summary, failures.length ? 12000 : 6000);
+  }
+
+  async verifyAllNoteSignatures(): Promise<void> {
+    const files = this.app.vault.getMarkdownFiles();
+    const signatures = new Map<TFile, lotusSignatureRecord>();
+    let needsPassphrase = false;
+    for (const file of files) {
+      const signature = readStoredSignature(await this.app.vault.cachedRead(file));
+      if (signature) {
+        signatures.set(file, signature);
+        needsPassphrase = needsPassphrase || signature.scheme === "passphrase-hmac-sha256";
+      }
+    }
+
+    const material = needsPassphrase
+      ? await this.requestSignatureMaterial("Verify All Note Signatures", "passphrase", "verify")
+      : undefined;
+    if (needsPassphrase && !material) {
+      return;
+    }
+
+    let verified = 0;
+    const failures: string[] = [];
+    for (const file of files) {
+      const signature = signatures.get(file);
+      if (!signature) {
+        failures.push(`${file.path}: missing signature`);
+        continue;
+      }
+      const source = await this.app.vault.cachedRead(file);
+      const result = await this.verifyNoteSignature(file, source, signature, material ?? undefined);
+      if (result.verified) {
+        verified += 1;
+      } else {
+        failures.push(`${file.path}: ${result.summary}`);
+      }
+    }
+
+    const summary = failures.length
+      ? `lotus verified ${verified}/${files.length} note signatures; ${failures.length} failed.`
+      : `lotus verified ${verified} note signature${verified === 1 ? "" : "s"}.`;
+    await this.logEvent({
+      type: "lotus.signature.all.verify.finished",
+      message: summary,
+      data: {
+        verified,
+        total: files.length,
+        failures: failures.length,
+      },
+    });
+    new Notice(summary, failures.length ? 12000 : 6000);
+  }
+
+  private async signNote(file: TFile, material: lotusSignatureMaterial): Promise<lotusSignatureRecord> {
+    const source = await this.app.vault.cachedRead(file);
+    const snapshot = this.createReproducibilitySnapshot(file.path, source);
+    const payload = this.createSignaturePayload(snapshot);
+    const payloadText = stableStringify(payload);
+    const signature = material.mode === "passphrase"
+      ? createPassphraseSignature(payloadText, material.passphrase ?? "", this.settings.signingSignerId)
+      : material.mode === "ssh"
+        ? await createOpenSshSignature(
+          payloadText,
+          await this.resolveSshSigningKeyPath(),
+          this.settings.signingSshNamespace,
+          this.readSshSignerIdentity(),
+          await this.createSshKeyId(),
+          this.createSigningSshEnv(),
+        )
+        : createRsaSignature(payloadText, await this.resolvePrivateKeyPem(material), material.privateKeyPassphrase, this.settings.signingSignerId);
+
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      const target = frontmatter as Record<string, unknown>;
+      target[REPRODUCIBILITY_FRONTMATTER_KEY] = snapshot;
+      target[NOTE_HASH_FRONTMATTER_KEY] = snapshot.noteHash;
+      target[CODE_BLOCK_HASHES_FRONTMATTER_KEY] = snapshot.blocks;
+      target[SIGNATURE_FRONTMATTER_KEY] = signature;
+    });
+    await this.logEvent({
+      type: "lotus.signature.created",
+      message: "Note signature written",
+      notePath: file.path,
+      data: {
+        scheme: signature.scheme,
+        keyId: signature.keyId,
+        payloadHash: signature.payloadHash,
+        blocks: snapshot.blocks.length,
+      },
+    });
+    await this.logEvent({
+      type: "lotus.note.modified",
+      message: "Wrote note signature frontmatter",
+      notePath: file.path,
+      data: {
+        action: "signature.created",
+        scheme: signature.scheme,
+      },
+    });
+    return signature;
+  }
+
+  private createSignaturePayload(snapshot: lotusReproducibilitySnapshot): lotusSignaturePayload {
+    return {
+      version: 1,
+      scope: "note",
+      noteHash: snapshot.noteHash,
+      policy: snapshot.policy,
+      blocks: snapshot.blocks,
+    };
+  }
+
+  private async verifyNoteSignature(file: TFile, source: string, signature: lotusSignatureRecord, material?: lotusSignatureMaterial): Promise<{ verified: boolean; summary: string }> {
+    const snapshot = this.createReproducibilitySnapshot(file.path, source);
+    const payloadText = stableStringify(this.createSignaturePayload(snapshot));
+    const payloadHash = sha256Hash(payloadText);
+    let verified = false;
+
+    if (signature.payloadHash !== payloadHash) {
+      verified = false;
+    } else if (signature.scheme === "passphrase-hmac-sha256") {
+      verified = typeof material?.passphrase === "string" && material.passphrase.length > 0
+        ? verifyPassphraseSignature(signature, payloadText, material.passphrase)
+        : false;
+    } else if (signature.scheme === "openssh-sshsig") {
+      verified = signature.ssh?.namespace === this.settings.signingSshNamespace
+        && await verifyOpenSshSignature(signature, payloadText, await this.resolveSshAllowedSigners(signature));
+    } else {
+      verified = verifyRsaSignature(signature, payloadText, await this.resolvePublicKeyPem());
+    }
+
+    const summary = verified
+      ? `lotus signature verified (${formatSignatureScheme(signature.scheme)}, ${signature.keyId}).`
+      : signature.payloadHash !== payloadHash
+        ? `lotus signature payload changed. stored=${signature.payloadHash.slice(0, 12)} current=${payloadHash.slice(0, 12)}`
+        : signature.scheme === "openssh-sshsig" && signature.ssh?.namespace !== this.settings.signingSshNamespace
+          ? `lotus signature namespace mismatch. stored=${signature.ssh?.namespace ?? "(missing)"} expected=${this.settings.signingSshNamespace}`
+        : `lotus signature cryptographic check failed (${formatSignatureScheme(signature.scheme)}, ${signature.keyId}).`;
+    await this.logEvent({
+      type: "lotus.signature.verify.finished",
+      message: summary,
+      notePath: file.path,
+      data: {
+        status: verified ? "verified" : "changed",
+        scheme: signature.scheme,
+        keyId: signature.keyId,
+        payloadHash,
+      },
+    });
+    return { verified, summary };
+  }
+
+  private async requestSignatureMaterial(title: string, mode: "passphrase" | "rsa" | "ssh", action: "sign" | "verify"): Promise<lotusSignatureMaterial | null> {
+    if (mode === "ssh" || (mode === "rsa" && action === "verify")) {
+      return { mode };
+    }
+
+    return await new Promise<lotusSignatureMaterial | null>((resolve) => {
+      new SignatureMaterialModal(this.app, {
+        title,
+        mode,
+        action,
+        hasPrivateKeyPath: false,
+        cachedPassphrase: mode === "passphrase" ? this.cachedSigningPassphrase ?? undefined : undefined,
+        onSubmit: (material) => {
+          if (material.mode === "passphrase" && material.rememberForSession && material.passphrase) {
+            this.cachedSigningPassphrase = material.passphrase;
+          }
+          resolve(material);
+        },
+        onCancel: () => resolve(null),
+      }).open();
+    });
+  }
+
+  private async resolvePrivateKeyPem(material: lotusSignatureMaterial): Promise<string> {
+    const pasted = material.privateKeyPem?.trim();
+    if (pasted) {
+      return pasted;
+    }
+    throw new Error("No RSA private key was provided.");
+  }
+
+  private async resolvePublicKeyPem(): Promise<string> {
+    const path = this.settings.signingPublicKeyPath.trim();
+    if (path) {
+      return await this.readConfiguredTextPath(path);
+    }
+    const pasted = this.settings.signingPublicKey.trim();
+    if (pasted) {
+      return pasted;
+    }
+    throw new Error("No RSA public key is configured.");
+  }
+
+  private async resolveSshSigningKeyPath(): Promise<string> {
+    const path = this.settings.signingSshKeyPath.trim();
+    if (!path) {
+      throw new Error("No OpenSSH signing key file is configured.");
+    }
+    const resolved = this.resolveConfiguredFsPath(path);
+    if (isAbsolute(resolved)) {
+      return resolved;
+    }
+    return this.resolveVaultRelativeFsPath(resolved);
+  }
+
+  private async createSshKeyId(): Promise<string> {
+    const configuredPath = this.settings.signingSshKeyPath.trim();
+    if (!configuredPath) {
+      return `ssh:${sha256Hash(this.readSshSignerIdentity()).slice(0, 32)}`;
+    }
+    const publicKey = await this.readOpenSshPublicKeyForPath(configuredPath);
+    return `ssh:${sha256Hash(publicKey ?? configuredPath).slice(0, 32)}`;
+  }
+
+  private async resolveSshAllowedSigners(signature: lotusSignatureRecord): Promise<string> {
+    const path = this.settings.signingSshAllowedSignersPath.trim();
+    if (path) {
+      return await this.readConfiguredTextPath(path);
+    }
+    const pasted = this.settings.signingSshAllowedSigners.trim();
+    if (pasted) {
+      return pasted.endsWith("\n") ? pasted : `${pasted}\n`;
+    }
+
+    const publicKey = await this.resolveOpenSshPublicKey();
+    const signer = signature.ssh?.signerIdentity || this.readSshSignerIdentity();
+    const namespace = signature.ssh?.namespace || this.settings.signingSshNamespace;
+    return `${signer} namespaces="${namespace}" ${publicKey.trim()}\n`;
+  }
+
+  private async resolveOpenSshPublicKey(): Promise<string> {
+    const path = this.settings.signingPublicKeyPath.trim();
+    if (path) {
+      return await this.readConfiguredTextPath(path);
+    }
+    const pasted = this.settings.signingPublicKey.trim();
+    if (pasted) {
+      return pasted;
+    }
+    const keyPath = this.settings.signingSshKeyPath.trim();
+    const adjacentPublicKey = keyPath ? await this.readOpenSshPublicKeyForPath(keyPath) : null;
+    if (adjacentPublicKey) {
+      return adjacentPublicKey;
+    }
+    throw new Error("No OpenSSH allowed signers or public key is configured.");
+  }
+
+  private async readOpenSshPublicKeyForPath(rawPath: string): Promise<string | null> {
+    const resolved = this.resolveConfiguredFsPath(rawPath);
+    const candidates = resolved.endsWith(".pub") ? [resolved] : [`${resolved}.pub`, resolved];
+    for (const candidate of candidates) {
+      try {
+        const text = isAbsolute(candidate)
+          ? await readFile(candidate, "utf8")
+          : await this.app.vault.adapter.read(candidate);
+        if (/^(ssh|ecdsa)-[A-Za-z0-9@.-]+\s+[A-Za-z0-9+/=]+/.test(text.trim())) {
+          return text.trim();
+        }
+      } catch {
+        // Try the next public key candidate.
+      }
+    }
+    return null;
+  }
+
+  private readSshSignerIdentity(): string {
+    const signer = this.settings.signingSignerId.trim();
+    return signer || "lotus-signer";
+  }
+
+  private createSigningSshEnv(): NodeJS.ProcessEnv | undefined {
+    const authSock = this.settings.signingSshAuthSock.trim();
+    return authSock ? { ...process.env, SSH_AUTH_SOCK: authSock } : undefined;
+  }
+
+  private async readConfiguredTextPath(rawPath: string): Promise<string> {
+    const expanded = this.resolveConfiguredFsPath(rawPath);
+    if (isAbsolute(expanded)) {
+      return await readFile(expanded, "utf8");
+    }
+    return await this.app.vault.adapter.read(normalizePath(expanded));
+  }
+
+  private resolveConfiguredFsPath(rawPath: string): string {
+    return rawPath.startsWith("~/") ? join(homedir(), rawPath.slice(2)) : normalizePath(rawPath);
+  }
+
+  private resolveVaultRelativeFsPath(vaultPath: string): string {
+    const basePath = (this.app.vault.adapter as { basePath?: string }).basePath;
+    return basePath ? join(basePath, vaultPath) : vaultPath;
   }
 
   async openReproducibilityPolicyModal(file: TFile): Promise<void> {
@@ -1412,14 +2110,33 @@ export default class lotusPlugin extends Plugin {
       timeoutMs: executionContext.timeoutMs,
       source: executionContext.source,
     };
+    const inputSession = stdin == null ? new lotusLiveStdinSession() : null;
+    const liveRun: lotusLiveRunState = {
+      inputSession,
+      stdout: "",
+      stderr: "",
+      startedAt: new Date().toISOString(),
+      runnerName,
+      notePath: file.path,
+      block,
+      target: logTarget,
+    };
+    const appendLiveOutput = (stream: "stdout" | "stderr", chunk: string) => {
+      liveRun[stream] = trimLiveOutput(liveRun[stream] + chunk);
+      this.notifyOutputChanged(block.id);
+    };
     const runContext = {
       file,
       workingDirectory: executionContext.workingDirectory,
       timeoutMs: executionContext.timeoutMs,
       signal: controller.signal,
       stdin,
+      stdinSession: inputSession ?? undefined,
+      onStdout: (chunk: string) => appendLiveOutput("stdout", chunk),
+      onStderr: (chunk: string) => appendLiveOutput("stderr", chunk),
     };
     this.running.set(block.id, controller);
+    this.liveRuns.set(block.id, liveRun);
     this.notifyOutputChanged(block.id);
     this.updateStatusBar();
     await this.logEvent({
@@ -1524,6 +2241,8 @@ export default class lotusPlugin extends Plugin {
       });
       new Notice(`lotus error: ${message}`);
     } finally {
+      inputSession?.close();
+      this.liveRuns.delete(block.id);
       await this.writeCodeBlockHashesIfEnabled(file);
       this.running.delete(block.id);
       this.notifyOutputChanged(block.id);
@@ -1883,6 +2602,21 @@ export default class lotusPlugin extends Plugin {
     this.settings.outputVisibleLines = normalizeNonNegativeInteger(this.settings.outputVisibleLines, DEFAULT_SETTINGS.outputVisibleLines, 2000);
     this.settings.defaultTimeoutMs = normalizePositiveInteger(this.settings.defaultTimeoutMs, DEFAULT_SETTINGS.defaultTimeoutMs);
     this.settings.hashCodeBlocks = this.settings.hashCodeBlocks ?? DEFAULT_SETTINGS.hashCodeBlocks;
+    if (this.settings.signingMode !== "passphrase" && this.settings.signingMode !== "rsa" && this.settings.signingMode !== "ssh") {
+      this.settings.signingMode = DEFAULT_SETTINGS.signingMode;
+    }
+    this.settings.signingSignerId = normalizeStringSetting(this.settings.signingSignerId, DEFAULT_SETTINGS.signingSignerId);
+    this.settings.signingPublicKey = typeof this.settings.signingPublicKey === "string"
+      ? this.settings.signingPublicKey
+      : DEFAULT_SETTINGS.signingPublicKey;
+    this.settings.signingPublicKeyPath = normalizeStringSetting(this.settings.signingPublicKeyPath, DEFAULT_SETTINGS.signingPublicKeyPath);
+    this.settings.signingSshKeyPath = normalizeStringSetting(this.settings.signingSshKeyPath, DEFAULT_SETTINGS.signingSshKeyPath);
+    this.settings.signingSshAuthSock = normalizeStringSetting(this.settings.signingSshAuthSock, DEFAULT_SETTINGS.signingSshAuthSock);
+    this.settings.signingSshAllowedSigners = typeof this.settings.signingSshAllowedSigners === "string"
+      ? this.settings.signingSshAllowedSigners
+      : DEFAULT_SETTINGS.signingSshAllowedSigners;
+    this.settings.signingSshAllowedSignersPath = normalizeStringSetting(this.settings.signingSshAllowedSignersPath, DEFAULT_SETTINGS.signingSshAllowedSignersPath);
+    this.settings.signingSshNamespace = normalizeStringSetting(this.settings.signingSshNamespace, DEFAULT_SETTINGS.signingSshNamespace);
     this.settings.showObsidianContextWarning = this.settings.showObsidianContextWarning ?? DEFAULT_SETTINGS.showObsidianContextWarning;
     if (!SUPPORTED_PDF_EXPORT_MODES.has(this.settings.pdfExportMode)) {
       this.settings.pdfExportMode = DEFAULT_SETTINGS.pdfExportMode;
@@ -1909,6 +2643,10 @@ export default class lotusPlugin extends Plugin {
     this.settings.loggingProcessCommand = normalizeStringSetting(this.settings.loggingProcessCommand, DEFAULT_SETTINGS.loggingProcessCommand);
     this.settings.loggingHttpEndpoint = normalizeStringSetting(this.settings.loggingHttpEndpoint, DEFAULT_SETTINGS.loggingHttpEndpoint);
     this.settings.loggingHttpHeaders = normalizeStringSetting(this.settings.loggingHttpHeaders, DEFAULT_SETTINGS.loggingHttpHeaders);
+    this.settings.loggingViewerJsonlPath = normalizeStringSetting(this.settings.loggingViewerJsonlPath, this.settings.loggingGlobalJsonlPath || DEFAULT_SETTINGS.loggingViewerJsonlPath);
+    this.settings.loggingRedactionRules = typeof this.settings.loggingRedactionRules === "string"
+      ? this.settings.loggingRedactionRules
+      : DEFAULT_SETTINGS.loggingRedactionRules;
     if (!SUPPORTED_LOGGING_NOTE_PATH_MODES.has(this.settings.loggingNotePathMode)) {
       this.settings.loggingNotePathMode = DEFAULT_SETTINGS.loggingNotePathMode;
     }
@@ -2516,6 +3254,14 @@ function decodeEscapedAttribute(value: string): string {
   return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
 }
 
+function trimLiveOutput(value: string): string {
+  const maxLength = 120_000;
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return value.slice(value.length - maxLength);
+}
+
 async function listLanguagePackManifestPaths(adapter: DataAdapter, root: string): Promise<string[]> {
   const manifests: string[] = [];
 
@@ -2907,6 +3653,14 @@ function readReproducibilityFrontmatter(source: string): Record<string, unknown>
   return isRecord(value) ? value : null;
 }
 
+function readStoredSignature(source: string): lotusSignatureRecord | null {
+  const frontmatter = splitFrontmatter(source);
+  if (!frontmatter) {
+    return null;
+  }
+  return readSignatureRecord(parseFrontmatterRecord(frontmatter.yaml)[SIGNATURE_FRONTMATTER_KEY]);
+}
+
 function readStoredCodeBlockHashEntries(source: string): lotusCodeBlockHashEntry[] {
   const frontmatter = splitFrontmatter(source);
   if (!frontmatter) {
@@ -3164,6 +3918,31 @@ function normalizePolicyList(values: string[]): string[] {
 
 function normalizeHashPolicyToken(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function createPasswordInput(container: HTMLElement, placeholder: string): HTMLInputElement {
+  const input = container.createEl("input", {
+    attr: {
+      type: "password",
+      placeholder,
+    },
+  });
+  input.addClass("lotus-signing-password-input");
+  return input;
+}
+
+function formatSignatureScheme(scheme: string): string {
+  if (scheme === "rsa-pss-sha256") {
+    return "RSA-PSS/SHA-256";
+  }
+  if (scheme === "openssh-sshsig") {
+    return "OpenSSH SSHSIG";
+  }
+  return "passphrase HMAC/SHA-256";
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function stableStringify(value: unknown): string {

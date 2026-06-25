@@ -77,7 +77,7 @@ export class lotusLogger {
       return;
     }
 
-    const event = this.createEvent(input, settings);
+    const event = redactLogEvent(this.createEvent(input, settings), settings.loggingRedactionRules);
     const line = `${this.stringifyEvent(event, settings)}\n`;
     const tasks: Promise<void>[] = [];
 
@@ -386,6 +386,96 @@ function parseHeaderJson(rawHeaders: string): Record<string, string> {
   } catch {
     return {};
   }
+}
+
+interface lotusRedactionRule {
+  pattern: RegExp;
+  replacement: string;
+}
+
+function redactLogEvent(event: lotusLogEvent, rawRules: string): lotusLogEvent {
+  const rules = parseRedactionRules(rawRules);
+  if (!rules.length) {
+    return event;
+  }
+  return redactValue(event, rules) as lotusLogEvent;
+}
+
+function redactValue(value: unknown, rules: lotusRedactionRule[]): unknown {
+  if (typeof value === "string") {
+    return redactString(value, rules);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactValue(entry, rules));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, redactValue(entry, rules)]),
+    );
+  }
+  return value;
+}
+
+function redactString(value: string, rules: lotusRedactionRule[]): string {
+  let redacted = value;
+  for (const rule of rules) {
+    redacted = redacted.replace(rule.pattern, rule.replacement);
+  }
+  return redacted;
+}
+
+function parseRedactionRules(rawRules: string): lotusRedactionRule[] {
+  return rawRules
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .flatMap((line) => {
+      const parsed = parseRedactionRule(line);
+      return parsed ? [parsed] : [];
+    });
+}
+
+function parseRedactionRule(line: string): lotusRedactionRule | null {
+  const { pattern, replacement } = splitRedactionRule(line);
+  if (!pattern) {
+    return null;
+  }
+
+  if (pattern.startsWith("/")) {
+    const lastSlash = pattern.lastIndexOf("/");
+    if (lastSlash > 0) {
+      try {
+        const source = pattern.slice(1, lastSlash);
+        const flags = normalizeRegexFlags(pattern.slice(lastSlash + 1));
+        return { pattern: new RegExp(source, flags), replacement };
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  return { pattern: new RegExp(escapeRegExp(pattern), "g"), replacement };
+}
+
+function splitRedactionRule(line: string): { pattern: string; replacement: string } {
+  const separator = line.indexOf("=>");
+  if (separator < 0) {
+    return { pattern: line.trim(), replacement: "[redacted]" };
+  }
+  return {
+    pattern: line.slice(0, separator).trim(),
+    replacement: line.slice(separator + 2).trim() || "[redacted]",
+  };
+}
+
+function normalizeRegexFlags(flags: string): string {
+  const unique = new Set(flags.split("").filter((flag) => "dgimsuvy".includes(flag)));
+  unique.add("g");
+  return [...unique].join("");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeMaxEventBytes(value: number): number {

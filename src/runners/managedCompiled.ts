@@ -42,7 +42,6 @@ export class ManagedCompiledRunner implements lotusRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
-        stdin: context.stdin,
       });
 
       if (!compileResult.success) {
@@ -57,6 +56,10 @@ export class ManagedCompiledRunner implements lotusRunner {
         workingDirectory: context.workingDirectory,
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
+        stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     });
   }
@@ -73,6 +76,9 @@ export class ManagedCompiledRunner implements lotusRunner {
           timeoutMs: Math.max(context.timeoutMs, 30_000),
           signal: context.signal,
           stdin: context.stdin,
+          stdinSession: context.stdinSession,
+          onStdout: context.onStdout,
+          onStderr: context.onStderr,
         });
       }
 
@@ -99,6 +105,9 @@ export class ManagedCompiledRunner implements lotusRunner {
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     });
   }

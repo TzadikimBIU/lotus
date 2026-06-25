@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn } from "child_process";
-import type { lotusRunResult } from "../types";
+import type { lotusRunResult, lotusStdinSession } from "../types";
 
 const FORCE_KILL_GRACE_MS = 1_500;
 
@@ -15,6 +15,9 @@ export interface lotusProcessSpec {
   timeoutMs: number;
   signal: AbortSignal;
   stdin?: string;
+  stdinSession?: lotusStdinSession;
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -101,6 +104,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   let timeoutHandle: NodeJS.Timeout | null = null;
   let killHandle: NodeJS.Timeout | null = null;
   let abortHandler: (() => void) | null = null;
+  let detachStdinSession: (() => void) | undefined;
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -134,6 +138,17 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
       });
       if (spec.stdin != null) {
         child.stdin?.end(spec.stdin);
+      } else if (spec.stdinSession) {
+        detachStdinSession = spec.stdinSession.attachWriter((chunk) => {
+          if (!child?.stdin || child.stdin.destroyed || childExited) {
+            return;
+          }
+          if (chunk == null) {
+            child.stdin.end();
+            return;
+          }
+          child.stdin.write(chunk);
+        });
       } else {
         child.stdin?.destroy();
       }
@@ -156,11 +171,15 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
       }, spec.timeoutMs);
 
       child.stdout?.on("data", (chunk) => {
-        stdout += chunk.toString();
+        const text = chunk.toString();
+        stdout += text;
+        spec.onStdout?.(text);
       });
 
       child.stderr?.on("data", (chunk) => {
-        stderr += chunk.toString();
+        const text = chunk.toString();
+        stderr += text;
+        spec.onStderr?.(text);
       });
 
       child.on("error", (error) => {
@@ -183,6 +202,10 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   } finally {
     if (abortHandler) {
       spec.signal.removeEventListener("abort", abortHandler);
+    }
+    if (detachStdinSession) {
+      detachStdinSession();
+      detachStdinSession = undefined;
     }
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
@@ -230,6 +253,9 @@ export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lot
       timeoutMs: spec.timeoutMs,
       signal: spec.signal,
       stdin: spec.stdin,
+      stdinSession: spec.stdinSession,
+      onStdout: spec.onStdout,
+      onStderr: spec.onStderr,
       env: expandTemplatedEnv(spec.env, tempFile, tempDir),
     }),
   );

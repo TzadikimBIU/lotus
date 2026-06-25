@@ -181,6 +181,44 @@
   font-style: italic;
 }
 
+.lotus-live-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: stretch;
+}
+
+.lotus-live-input-field {
+  min-height: 3.1rem;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.lotus-live-input-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.lotus-live-input-actions button {
+  min-width: 4rem;
+  height: 1.85rem;
+  padding: 0 0.65rem;
+}
+
+.lotus-signing-key-input,
+.lotus-signing-password-input {
+  width: 100%;
+  font-family: var(--font-monospace);
+}
+
+.lotus-signing-key-input {
+  min-height: 10rem;
+  resize: vertical;
+}
+
 .lotus-source-preview {
   display: grid;
   gap: 0.45rem;
@@ -241,6 +279,126 @@
 
 .lotus-settings-section-body {
   padding: 0.1rem 0 0.6rem;
+}
+
+.lotus-log-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  overflow: auto;
+}
+
+.lotus-log-view-header,
+.lotus-log-filters,
+.lotus-log-event-summary,
+.lotus-log-event-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.lotus-log-view-header {
+  justify-content: space-between;
+}
+
+.lotus-log-view-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.lotus-log-view-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+}
+
+.lotus-log-view-path,
+.lotus-log-summary,
+.lotus-log-empty,
+.lotus-log-event-time,
+.lotus-log-event-message,
+.lotus-log-meta-item {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.lotus-log-filters {
+  flex-wrap: wrap;
+}
+
+.lotus-log-filter-query {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.lotus-log-events {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lotus-log-event {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.lotus-log-event.is-success {
+  border-color: color-mix(in srgb, var(--color-green) 36%, var(--background-modifier-border));
+}
+
+.lotus-log-event.is-failure {
+  border-color: color-mix(in srgb, var(--color-red) 42%, var(--background-modifier-border));
+}
+
+.lotus-log-event-summary {
+  cursor: pointer;
+  padding: 0.55rem 0.65rem;
+}
+
+.lotus-log-event-type {
+  flex: 0 0 auto;
+  font-family: var(--font-monospace);
+  font-size: 0.78rem;
+  color: var(--text-normal);
+}
+
+.lotus-log-event-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lotus-log-event-meta {
+  flex-wrap: wrap;
+  padding: 0 0.65rem 0.55rem;
+}
+
+.lotus-log-meta-item {
+  display: inline-flex;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.lotus-log-meta-label {
+  color: var(--text-faint);
+}
+
+.lotus-log-event-json {
+  margin: 0 0.65rem 0.65rem;
+  max-height: 18rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  padding: 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .lotus-custom-language {

@@ -37,6 +37,9 @@ export class ProofRunner implements lotusRunner {
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     }
 
@@ -52,6 +55,9 @@ export class ProofRunner implements lotusRunner {
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     }
 
@@ -67,6 +73,9 @@ export class ProofRunner implements lotusRunner {
         timeoutMs: Math.max(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
+        stdinSession: context.stdinSession,
+        onStdout: context.onStdout,
+        onStderr: context.onStderr,
       });
     }
 

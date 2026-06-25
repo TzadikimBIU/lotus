@@ -89,6 +89,9 @@ export class InterpretedRunner implements lotusRunner {
       timeoutMs: Math.max(context.timeoutMs, spec.minimumTimeoutMs ?? 0),
       signal: context.signal,
       stdin: context.stdin,
+      stdinSession: context.stdinSession,
+      onStdout: context.onStdout,
+      onStderr: context.onStderr,
       env: spec.env,
     });
   }
