@@ -1,7 +1,11 @@
 name: Nightly Release
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - smoke
+    types:
+      - completed
     branches:
       - main
 
@@ -10,18 +14,12 @@ permissions:
 
 jobs:
   nightly-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for smoke tests to succeed
-        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc
-        with:
-          ref: ${{ github.sha }}
-          check-regexp: '^smoke.*'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 20
-          allowed-conclusions: success
-
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
