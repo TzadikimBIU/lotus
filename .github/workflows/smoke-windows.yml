@@ -51,6 +51,7 @@ jobs:
         shell: powershell
         run: |
           $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
+          $env:LOTUS_SMOKE_PYTHON = "python"
           npm run smoke -- --profile ${{ matrix.profile }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

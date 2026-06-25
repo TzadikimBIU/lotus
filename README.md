@@ -147,3 +147,17 @@ To build the plugin locally:
 npm install --legacy-peer-deps
 npm run build
 ```
+
+### Smoke Tests
+To run the smoke suite locally:
+
+```bash
+npm run smoke -- --profile minimal
+```
+
+On Windows, use the Python launcher name available on the runner or workstation:
+
+```powershell
+$env:LOTUS_SMOKE_PYTHON = "python"
+npm run smoke -- --profile minimal
+```

@@ -424,9 +424,19 @@ async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
     hasAcknowledgedExecutionRisk: true,
     writeOutputToNote: false,
   };
+  applySmokeExecutableOverrides(merged);
   applySmokeProfile(merged, profile);
   normalizeLanguageConfiguration(merged);
   return merged;
+}
+
+function applySmokeExecutableOverrides(settings: lotusPluginSettings): void {
+  const pythonExecutable = process.env.LOTUS_SMOKE_PYTHON?.trim();
+  if (pythonExecutable) {
+    settings.pythonExecutable = pythonExecutable;
+  } else if (process.platform === "win32" && settings.pythonExecutable === DEFAULT_SETTINGS.pythonExecutable) {
+    settings.pythonExecutable = "python";
+  }
 }
 
 function applySmokeProfile(settings: lotusPluginSettings, selectedProfile: SmokeProfile): void {
