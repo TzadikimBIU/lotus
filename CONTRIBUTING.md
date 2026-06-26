@@ -66,6 +66,8 @@ Run the smallest checks that cover your change
 
 For normal code changes run `npm run build`
 
+For Obsidian API and manifest compatibility run `npm run lint`
+
 For basic execution coverage run `npm run smoke`
 
 For workflow changes run workflow validation

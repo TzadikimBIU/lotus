@@ -43,7 +43,7 @@ jobs:
         run: choco install z3 -y
 
       - name: Fetch vault branch
-        run: git fetch --depth=1 origin vault:vault
+        run: git fetch --depth=1 origin +vault:vault
 
       - run: npm ci --legacy-peer-deps
 

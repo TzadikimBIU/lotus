@@ -74,7 +74,7 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install -y "${packages[@]}"
-      - run: git fetch --depth=1 origin vault:vault
+      - run: git fetch --depth=1 origin +vault:vault
       - name: Configure container test vault
         if: matrix.container != 'none'
         run: |

@@ -10,6 +10,7 @@
     "build:strict": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=strict",
     "build:light": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=light",
     "check": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint --quiet src scripts esbuild.config.mjs manifest.json LICENSE",
     "smoke": "node scripts/smoke.mjs",
     "smoke:matrix": "npm run smoke -- --profile minimal && npm run smoke -- --profile systems && npm run smoke -- --profile proofs && npm run smoke -- --profile ebpf && npm run smoke -- --profile full",
     "smoke:pdf": "node scripts/smoke.mjs --require-pdf"
@@ -18,8 +19,13 @@
     "@codemirror/language": "^6.10.8",
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.6",
+    "@eslint/js": "^9.39.4",
     "@types/node": "^22.15.30",
+    "@typescript-eslint/parser": "^8.62.0",
     "esbuild": "^0.25.6",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.3.0",
+    "globals": "^14.0.0",
     "obsidian": "^1.6.5",
     "typescript": "^5.5.4"
   },

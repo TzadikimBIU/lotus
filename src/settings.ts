@@ -16,6 +16,8 @@ import type { lotusCustomLanguage, lotusPluginSettings } from "./types";
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode">;
+
 export class lotusSettingTab extends PluginSettingTab {
   constructor(private readonly lotusPlugin: lotusPlugin) {
     super(lotusPlugin.app, lotusPlugin);
@@ -834,7 +836,7 @@ export class lotusSettingTab extends PluginSettingTab {
       );
   }
 
-  private addCustomLanguageTextSetting<K extends keyof lotusCustomLanguage>(
+  private addCustomLanguageTextSetting<K extends lotusCustomLanguageTextKey>(
     containerEl: HTMLElement,
     language: lotusCustomLanguage,
     name: string,
@@ -846,7 +848,7 @@ export class lotusSettingTab extends PluginSettingTab {
       .setDesc(description)
       .addText((text) =>
         text.setValue(String(language[key] ?? "")).onChange(async (value) => {
-          (language[key]) = value.trim() as any;
+          language[key] = value.trim();
           await this.lotusPlugin.saveSettings();
         }),
       );

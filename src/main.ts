@@ -1053,7 +1053,7 @@ export default class lotusPlugin extends Plugin {
     }
 
     await leaf.setViewState({ type: LOTUS_LOG_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
     const view = leaf.view;
     if (view instanceof lotusLogView) {
       await view.refresh();
@@ -3360,7 +3360,7 @@ function readTarBundle(bytes: Uint8Array): lotusArchiveEntry[] {
 }
 
 async function gunzipBytes(bytes: Uint8Array): Promise<ArrayBuffer> {
-  const Decompression = window.DecompressionStream;
+  const Decompression = typeof DecompressionStream === "undefined" ? undefined : DecompressionStream;
   if (!Decompression) {
     throw new Error("This Obsidian runtime cannot decompress tar.gz bundles. Use .zip or .tar instead.");
   }
@@ -3580,7 +3580,7 @@ function normalizeMachineId(value: unknown): string {
 }
 
 function createMachineId(): string {
-  const cryptoApi = window.crypto as { randomUUID?: () => string } | undefined;
+  const cryptoApi = typeof crypto === "undefined" ? undefined : crypto as { randomUUID?: () => string };
   return cryptoApi?.randomUUID?.() ?? `lotus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
@@ -3838,7 +3838,7 @@ function getRenderedCodeElements(root: HTMLElement): HTMLElement[] {
     }
   }
 
-  elements.push(...Array.from(root.querySelectorAll("pre > code")) as HTMLElement[]);
+  elements.push(...Array.from(root.querySelectorAll<HTMLElement>("pre > code")));
   return [...new Set(elements)];
 }
 

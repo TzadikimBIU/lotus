@@ -116,7 +116,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
         }
         child.kill(signal);
         if (!killHandle) {
-          killHandle = window.setTimeout(() => {
+          killHandle = setTimeout(() => {
             if (child && !childExited) {
               child.kill("SIGKILL");
             }
@@ -191,7 +191,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
         spec.signal.addEventListener("abort", abort, { once: true });
       }
 
-      timeoutHandle = window.setTimeout(() => {
+      timeoutHandle = setTimeout(() => {
         timedOut = true;
         terminateChild("SIGTERM");
       }, spec.timeoutMs);
@@ -215,7 +215,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
       child.on("close", (code, signal) => {
         childExited = true;
         if (killHandle) {
-          window.clearTimeout(killHandle);
+          clearTimeout(killHandle);
           killHandle = null;
         }
         exitCode = code;
@@ -235,10 +235,10 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
       detachStdinSession = undefined;
     }
     if (timeoutHandle) {
-      window.clearTimeout(timeoutHandle);
+      clearTimeout(timeoutHandle);
     }
     if (killHandle) {
-      window.clearTimeout(killHandle);
+      clearTimeout(killHandle);
     }
   }
 

@@ -270,7 +270,7 @@ async function runExternalExtractor(
     });
     let stdout = "";
     let stderr = "";
-    const timeout = window.setTimeout(() => {
+    const timeout = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`Custom source extractor timed out after ${extractor.timeoutMs} ms.`));
     }, extractor.timeoutMs);
@@ -284,11 +284,11 @@ async function runExternalExtractor(
       stderr += chunk;
     });
     child.on("error", (error) => {
-      window.clearTimeout(timeout);
+      clearTimeout(timeout);
       reject(formatSpawnError(error, extractor.executable, "Custom source extractor"));
     });
     child.on("close", (code) => {
-      window.clearTimeout(timeout);
+      clearTimeout(timeout);
       if (code !== 0) {
         reject(new Error((stderr || stdout || `Custom source extractor exited with code ${code}.`).trim()));
         return;
