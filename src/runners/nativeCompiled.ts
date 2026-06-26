@@ -23,16 +23,18 @@ export class NativeCompiledRunner implements lotusRunner {
     const executable = block.language === "c" ? settings.cExecutable.trim() : settings.cppExecutable.trim();
     const fileExtension = block.language === "c" ? ".c" : ".cpp";
     const runnerName = block.language === "c" ? "C (GCC)" : "C++ (G++)";
+    const compileTimeoutMs = Math.max(context.timeoutMs, process.platform === "win32" ? 60_000 : 30_000);
+    const runTimeoutMs = Math.max(context.timeoutMs, 30_000);
 
     return withTempSourceFile(fileExtension, block.content, async ({ tempDir, tempFile }) => {
-      const binaryPath = join(tempDir, "snippet.out");
+      const binaryPath = join(tempDir, process.platform === "win32" ? "snippet.exe" : "snippet.out");
       const compileResult = await runProcess({
         runnerId: `${this.id}:${block.language}:compile`,
         runnerName,
         executable,
         args: [tempFile, "-o", binaryPath],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: compileTimeoutMs,
         signal: context.signal,
       });
 
@@ -46,7 +48,7 @@ export class NativeCompiledRunner implements lotusRunner {
         executable: binaryPath,
         args: [],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: runTimeoutMs,
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,

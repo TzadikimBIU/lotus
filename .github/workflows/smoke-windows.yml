@@ -52,6 +52,28 @@ jobs:
         run: |
           $env:LOTUS_CHROME_PATH = "${{ steps.setup-chrome.outputs.chrome-path }}"
           $env:LOTUS_SMOKE_PYTHON = "python"
+          if ("${{ matrix.profile }}" -eq "systems") {
+            $toolchainPaths = @("C:\msys64\ucrt64\bin", "C:\msys64\mingw64\bin")
+            foreach ($toolchainPath in $toolchainPaths) {
+              if (Test-Path (Join-Path $toolchainPath "gcc.exe")) {
+                $env:Path = "$toolchainPath;$env:Path"
+                break
+              }
+            }
+            if ((Get-Command gcc -ErrorAction SilentlyContinue) -and (Get-Command g++ -ErrorAction SilentlyContinue)) {
+              $env:LOTUS_SMOKE_C = "gcc"
+              $env:LOTUS_SMOKE_CPP = "g++"
+              gcc --version
+              g++ --version
+            } elseif ((Get-Command clang -ErrorAction SilentlyContinue) -and (Get-Command clang++ -ErrorAction SilentlyContinue)) {
+              $env:LOTUS_SMOKE_C = "clang"
+              $env:LOTUS_SMOKE_CPP = "clang++"
+              clang --version
+              clang++ --version
+            } else {
+              throw "No C/C++ compiler found for Windows systems smoke."
+            }
+          }
           npm run smoke -- --profile ${{ matrix.profile }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

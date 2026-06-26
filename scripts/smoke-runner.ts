@@ -272,29 +272,32 @@ async function runTransportSmoke(): Promise<SmokeBlockResult[]> {
   return [
     await runSyntheticSmoke("transport-stdin-prefix", async () => {
       const controller = new AbortController();
+      const expected = "lotus-source-user-input";
+      const usesWindowsNodeHelper = process.platform === "win32";
       const result = await runProcess({
         runnerId: "synthetic:transport:stdin-prefix",
         runnerName: "Synthetic stdin prefix",
-        executable: process.execPath,
-        args: [
+        executable: usesWindowsNodeHelper ? process.execPath : "cat",
+        args: usesWindowsNodeHelper ? [
           "-e",
           [
             "let data = '';",
             "process.stdin.setEncoding('utf8');",
             "process.stdin.on('data', chunk => { data += chunk; });",
             "process.stdin.on('end', () => {",
-            "  if (data !== 'lotus-source-user-input') process.exit(2);",
+            `  if (data !== ${JSON.stringify(expected)}) { process.stderr.write('stdin mismatch: ' + JSON.stringify(data)); process.exit(2); }`,
             "  process.stdout.write(data);",
             "});",
+            "process.stdin.resume();",
           ].join("\n"),
-        ],
+        ] : [],
         workingDirectory: vaultDir,
         timeoutMs: 5000,
         signal: controller.signal,
         stdinPrefix: "lotus-source-",
         stdin: "user-input",
       });
-      if (!result.success || result.stdout !== "lotus-source-user-input") {
+      if (!result.success || result.stdout !== expected) {
         throw new Error(result.stderr || `stdin prefix smoke failed: ${result.stdout || `exit ${result.exitCode}`}`);
       }
     }),
@@ -471,6 +474,20 @@ function applySmokeExecutableOverrides(settings: lotusPluginSettings): void {
     settings.pythonExecutable = pythonExecutable;
   } else if (process.platform === "win32" && settings.pythonExecutable === DEFAULT_SETTINGS.pythonExecutable) {
     settings.pythonExecutable = "python";
+  }
+
+  const cExecutable = process.env.LOTUS_SMOKE_C?.trim();
+  if (cExecutable) {
+    settings.cExecutable = cExecutable;
+  } else if (process.platform === "win32" && settings.cExecutable === DEFAULT_SETTINGS.cExecutable) {
+    settings.cExecutable = "gcc";
+  }
+
+  const cppExecutable = process.env.LOTUS_SMOKE_CPP?.trim();
+  if (cppExecutable) {
+    settings.cppExecutable = cppExecutable;
+  } else if (process.platform === "win32" && settings.cppExecutable === DEFAULT_SETTINGS.cppExecutable) {
+    settings.cppExecutable = "g++";
   }
 }
 

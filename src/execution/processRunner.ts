@@ -98,6 +98,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   let stdout = "";
   let stderr = "";
   let exitCode: number | null = null;
+  let exitSignal: NodeJS.Signals | null = null;
   let timedOut = false;
   let cancelled = false;
   let child: ReturnType<typeof spawn> | null = null;
@@ -137,12 +138,11 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
           reject(error);
         }
       });
-      if (spec.stdinPrefix != null) {
-        child.stdin?.write(spec.stdinPrefix);
-      }
-      if (spec.stdin != null) {
-        child.stdin?.end(spec.stdin);
-      } else if (spec.stdinSession) {
+
+      const attachStdinSession = () => {
+        if (!spec.stdinSession) {
+          return;
+        }
         detachStdinSession = spec.stdinSession.attachWriter((chunk) => {
           if (!child?.stdin || child.stdin.destroyed || childExited) {
             return;
@@ -153,8 +153,28 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
           }
           child.stdin.write(chunk);
         });
+      };
+
+      if (spec.stdinPrefix != null && spec.stdin != null) {
+        child.stdin?.end(combineStdinPrefix(spec.stdinPrefix, spec.stdin));
       } else if (spec.stdinPrefix != null) {
-        child.stdin?.end();
+        child.stdin?.write(spec.stdinPrefix, (error?: Error | null) => {
+          if (error) {
+            if (!("code" in error) || (error as NodeJS.ErrnoException).code !== "EPIPE") {
+              reject(error);
+            }
+            return;
+          }
+          if (spec.stdinSession) {
+            attachStdinSession();
+          } else {
+            child?.stdin?.end();
+          }
+        });
+      } else if (spec.stdin != null) {
+        child.stdin?.end(spec.stdin);
+      } else if (spec.stdinSession) {
+        attachStdinSession();
       } else {
         child.stdin?.destroy();
       }
@@ -192,13 +212,14 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
         reject(error);
       });
 
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
         childExited = true;
         if (killHandle) {
           clearTimeout(killHandle);
           killHandle = null;
         }
         exitCode = code;
+        exitSignal = signal;
         resolve();
       });
     });
@@ -223,6 +244,17 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
 
   const finishedAt = new Date();
   const durationMs = finishedAt.getTime() - startedAt.getTime();
+  if (!stderr.trim()) {
+    if (timedOut) {
+      stderr = `Process timed out after ${spec.timeoutMs} ms.`;
+    } else if (cancelled) {
+      stderr = "Process was cancelled.";
+    } else if (exitCode == null && exitSignal) {
+      stderr = `Process exited after signal ${exitSignal}.`;
+    } else if (exitCode == null) {
+      stderr = "Process exited without an exit code.";
+    }
+  }
   const success = !timedOut && !cancelled && exitCode === 0;
 
   return {
@@ -246,6 +278,14 @@ function formatProcessError(error: unknown, executable: string): string {
   }
 
   return error instanceof Error ? error.message : String(error);
+}
+
+function combineStdinPrefix(prefix: string | Buffer, stdin: string): string | Buffer {
+  if (Buffer.isBuffer(prefix)) {
+    return Buffer.concat([prefix, Buffer.from(stdin)]);
+  }
+
+  return `${prefix}${stdin}`;
 }
 
 export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lotusRunResult> {

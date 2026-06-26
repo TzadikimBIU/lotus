@@ -182,3 +182,11 @@ On Windows, use the Python launcher name available on the runner or workstation:
 $env:LOTUS_SMOKE_PYTHON = "python"
 npm run smoke -- --profile minimal
 ```
+
+For the Windows systems profile, point the smoke harness at the host C/C++ compiler if it is not already on `PATH`:
+
+```powershell
+$env:LOTUS_SMOKE_C = "gcc"
+$env:LOTUS_SMOKE_CPP = "g++"
+npm run smoke -- --profile systems
+```
