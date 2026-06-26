@@ -24,19 +24,18 @@ export class lotusSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    new Setting(containerEl).setName("lotus").setHeading();
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
 
-    this.renderGeneralSettings(this.createSection(containerEl, "General Settings", true));
-    this.renderHashingAndObservabilitySettings(this.createSection(containerEl, "Hashing and Observability"));
+    this.renderGeneralSettings(this.createSection(containerEl, "General", true));
+    this.renderHashingAndObservabilitySettings(this.createSection(containerEl, "Hashing and observability"));
     this.renderLoggingSettings(this.createSection(containerEl, "Logging"));
-    this.renderLanguagePackages(this.createSection(containerEl, "Language Packages"));
-    this.renderBuiltInRuntimes(this.createSection(containerEl, "Built-in Runtimes"));
+    this.renderLanguagePackages(this.createSection(containerEl, "Language packages"));
+    this.renderBuiltInRuntimes(this.createSection(containerEl, "Built-in runtimes"));
     if (isCompileCustomLanguagesAllowed()) {
-      this.renderCustomLanguages(this.createSection(containerEl, "Custom Languages"));
+      this.renderCustomLanguages(this.createSection(containerEl, "Custom languages"));
     }
     if (isCompileFeatureAllowed("container-groups")) {
-      void this.renderContainerGroups(this.createSection(containerEl, "Execution Groups"));
+      void this.renderContainerGroups(this.createSection(containerEl, "Execution groups"));
     }
   }
 
@@ -815,7 +814,7 @@ export class lotusSettingTab extends PluginSettingTab {
     } catch (error) {
       containerEl.empty();
       containerEl.createEl("p", {
-      text: `Error loading execution groups: ${error instanceof Error ? error.message : String(error)}`,
+        text: `Error loading execution groups: ${error instanceof Error ? error.message : String(error)}`,
         cls: "lotus-settings-error",
         attr: { style: "color: var(--text-error); font-weight: bold; margin: 1em 0;" }
       });
