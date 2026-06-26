@@ -3,7 +3,7 @@
   "name": "Lotus",
   "version": "1.0.0",
   "minAppVersion": "1.7.2",
-  "description": "Run normal fenced Markdown code blocks in markdown while keeping native syntax highlighting.",
+  "description": "Run normal fenced Markdown code blocks while keeping native syntax highlighting.",
   "author": "James Karlsson and Thomas Goldman",
   "isDesktopOnly": true
 }
