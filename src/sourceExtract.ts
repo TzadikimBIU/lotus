@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { lotusNormalizedLanguage, lotusSourceReference } from "./types";
 import { splitCommandLine } from "./utils/command";
+import { lotusClearTimeout, lotusSetTimeout } from "./utils/timers";
 
 interface SourceRange {
   start: number;
@@ -270,7 +271,7 @@ async function runExternalExtractor(
     });
     let stdout = "";
     let stderr = "";
-    const timeout = setTimeout(() => {
+    const timeout = lotusSetTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`Custom source extractor timed out after ${extractor.timeoutMs} ms.`));
     }, extractor.timeoutMs);
@@ -284,11 +285,11 @@ async function runExternalExtractor(
       stderr += chunk;
     });
     child.on("error", (error) => {
-      clearTimeout(timeout);
+      lotusClearTimeout(timeout);
       reject(formatSpawnError(error, extractor.executable, "Custom source extractor"));
     });
     child.on("close", (code) => {
-      clearTimeout(timeout);
+      lotusClearTimeout(timeout);
       if (code !== 0) {
         reject(new Error((stderr || stdout || `Custom source extractor exited with code ${code}.`).trim()));
         return;

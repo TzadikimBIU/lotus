@@ -1,5 +1,6 @@
 import { Notice, type App, type TFile } from "obsidian";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
+import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
 
 const OBSIDIAN_CONTEXT_WARNING = "No but seriously, you are risking your life";
 
@@ -70,7 +71,7 @@ export class ObsidianContextRunner implements lotusRunner {
       ));
 
       const timeout = new Promise<never>((_resolve, reject) => {
-        timeoutHandle = setTimeout(() => {
+        timeoutHandle = lotusSetTimeout(() => {
           timedOut = true;
           reject(new Error(`Execution timed out after ${context.timeoutMs} ms. Obsidian-context JavaScript cannot be force-killed once started.`));
         }, context.timeoutMs);
@@ -97,7 +98,7 @@ export class ObsidianContextRunner implements lotusRunner {
       stderr.push(formatError(error));
     } finally {
       if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
+        lotusClearTimeout(timeoutHandle);
       }
       if (abortHandler) {
         context.signal.removeEventListener("abort", abortHandler);

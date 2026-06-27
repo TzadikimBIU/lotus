@@ -8,6 +8,7 @@ import { runProcess } from "./processRunner";
 import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult } from "../types";
+import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
 
 type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 type lotusContainerElevationMode = "default" | "root";
@@ -1839,9 +1840,9 @@ async function sleepWithSignal(durationMs: number, signal: AbortSignal): Promise
   }
 
   await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, durationMs);
+    const timeout = lotusSetTimeout(resolve, durationMs);
     const abort = () => {
-      clearTimeout(timeout);
+      lotusClearTimeout(timeout);
       resolve();
     };
     signal.addEventListener("abort", abort, { once: true });
@@ -1869,15 +1870,6 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function heredocDelimiter(source: string): string {
-  let suffix = 0;
-  let delimiter = `__LOTUS_REMOTE_SOURCE_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}__`;
-  while (source.includes(delimiter)) {
-    suffix += 1;
-    delimiter = `__LOTUS_REMOTE_SOURCE_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}_${suffix}__`;
-  }
-  return delimiter;
-}
 
 function optionalUploadMode(value: unknown): lotusRemoteUploadMode | undefined {
   if (value == null || value === "") {

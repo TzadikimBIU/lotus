@@ -53,11 +53,11 @@ export class lotusSettingTab extends PluginSettingTab {
       .setName("Compile profile")
       .setDesc(isLightCompileMode()
         ? `This build was compiled with ${getCompileProfileSummary()}.`
-        : "STRICT build. All Lotus feature surfaces are available unless disabled in vault settings.");
+        : "Strict build. All Lotus feature surfaces are available unless disabled in vault settings.");
 
     new Setting(containerEl)
       .setName("Enable local execution")
-      .setDesc("Disabled by default. lotus runs code on your local machine and does not provide sandboxing.")
+      .setDesc("Disabled by default. Lotus runs code on your local machine and does not provide sandboxing.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.enableLocalExecution).onChange(async (value) => {
           this.lotusPlugin.settings.enableLocalExecution = value;
@@ -69,7 +69,7 @@ export class lotusSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Keep lotus notes in source mode")
+      .setName("Keep Lotus notes in source mode")
       .setDesc("Preserve raw fenced code in the editor instead of letting live preview collapse research snippets.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.preserveSourceMode).onChange(async (value) => {
@@ -85,7 +85,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Default timeout")
-      .setDesc("Maximum execution time in milliseconds before lotus terminates the process.")
+      .setDesc("Maximum execution time in milliseconds before Lotus terminates the process.")
       .addText((text) =>
         text.setPlaceholder("8000").setValue(String(this.lotusPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
           const parsed = Number.parseInt(value, 10);
@@ -108,7 +108,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Write output back to note")
-      .setDesc("Insert managed lotus output sections beneath code blocks instead of keeping results purely in the UI.")
+      .setDesc("Insert managed Lotus output sections beneath code blocks instead of keeping results purely in the UI.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.writeOutputToNote).onChange(async (value) => {
           this.lotusPlugin.settings.writeOutputToNote = value;
@@ -141,7 +141,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Show Obsidian context warning")
-      .setDesc('Show "No but seriously, you are risking your life" when obsidian-js blocks run.')
+      .setDesc('Show "no but seriously, you are risking your life" when Obsidian-js blocks run.')
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.showObsidianContextWarning ?? true).onChange(async (value) => {
           this.lotusPlugin.settings.showObsidianContextWarning = value;
@@ -151,7 +151,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Extracted source preview")
-      .setDesc("Choose how lotus shows the materialized source for blocks that use lotus-file.")
+      .setDesc("Choose how Lotus shows the materialized source for blocks that use Lotus-file.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("collapsed", "Collapsed")
@@ -176,12 +176,12 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("PDF export mode")
-      .setDesc("Choose what to include when exporting notes containing lotus code blocks to PDF.")
+      .setDesc("Choose what to include when exporting notes containing Lotus code blocks to PDF.")
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("code", "Code Block Only")
-          .addOption("both", "Both Code and Output")
-          .addOption("output", "Output Only")
+            .addOption("code", "Code block only")
+            .addOption("both", "Both code and output")
+            .addOption("output", "Output only")
           .setValue(this.lotusPlugin.settings.pdfExportMode || "code")
           .onChange(async (value) => {
             this.lotusPlugin.settings.pdfExportMode = value as "both" | "code" | "output";
@@ -193,7 +193,7 @@ export class lotusSettingTab extends PluginSettingTab {
   private renderHashingAndObservabilitySettings(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Write code block hashes to frontmatter")
-      .setDesc("Maintain lotus-code-block-hashes in note frontmatter when hashing notes or running blocks.")
+      .setDesc("Maintain Lotus-code-block-hashes in note frontmatter when hashing notes or running blocks.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.hashCodeBlocks ?? false).onChange(async (value) => {
           this.lotusPlugin.settings.hashCodeBlocks = value;
@@ -210,12 +210,12 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Signature method")
-      .setDesc("Passphrase creates password-derived HMAC signatures. RSA uses PEM keys. OpenSSH can sign through ssh-agent and verify pinned public keys.")
+      .setDesc("Passphrase creates password-derived hmac signatures. RSA uses pem keys. OpenSSH can sign through SSH-agent and verify pinned public keys.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("passphrase", "Passphrase")
           .addOption("rsa", "RSA-PSS")
-          .addOption("ssh", "OpenSSH / ssh-agent")
+          .addOption("ssh", "OpenSSH / SSH-agent")
           .setValue(this.lotusPlugin.settings.signingMode || "passphrase")
           .onChange(async (value) => {
             this.lotusPlugin.settings.signingMode = value as "passphrase" | "rsa" | "ssh";
@@ -230,7 +230,7 @@ export class lotusSettingTab extends PluginSettingTab {
       this.addTextSetting(containerEl, "RSA public key file", "Vault-relative or absolute PEM file used for verification.", "signingPublicKeyPath");
       new Setting(containerEl)
         .setName("RSA public key")
-        .setDesc("Optional pasted PEM public key. Used when no public key file is configured.")
+        .setDesc("Optional pasted pem public key. Used when no public key file is configured.")
         .addTextArea((text) => {
           text.setValue(this.lotusPlugin.settings.signingPublicKey).onChange(async (value) => {
             this.lotusPlugin.settings.signingPublicKey = value;
@@ -292,8 +292,8 @@ export class lotusSettingTab extends PluginSettingTab {
     this.addTextSetting(containerEl, "Global text log path", "Vault-relative path for the text log.", "loggingGlobalTextPath");
 
     new Setting(containerEl)
-      .setName("Global JSONL log")
-      .setDesc("Append structured JSON Lines events to a vault-relative file.")
+      .setName("Global jsonl log")
+      .setDesc("Append structured JSON lines events to a vault-relative file.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.loggingGlobalJsonlEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.loggingGlobalJsonlEnabled = value;
@@ -314,7 +314,7 @@ export class lotusSettingTab extends PluginSettingTab {
     this.addTextSetting(containerEl, "Per-note text path pattern", "Example: .lotus/logs/notes/{note}.log", "loggingPerNoteTextPathPattern");
 
     new Setting(containerEl)
-      .setName("Per-note JSONL logs")
+      .setName("Per-note jsonl logs")
       .setDesc("Append structured events to a per-note log. Pattern supports {note} and {hash}.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.loggingPerNoteJsonlEnabled).onChange(async (value) => {
@@ -326,7 +326,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Local process sink")
-      .setDesc("Start a local command and stream JSONL events to its stdin.")
+      .setDesc("Start a local command and stream jsonl events to its stdin.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.loggingProcessEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.loggingProcessEnabled = value;
@@ -336,8 +336,8 @@ export class lotusSettingTab extends PluginSettingTab {
     this.addTextSetting(containerEl, "Local process command", "Example: /usr/local/bin/lotus-log-agent --stdin-jsonl", "loggingProcessCommand");
 
     new Setting(containerEl)
-      .setName("HTTP remote sink")
-      .setDesc("POST each structured event as JSON to a remote endpoint.")
+      .setName("Http remote sink")
+      .setDesc("Post each structured event as JSON to a remote endpoint.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.loggingHttpEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.loggingHttpEnabled = value;
@@ -430,12 +430,12 @@ export class lotusSettingTab extends PluginSettingTab {
 
     if (this.isRuntimeLanguageEnabled("typescript")) {
       new Setting(containerEl)
-        .setName("TypeScript runner mode")
-        .setDesc("Use ts-node or tsx for TypeScript blocks.")
+        .setName("Typescript runner mode")
+        .setDesc("Use ts-node or tsx for typescript blocks.")
         .addDropdown((dropdown) =>
           dropdown
-            .addOption("ts-node", "ts-node")
-            .addOption("tsx", "tsx")
+            .addOption("ts-node", "Ts-node")
+            .addOption("tsx", "Tsx")
             .setValue(this.lotusPlugin.settings.typescriptMode)
             .onChange(async (value) => {
               this.lotusPlugin.settings.typescriptMode = value as "ts-node" | "tsx";
@@ -452,9 +452,9 @@ export class lotusSettingTab extends PluginSettingTab {
         .setDesc("Choose between the OCaml toplevel, ocamlc compilation, or dune exec.")
         .addDropdown((dropdown) =>
           dropdown
-            .addOption("ocaml", "ocaml")
-            .addOption("ocamlc", "ocamlc")
-            .addOption("dune", "dune")
+            .addOption("ocaml", "OCaml")
+            .addOption("ocamlc", "Ocamlc")
+            .addOption("dune", "Dune")
             .setValue(this.lotusPlugin.settings.ocamlMode)
             .onChange(async (value) => {
               this.lotusPlugin.settings.ocamlMode = value as "ocaml" | "ocamlc" | "dune";
@@ -486,8 +486,8 @@ export class lotusSettingTab extends PluginSettingTab {
       this.addTextSetting(containerEl, "eBPF object inspector", "Command or path for llvm-objdump. Leave empty to skip object section inspection.", "ebpfLlvmObjdumpExecutable");
       this.addTextSetting(containerEl, "eBPF include paths", "Comma-separated include directories passed to clang with -I.", "ebpfIncludePaths");
       new Setting(containerEl)
-        .setName("Allow ebpf kernel load")
-        .setDesc("Required before any block can use lotus-ebpf-mode=load. Compile-only mode stays available without this.")
+        .setName("Allow eBPF kernel load")
+        .setDesc("Required before any block can use Lotus-eBPF-mode=load. Compile-only mode stays available without this.")
         .addToggle((toggle) =>
           toggle.setValue(this.lotusPlugin.settings.ebpfAllowKernelLoad).onChange(async (value) => {
             this.lotusPlugin.settings.ebpfAllowKernelLoad = value;
@@ -691,7 +691,7 @@ export class lotusSettingTab extends PluginSettingTab {
         .addDropdown((dropdown) =>
           dropdown
             .addOption("command", "Extractor command")
-            .addOption("transpile-c", "Transpile to C")
+            .addOption("transpile-c", "Transpile to c")
             .setValue(language.extractorMode || "command")
             .onChange(async (value) => {
               language.extractorMode = value as "command" | "transpile-c";
@@ -754,7 +754,7 @@ export class lotusSettingTab extends PluginSettingTab {
                   return;
                 }
 
-                const pluginDir = this.lotusPlugin.manifest.dir ?? ".obsidian/plugins/lotus";
+                const pluginDir = this.getPluginConfigDir();
                 const groupRelativePath = `${pluginDir}/containers/${cleanName}`;
                 const configPath = `${groupRelativePath}/config.json`;
 
@@ -789,7 +789,7 @@ export class lotusSettingTab extends PluginSettingTab {
       const listEl = containerEl.createDiv({ cls: "lotus-container-group-list" });
       if (!groups.length) {
         listEl.createEl("p", {
-          text: "No execution groups found in .obsidian/plugins/lotus/containers.",
+          text: `No execution groups found in ${this.getPluginConfigDir()}/containers.`,
           cls: "setting-item-description",
         });
         return;
@@ -806,7 +806,7 @@ export class lotusSettingTab extends PluginSettingTab {
           )
           .addButton((button) =>
             button.setButtonText("Edit").onClick(() => {
-              const pluginDir = this.lotusPlugin.manifest.dir ?? ".obsidian/plugins/lotus";
+              const pluginDir = this.getPluginConfigDir();
               new EditContainerGroupModal(this.lotusPlugin, group.name, pluginDir, () => {
                 this.display();
               }).open();
@@ -853,6 +853,10 @@ export class lotusSettingTab extends PluginSettingTab {
         }),
       );
   }
+
+  private getPluginConfigDir(): string {
+    return normalizePath(this.lotusPlugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`);
+  }
 }
 
 export function showExecutionDisabledNotice(): void {
@@ -872,10 +876,10 @@ class ContainerGroupNameModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "New Execution Group Name" });
+    contentEl.createEl("h2", { text: "New execution group name" });
 
     new Setting(contentEl)
-      .setName("Group Name")
+      .setName("Group name")
       .setDesc("Use lowercase letters, numbers, hyphens, and underscores.")
       .addText((text) =>
         text.onChange((value) => {
@@ -927,7 +931,7 @@ class EditContainerGroupModal extends Modal {
       const rawConfig = await adapter.read(configPath);
       this.configObj = JSON.parse(rawConfig);
       this.rawJsonText = rawConfig;
-    } catch (e) {
+    } catch {
       new Notice("Could not read configuration file.");
       this.close();
       return;
@@ -939,7 +943,7 @@ class EditContainerGroupModal extends Modal {
       } else {
         this.dockerfileText = null;
       }
-    } catch (e) {
+    } catch {
       this.dockerfileText = null;
     }
 
@@ -987,7 +991,7 @@ class EditContainerGroupModal extends Modal {
     if (this.activeTab === "raw") {
       try {
         this.configObj = JSON.parse(this.rawJsonText);
-      } catch (e) {
+      } catch {
         new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before switching.");
         return;
       }
@@ -1135,7 +1139,7 @@ class EditContainerGroupModal extends Modal {
 
       new Setting(containerEl)
         .setName("Remote workspace")
-        .setDesc("Remote folder where lotus uploads snippets before running them.")
+        .setDesc("Remote folder where Lotus uploads snippets before running them.")
         .addText((text) => {
           text
             .setValue(this.configObj.ssh.workspace || this.configObj.ssh.remoteWorkspace || "/tmp/lotus")
@@ -1188,7 +1192,7 @@ class EditContainerGroupModal extends Modal {
 
       new Setting(containerEl)
         .setName("SSH arguments")
-        .setDesc("Optional. Additional SSH CLI flags.")
+        .setDesc("Optional. Additional SSH cli flags.")
         .addText((text) => {
           text
             .setValue(this.configObj.qemu.sshArgs || "")
@@ -1249,7 +1253,7 @@ class EditContainerGroupModal extends Modal {
 
       new Setting(containerEl)
         .setName("SSH arguments")
-        .setDesc("Optional. Additional SSH CLI flags, such as -p 2222.")
+        .setDesc("Optional. Additional SSH cli flags, such as -p 2222.")
         .addText((text) => {
           text
             .setValue(remoteConfig.sshArgs || "")
@@ -1285,7 +1289,7 @@ class EditContainerGroupModal extends Modal {
       });
 
     new Setting(containerEl)
-      .setName("SCP executable")
+      .setName("Scp executable")
       .setDesc("Optional. Path to scp executable, defaults to scp. Used only when remote upload mode is scp compatibility.")
       .addText((text) => {
         text
@@ -1296,8 +1300,8 @@ class EditContainerGroupModal extends Modal {
       });
 
     new Setting(containerEl)
-      .setName("SCP arguments")
-      .setDesc("Optional. Additional scp CLI flags. Use -p for ports with openssh scp. Used only when remote upload mode is scp compatibility.")
+      .setName("Scp arguments")
+      .setDesc("Optional. Additional scp cli flags. Use -p for ports with OpenSSH scp. Used only when remote upload mode is scp compatibility.")
       .addText((text) => {
         text
           .setValue(remoteConfig.scpArgs || "")
@@ -1435,7 +1439,7 @@ class EditContainerGroupModal extends Modal {
 
         new Setting(card)
           .setName("Use default configuration")
-          .setDesc("If checked, lotus will run this language using its built-in commands/extensions.")
+          .setDesc("If checked, Lotus will run this language using its built-in commands/extensions.")
           .addToggle((toggle) => {
             toggle
               .setValue(isDefault)
@@ -1470,7 +1474,7 @@ class EditContainerGroupModal extends Modal {
 
         new Setting(card)
           .setName("Extension")
-          .setDesc("Source file extension (e.g. .py, .js).")
+          .setDesc("Source file extension (e.g. .py, .JS).")
           .addText((text) => {
             const defaults = this.lotusPlugin.containerRunner.getDefaultLanguageConfig(langName, this.lotusPlugin.settings);
             text
@@ -1498,8 +1502,8 @@ class EditContainerGroupModal extends Modal {
     // Add Language Section
     containerEl.createEl("h3", { text: "Add language mapping", attr: { style: "margin-top: 1.5rem;" } });
     new Setting(containerEl)
-      .setName("Language ID")
-      .setDesc("E.g. Python, JavaScript, node, sh")
+      .setName("Language id")
+      .setDesc("E.g. Python, javascript, node, sh")
       .addText((text) => {
         text.setValue(this.newLanguageName).onChange((val) => {
           this.newLanguageName = val.trim().toLowerCase();
@@ -1599,7 +1603,7 @@ class EditContainerGroupModal extends Modal {
     if (this.activeTab === "raw") {
       try {
         this.configObj = JSON.parse(this.rawJsonText);
-      } catch (e) {
+      } catch {
         new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before saving.");
         return;
       }
@@ -1611,7 +1615,7 @@ class EditContainerGroupModal extends Modal {
       return;
     }
     if (this.configObj.runtime === "qemu" && (!this.configObj.qemu?.sshTarget || !this.configObj.qemu?.remoteWorkspace)) {
-      new Notice("Qemu runtime requires SSH target and remote workspace.");
+      new Notice("QEMU runtime requires SSH target and remote workspace.");
       return;
     }
     if (this.configObj.runtime === "ssh" && (!this.configObj.ssh?.target || !this.configObj.ssh?.workspace)) {

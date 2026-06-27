@@ -201,7 +201,7 @@ class ExecutionConsentModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Enable lotus local execution?" });
+    contentEl.createEl("h2", { text: "Enable Lotus local execution?" });
     contentEl.createEl("p", {
       text: "Lotus runs code from your notes on your local machine using the configured executables. It does not sandbox or isolate the process.",
     });
@@ -547,7 +547,7 @@ export default class lotusPlugin extends Plugin {
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
     this.registerView(LOTUS_LOG_VIEW_TYPE, (leaf) => new lotusLogView(leaf, this));
-    this.addRibbonIcon("list-filter", "Open lotus logs", () => {
+    this.addRibbonIcon("list-filter", "Open Lotus logs", () => {
       void this.openLogView();
     });
     this.app.workspace.onLayoutReady(() => {
@@ -567,7 +567,7 @@ export default class lotusPlugin extends Plugin {
         const blocks = parseMarkdownCodeBlocks(file.path, editor.getValue(), this.settings);
         const block = findBlockAtLine(blocks, editor.getCursor().line);
         if (!block) {
-          new Notice("No supported lotus block at the current Cursor.");
+          new Notice("No supported Lotus block at the current cursor.");
           return;
         }
         await this.runBlock(file, block);
@@ -1048,7 +1048,7 @@ export default class lotusPlugin extends Plugin {
     const existing = this.app.workspace.getLeavesOfType(LOTUS_LOG_VIEW_TYPE)[0];
     const leaf = existing ?? this.app.workspace.getRightLeaf(false);
     if (!leaf) {
-      new Notice("Unable to open lotus log viewer.");
+      new Notice("Unable to open Lotus log viewer.");
       return;
     }
 
@@ -1125,13 +1125,13 @@ export default class lotusPlugin extends Plugin {
   async editBlockById(blockId: string): Promise<void> {
     const block = this.findActiveBlockById(blockId);
     if (!block) {
-      new Notice("Could not find this lotus block.");
+      new Notice("Could not find this Lotus block.");
       return;
     }
 
     const file = this.app.vault.getAbstractFileByPath(block.filePath);
     if (!(file instanceof TFile)) {
-      new Notice("Could not open the note for this lotus block.");
+      new Notice("Could not open the note for this Lotus block.");
       return;
     }
 
@@ -1147,7 +1147,7 @@ export default class lotusPlugin extends Plugin {
 
     const view = leaf.view;
     if (!(view instanceof MarkdownView) || !view.editor) {
-      new Notice("Open the note in editing mode to edit this lotus block.");
+      new Notice("Open the note in editing mode to edit this Lotus block.");
       return;
     }
 
@@ -1352,7 +1352,7 @@ export default class lotusPlugin extends Plugin {
     });
 
     if (!supportedBlocks.length) {
-      new Notice("No supported lotus blocks found in the current note.");
+      new Notice("No supported Lotus blocks found in the current note.");
       return;
     }
 
@@ -1459,7 +1459,7 @@ export default class lotusPlugin extends Plugin {
       const source = await this.app.vault.cachedRead(file);
       const signature = readStoredSignature(source);
       if (!signature) {
-        new Notice("No lotus-signature found. Run lotus: Sign current note first.");
+        new Notice("No Lotus-signature found. Run Lotus: Sign current note first.");
         return;
       }
 
@@ -1480,7 +1480,7 @@ export default class lotusPlugin extends Plugin {
   async copyCurrentNoteSignature(file: TFile): Promise<void> {
     const signature = readStoredSignature(await this.app.vault.cachedRead(file));
     if (!signature) {
-      new Notice("No valid lotus-signature found. Run lotus: Sign current note first.");
+      new Notice("No valid Lotus-signature found. Run Lotus: Sign current note first.");
       return;
     }
     await this.copyTextToClipboard(JSON.stringify(signature, null, 2), "Note signature copied.");
@@ -1912,7 +1912,7 @@ export default class lotusPlugin extends Plugin {
     const source = await this.app.vault.cachedRead(file);
     const storedHash = readStoredNoteHash(source);
     if (!storedHash) {
-      new Notice("No lotus-note-hash found. Run lotus: Hash current note first.");
+      new Notice("No Lotus-note-hash found. Run Lotus: Hash current note first.");
       return;
     }
 
@@ -1930,7 +1930,7 @@ export default class lotusPlugin extends Plugin {
     const file = view?.file;
     const editor = view?.editor;
     if (!file || !editor) {
-      new Notice("Open a Markdown note in editing mode to hash the current code block.");
+      new Notice("Open a markdown note in editing mode to hash the current code block.");
       return;
     }
 
@@ -1938,7 +1938,7 @@ export default class lotusPlugin extends Plugin {
     const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
     const block = findBlockAtLine(blocks, editor.getCursor().line);
     if (!block) {
-      new Notice("No supported lotus block at the current Cursor.");
+      new Notice("No supported Lotus block at the current cursor.");
       return;
     }
 
@@ -1962,7 +1962,7 @@ export default class lotusPlugin extends Plugin {
     const source = await this.app.vault.cachedRead(file);
     const storedEntries = readStoredCodeBlockHashEntries(source);
     if (!storedEntries.length) {
-      new Notice("No lotus-code-block-hashes found. Run lotus: Hash current code block first.");
+      new Notice("No Lotus-code-block-hashes found. Run Lotus: Hash current code block first.");
       return;
     }
 
@@ -2078,7 +2078,7 @@ export default class lotusPlugin extends Plugin {
   async runBlock(file: TFile, block: lotusCodeBlock): Promise<void> {
     this.lastMarkdownFilePath = file.path;
     if (this.running.has(block.id)) {
-      new Notice("This lotus block is already running.");
+      new Notice("This Lotus block is already running.");
       return;
     }
 
