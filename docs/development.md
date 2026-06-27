@@ -89,7 +89,16 @@ Each JSON file describes one optional package. You can import a `.zip`, `.tar`, 
       "aliases": ["jl"],
       "executable": "julia",
       "args": "{file}",
-      "extension": ".jl"
+      "extension": ".jl",
+      "preprocessors": [
+        {
+          "name": "expand",
+          "executable": "julia-expand",
+          "args": "{request}",
+          "language": "julia",
+          "extension": ".jl"
+        }
+      ]
     }
   ]
 }
@@ -106,7 +115,7 @@ lotus-language-pack-julia/
     basics.md
 ```
 
-External languages use the same execution contract as custom languages. They can also define `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` if they need partial source extraction. The manifest acts as registry data (not copied to plugin settings), and the vault's enabled choices are persisted normally.
+External languages use the same execution contract as custom languages. They can define `preprocessors` for stable staged source transforms before execution, and `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` if they need partial source extraction. The manifest acts as registry data (not copied to plugin settings), and the vault's enabled choices are persisted normally.
 
 ---
 

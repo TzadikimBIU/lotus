@@ -7,10 +7,11 @@ import { spawn } from "child_process";
 import { generateKeyPairSync } from "crypto";
 import { tmpdir } from "os";
 import { DEFAULT_SETTINGS } from "../src/defaultSettings";
-import { normalizeLanguageConfiguration } from "../src/languagePackages";
+import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "../src/languagePackages";
 import { getLanguageCapability } from "../src/languageCapabilities";
 import { parseMarkdownCodeBlocks } from "../src/parser";
 import { resolveReferencedSource } from "../src/sourceExtract";
+import { runExternalSourcePreprocessorPipeline, type lotusExternalSourcePreprocessor } from "../src/sourcePreprocess";
 import { buildSourceReferenceHarness } from "../src/sourceHarness";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature } from "../src/signing";
 import { PythonRunner } from "../src/runners/python";
@@ -139,10 +140,12 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
   const controller = new AbortController();
   let sourcePreview: lotusSourcePreview | undefined;
   let executableBlock = block;
+  let preprocessDescription: string | undefined;
   try {
     const resolved = await resolveExecutableBlock(note, block);
     executableBlock = resolved.block;
     sourcePreview = resolved.sourcePreview;
+    preprocessDescription = resolved.preprocessDescription;
   } catch (error) {
     return {
       profile,
@@ -169,6 +172,10 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
       const sourceNotice = `Ran extracted source from ${sourcePreview.description}.`;
       result.warning = result.warning ? `${sourceNotice}\n${result.warning}` : sourceNotice;
     }
+    if (preprocessDescription) {
+      const preprocessorNotice = `Ran preprocessed source with ${preprocessDescription}.`;
+      result.warning = result.warning ? `${preprocessorNotice}\n${result.warning}` : preprocessorNotice;
+    }
     return classifyResult(note, executableBlock, name, directives, `Execution group ${context.containerGroup}`, result, sourcePreview);
   }
 
@@ -190,6 +197,10 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
   if (sourcePreview) {
     const sourceNotice = `Ran extracted source from ${sourcePreview.description}.`;
     result.warning = result.warning ? `${sourceNotice}\n${result.warning}` : sourceNotice;
+  }
+  if (preprocessDescription) {
+    const preprocessorNotice = `Ran preprocessed source with ${preprocessDescription}.`;
+    result.warning = result.warning ? `${preprocessorNotice}\n${result.warning}` : preprocessorNotice;
   }
 
   return classifyResult(note, executableBlock, name, directives, runner.displayName, result, sourcePreview);
@@ -414,41 +425,113 @@ function checkAssertions(block: lotusCodeBlock, result: lotusRunResult): string 
   return null;
 }
 
-async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusSourcePreview }> {
-  if (!block.sourceReference) {
-    return { block };
-  }
+async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusSourcePreview; preprocessDescription?: string }> {
+  let executableBlock = block;
+  let sourcePreview: lotusSourcePreview | undefined;
 
-  const referencePath = resolveReferencedVaultPath(note.path, block.sourceReference.filePath);
-  const source = await readVaultText(referencePath);
-  if (source == null) {
-    throw new Error(`Referenced source file not found: ${referencePath}`);
-  }
+  if (block.sourceReference) {
+    const referencePath = resolveReferencedVaultPath(note.path, block.sourceReference.filePath);
+    const source = await readVaultText(referencePath);
+    if (source == null) {
+      throw new Error(`Referenced source file not found: ${referencePath}`);
+    }
 
-  const resolved = await resolveReferencedSource(
-    source,
-    { ...block.sourceReference, filePath: referencePath },
-    block.language,
-    buildSourceReferenceHarness(block),
-    {
-      pythonExecutable: settings.pythonExecutable.trim() || "python3",
-      readFile: readVaultHostFile,
-      resolvePythonImport,
-    },
-  );
+    const resolved = await resolveReferencedSource(
+      source,
+      { ...block.sourceReference, filePath: referencePath },
+      block.language,
+      buildSourceReferenceHarness(block),
+      {
+        pythonExecutable: settings.pythonExecutable.trim() || "python3",
+        readFile: readVaultHostFile,
+        resolvePythonImport,
+      },
+    );
 
-  const capability = getLanguageCapability(block.language);
-  return {
-    block: { ...block, content: resolved.content },
-    sourcePreview: {
+    const capability = getLanguageCapability(block.language);
+    executableBlock = { ...block, content: resolved.content };
+    sourcePreview = {
       description: resolved.description,
       language: block.language,
       content: resolved.content,
       capability,
       expanded: true,
       showCapabilityMetadata: true,
+    };
+  }
+
+  const preprocessor = resolveCustomLanguagePreprocessor(note, executableBlock);
+  if (!preprocessor) {
+    return { block: executableBlock, sourcePreview };
+  }
+
+  const preprocessed = await runExternalSourcePreprocessorPipeline(executableBlock.content, executableBlock, preprocessor);
+  const preprocessDescription = `${preprocessed.description || preprocessor.languageName} (artifacts: ${preprocessed.artifactDirectory})`;
+  const capability = getLanguageCapability(preprocessed.block.language);
+  return {
+    block: preprocessed.block,
+    sourcePreview: {
+      description: sourcePreview
+        ? `${sourcePreview.description}; preprocessed by ${preprocessed.description || preprocessor.languageName}`
+        : `preprocessed by ${preprocessed.description || preprocessor.languageName}`,
+      language: preprocessed.block.language,
+      content: preprocessed.block.content,
+      capability,
+      stages: preprocessed.stages,
+      expanded: true,
+      showCapabilityMetadata: true,
     },
+    preprocessDescription,
   };
+}
+
+function resolveCustomLanguagePreprocessor(note: NoteFile, block: lotusCodeBlock) {
+  const language = findEnabledCommandLanguage(settings, block.language, block.languageAlias);
+  if (!language) {
+    return undefined;
+  }
+
+  const stages = getPreprocessorStages(language);
+  if (!stages.length) {
+    return undefined;
+  }
+  const context = resolveCliExecutionContext(note, block, settings);
+  return {
+    languageName: language.name,
+    initialExtension: language.extension || language.name,
+    stages,
+    artifactDirectory: join(vaultDir, ".lotus", "preprocess", sanitizeArtifactSegment(note.path), `block-${block.ordinal}-${sanitizeArtifactSegment(block.sourceLanguage || block.language)}`),
+    workingDirectory: context.workingDirectory,
+    timeoutMs: context.timeoutMs,
+  };
+}
+
+function getPreprocessorStages(language: NonNullable<ReturnType<typeof findEnabledCommandLanguage>>): lotusExternalSourcePreprocessor[] {
+  const stages = (language.preprocessors ?? [])
+    .filter((stage) => stage.executable.trim())
+    .map((stage, index) => ({
+      name: stage.name.trim() || `stage-${index + 1}`,
+      executable: stage.executable.trim(),
+      args: stage.args || "{request}",
+      language: stage.language?.trim(),
+      extension: stage.extension?.trim(),
+    }));
+  if (stages.length) {
+    return stages;
+  }
+
+  const executable = language.preprocessorExecutable?.trim();
+  if (!executable) {
+    return [];
+  }
+
+  return [{
+    name: "preprocess",
+    executable,
+    args: language.preprocessorArgs || "{request}",
+    language: language.preprocessorLanguage?.trim(),
+    extension: language.preprocessorExtension?.trim(),
+  }];
 }
 
 async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
@@ -911,6 +994,14 @@ function requiredArg(values: Record<string, string>, key: string): string {
     throw new Error(`Missing --${key}`);
   }
   return value;
+}
+
+function sanitizeArtifactSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, "-")
+    .replace(/^-+|-+$/g, "") || "note";
 }
 
 function escapeHtml(value: string): string {

@@ -106,8 +106,18 @@ export interface lotusSourcePreview {
   language: lotusNormalizedLanguage;
   content: string;
   capability?: lotusLanguageCapabilitySnapshot;
+  stages?: lotusSourcePreviewStage[];
   expanded: boolean;
   showCapabilityMetadata: boolean;
+}
+
+export interface lotusSourcePreviewStage {
+  label: string;
+  description: string;
+  language: lotusNormalizedLanguage;
+  extension?: string;
+  path?: string;
+  content: string;
 }
 
 export interface lotusLanguageCapabilitySnapshot {
@@ -210,11 +220,24 @@ export interface lotusCustomLanguage {
   executable: string;
   args: string;
   extension: string;
+  preprocessors?: lotusCustomPreprocessor[];
+  preprocessorExecutable?: string;
+  preprocessorArgs?: string;
+  preprocessorLanguage?: string;
+  preprocessorExtension?: string;
   extractorMode?: "command" | "transpile-c";
   extractorExecutable?: string;
   extractorArgs?: string;
   transpileExecutable?: string;
   transpileArgs?: string;
+}
+
+export interface lotusCustomPreprocessor {
+  name: string;
+  executable: string;
+  args: string;
+  language?: string;
+  extension?: string;
 }
 
 export interface lotusExternalLanguagePack {

@@ -8,6 +8,7 @@ A custom language configuration defines:
 - **Executable**
 - **Arguments** (e.g., `{file}`)
 - **Source file extension**
+- **Optional preprocessor stages**
 - **Optional extractor executable**
 - **Optional extractor arguments** (e.g., `{request}`)
 
@@ -28,6 +29,92 @@ With this configured, a normal fenced block can run using that alias:
 echo hello
 ```
 ````
+
+---
+
+## Preprocessor Stages
+
+Custom languages can define one or more named preprocessor stages. Lotus runs these stages before selecting the final runner. Each stage receives a stable input file and planned output file under:
+
+```text
+.lotus/preprocess/<note-path>/block-<ordinal>-<source-language>/
+```
+
+The path is stable for the note, block ordinal, and source fence language, so external tools can inspect or reuse intermediate files while a block is edited.
+
+Each stage can return transformed source and optionally change the language and file extension for the next stage or final runner. This lets a source fence such as `toy` preprocess into `c`, `python`, or another custom language with its own execution command.
+
+### Stage Configuration
+
+```text
+name: lower-to-c
+executable: toy-lower
+args: {request}
+language: c
+extension: .c
+```
+
+`language` and `extension` are defaults for the stage output. The stage command can override them in its JSON response.
+
+Supported argument placeholders:
+
+- `{request}`: JSON request file.
+- `{input}`, `{source}`, or `{file}`: Current stage input file.
+- `{output}`: Planned output file for this stage.
+- `{artifactDir}`: Stable directory containing all stage files.
+- `{language}` / `{extension}`: Current input language and extension.
+- `{outputLanguage}` / `{outputExtension}`: Configured output language and extension.
+- `{sourceLanguage}` / `{alias}`: Original fence language and alias.
+- `{note}` / `{blockId}`: Note path and Lotus block id.
+- `{stage}` / `{stageName}`: 1-based stage number and stage name.
+
+### Request JSON Shape
+
+```json
+{
+  "language": "toy",
+  "outputLanguage": "c",
+  "extension": ".toy",
+  "outputExtension": ".c",
+  "sourceLanguage": "toy",
+  "languageAlias": "toy",
+  "notePath": "notes/demo.md",
+  "blockId": "abc123",
+  "ordinal": 1,
+  "stage": 1,
+  "stageName": "lower-to-c",
+  "inputFile": ".lotus/preprocess/notes-demo.md/block-1-toy/stage-00-input.toy",
+  "outputFile": ".lotus/preprocess/notes-demo.md/block-1-toy/stage-01-lower-to-c.c",
+  "artifactDirectory": ".lotus/preprocess/notes-demo.md/block-1-toy"
+}
+```
+
+### Stage Output
+
+A preprocessor can write source to `stdout` as plain text. It can also print JSON:
+
+```json
+{
+  "description": "toy lowered to c",
+  "language": "c",
+  "extension": ".c",
+  "content": "int main(void) { return 0; }"
+}
+```
+
+Alternatively, it can write the output file path from the request and print no `stdout`, or return:
+
+```json
+{
+  "outputFile": ".lotus/preprocess/notes-demo.md/block-1-toy/stage-01-lower-to-c.c",
+  "language": "c",
+  "extension": ".c"
+}
+```
+
+Returned `outputFile` paths must stay inside `artifactDirectory`.
+
+Lotus records each stage in the run output so the intermediate source and file path can be inspected.
 
 ---
 

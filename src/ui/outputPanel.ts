@@ -1,5 +1,5 @@
 import { setIcon } from "obsidian";
-import type { lotusStoredOutput } from "../types";
+import type { lotusSourcePreviewStage, lotusStoredOutput } from "../types";
 
 interface lotusOutputPanelOptions {
   defaultVisibleLines: number;
@@ -80,8 +80,19 @@ function createSourcePreview(container: HTMLElement, preview: NonNullable<lotusS
   const details = container.createEl("details", { cls: "lotus-source-preview" });
   details.open = preview.expanded;
   const summary = details.createEl("summary", { cls: "lotus-source-preview-summary" });
-  summary.createSpan({ text: "Extracted source" });
+  summary.createSpan({ text: preview.stages?.length ? "Source stages" : "Extracted source" });
   summary.createSpan({ cls: "lotus-source-preview-meta", text: formatSourcePreviewMeta(preview) });
+  if (preview.stages?.length) {
+    for (const stage of preview.stages) {
+      const stageDetails = details.createEl("details", { cls: "lotus-source-preview-stage" });
+      stageDetails.open = preview.expanded;
+      const stageSummary = stageDetails.createEl("summary", { cls: "lotus-source-preview-summary" });
+      stageSummary.createSpan({ text: stage.label });
+      stageSummary.createSpan({ cls: "lotus-source-preview-meta", text: formatSourceStageMeta(stage) });
+      stageDetails.createEl("pre", { cls: "lotus-output-pre lotus-source-preview-pre", text: stage.content });
+    }
+    return;
+  }
   details.createEl("pre", { cls: "lotus-output-pre lotus-source-preview-pre", text: preview.content });
 }
 
@@ -97,6 +108,15 @@ function formatSourcePreviewMeta(preview: NonNullable<lotusStoredOutput["sourceP
     `deps:${capability.dependencyTracing}`,
     `call:${capability.callHarness}`,
   ].join(" · ");
+}
+
+function formatSourceStageMeta(stage: lotusSourcePreviewStage): string {
+  return [
+    stage.language,
+    stage.extension,
+    stage.description,
+    stage.path,
+  ].filter(Boolean).join(" · ");
 }
 
 function resolveVisibleLines(output: lotusStoredOutput, defaultVisibleLines: number): number {

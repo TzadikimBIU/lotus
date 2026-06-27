@@ -228,6 +228,13 @@
   gap: 0.45rem;
 }
 
+.lotus-source-preview-stage {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+}
+
 .lotus-source-preview-summary {
   display: flex;
   align-items: center;

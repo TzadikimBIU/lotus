@@ -41,6 +41,7 @@ import { lotusRunnerRegistry } from "./runners/registry";
 import { DEFAULT_SETTINGS } from "./defaultSettings";
 import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
 import { resolveReferencedSource, type lotusExternalSourceExtractor } from "./sourceExtract";
+import { runExternalSourcePreprocessorPipeline, type lotusExternalSourcePreprocessor, type lotusPreprocessorPipelineSpec } from "./sourcePreprocess";
 import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
@@ -49,7 +50,7 @@ import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
-import type { lotusCodeBlock, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
+import type { lotusCodeBlock, lotusCustomPreprocessor, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
 
 const lotusRefreshEffect = StateEffect.define<void>();
 const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
@@ -2092,20 +2093,12 @@ export default class lotusPlugin extends Plugin {
 
     const executionContext = this.resolveExecutionContext(file, block);
     const containerGroup = executionContext.containerGroup;
-    const runner = containerGroup ? null : this.registry.getRunnerForBlock(block, this.settings);
-    if (!runner) {
-      if (!containerGroup) {
-        new Notice(`No configured runner for ${block.language}.`);
-        return;
-      }
-    }
-
     const controller = new AbortController();
     const stdin = await this.resolveBlockStdin(file, block);
-    const runnerName = containerGroup ? `execution group ${containerGroup}` : runner!.displayName;
-    const runnerId = containerGroup ? `container:${containerGroup}` : runner!.id;
+    let runnerName = containerGroup ? `execution group ${containerGroup}` : "preparing";
+    let runnerId = containerGroup ? `container:${containerGroup}` : "pending";
     const noteHash = await this.readCurrentNoteHash(file.path);
-    const logTarget: lotusLogTarget = {
+    let logTarget: lotusLogTarget = {
       runnerId,
       runnerName,
       containerGroup,
@@ -2142,26 +2135,43 @@ export default class lotusPlugin extends Plugin {
     this.liveRuns.set(block.id, liveRun);
     this.notifyOutputChanged(block.id);
     this.updateStatusBar();
-    await this.logEvent({
-      type: "lotus.run.started",
-      message: "Code block started",
-      notePath: file.path,
-      noteHash,
-      block,
-      target: logTarget,
-      stdin,
-      data: {
-        runnerName,
-        containerGroup,
-        workingDirectory: executionContext.workingDirectory,
-        timeoutMs: executionContext.timeoutMs,
-        stdinBytes: stdin?.length ?? 0,
-        noteHash,
-      },
-    });
 
     try {
-      const resolvedBlock = await this.resolveExecutableBlock(file, block);
+      const resolvedBlock = await this.resolveExecutableBlock(file, block, controller.signal);
+      const runner = containerGroup ? null : this.registry.getRunnerForBlock(resolvedBlock.block, this.settings);
+      if (!containerGroup && !runner) {
+        throw new Error(`No configured runner for ${resolvedBlock.block.language}.`);
+      }
+
+      runnerName = containerGroup ? `execution group ${containerGroup}` : runner!.displayName;
+      runnerId = containerGroup ? `container:${containerGroup}` : runner!.id;
+      logTarget = {
+        ...logTarget,
+        runnerId,
+        runnerName,
+      };
+      liveRun.runnerName = runnerName;
+      liveRun.target = logTarget;
+      this.notifyOutputChanged(block.id);
+      await this.logEvent({
+        type: "lotus.run.started",
+        message: "Code block started",
+        notePath: file.path,
+        noteHash,
+        block: resolvedBlock.block,
+        target: logTarget,
+        stdin,
+        data: {
+          runnerName,
+          containerGroup,
+          workingDirectory: executionContext.workingDirectory,
+          timeoutMs: executionContext.timeoutMs,
+          stdinBytes: stdin?.length ?? 0,
+          noteHash,
+          sourceLanguage: block.language,
+          executionLanguage: resolvedBlock.block.language,
+        },
+      });
       const result = containerGroup
         ? await this.containerRunner.run(resolvedBlock.block, runContext, this.settings, containerGroup)
         : await runner!.run(resolvedBlock.block, runContext, this.settings);
@@ -2177,6 +2187,10 @@ export default class lotusPlugin extends Plugin {
       if (resolvedBlock.sourcePreview) {
         const sourceNotice = `Ran extracted source from ${resolvedBlock.sourcePreview.description}.`;
         result.warning = result.warning ? `${sourceNotice}\n${result.warning}` : sourceNotice;
+      }
+      if (resolvedBlock.preprocessDescription) {
+        const preprocessorNotice = `Ran preprocessed source with ${resolvedBlock.preprocessDescription}.`;
+        result.warning = result.warning ? `${preprocessorNotice}\n${result.warning}` : preprocessorNotice;
       }
       if (this.hasExplicitExecutionContext(executionContext)) {
         const contextNotice = this.formatExecutionContextNotice(executionContext);
@@ -2202,6 +2216,7 @@ export default class lotusPlugin extends Plugin {
         workingDirectory: executionContext.workingDirectory,
         timeoutMs: executionContext.timeoutMs,
         sourceReference: Boolean(block.sourceReference),
+        executionLanguage: resolvedBlock.block.language,
         noteHash,
       }, logTarget, await this.readCurrentNoteHash(file.path));
       new Notice(result.success ? `lotus ran ${runnerName} block.` : `lotus run failed for ${runnerName}.`);
@@ -2213,8 +2228,8 @@ export default class lotusPlugin extends Plugin {
         collapsed: false,
         visible: true,
         result: {
-          runnerId: containerGroup ? `container:${containerGroup}` : runner?.id ?? "unknown",
-          runnerName: containerGroup ? `Execution group ${containerGroup}` : runner?.displayName ?? "Unknown",
+          runnerId,
+          runnerName,
           startedAt: new Date().toISOString(),
           finishedAt: new Date().toISOString(),
           durationMs: 0,
@@ -2344,50 +2359,74 @@ export default class lotusPlugin extends Plugin {
     });
   }
 
-  private async resolveExecutableBlock(file: TFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusStoredOutput["sourcePreview"] }> {
-    if (!block.sourceReference) {
-      return { block };
-    }
-
-    const referencePath = this.resolveReferencedVaultPath(file, block.sourceReference.filePath);
-    const sourceFile = this.app.vault.getAbstractFileByPath(referencePath);
-    if (!(sourceFile instanceof TFile)) {
-      throw new Error(`Referenced source file not found: ${referencePath}`);
-    }
-
-    const harness = buildSourceReferenceHarness(block, this.resolveBlockFunctionInput(block));
-    const externalExtractor = this.getCustomLanguageExtractor(block, file);
-    const resolved = await resolveReferencedSource(
-      await this.app.vault.cachedRead(sourceFile),
-      { ...block.sourceReference, filePath: referencePath },
-      block.language,
-      harness,
-      {
-        pythonExecutable: this.settings.pythonExecutable.trim() || "python3",
-        externalExtractor,
-        readFile: async (filePath) => {
-          const importedFile = this.app.vault.getAbstractFileByPath(normalizePath(filePath));
-          return importedFile instanceof TFile ? this.app.vault.cachedRead(importedFile) : null;
-        },
-        resolvePythonImport: async (fromFilePath, moduleName, level) => this.resolvePythonImportVaultPath(fromFilePath, moduleName, level),
-      },
-    );
-    const capability = getLanguageCapability(block.language, Boolean(externalExtractor));
+  private async resolveExecutableBlock(file: TFile, block: lotusCodeBlock, signal?: AbortSignal): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusStoredOutput["sourcePreview"]; preprocessDescription?: string }> {
+    let executableBlock = block;
+    let sourcePreview: lotusStoredOutput["sourcePreview"] | undefined;
     const shouldShowPreview = (this.settings.extractedSourcePreviewMode || "collapsed") !== "hidden";
 
-    return {
-      block: {
+    if (block.sourceReference) {
+      const referencePath = this.resolveReferencedVaultPath(file, block.sourceReference.filePath);
+      const sourceFile = this.app.vault.getAbstractFileByPath(referencePath);
+      if (!(sourceFile instanceof TFile)) {
+        throw new Error(`Referenced source file not found: ${referencePath}`);
+      }
+
+      const harness = buildSourceReferenceHarness(block, this.resolveBlockFunctionInput(block));
+      const externalExtractor = this.getCustomLanguageExtractor(block, file);
+      const resolved = await resolveReferencedSource(
+        await this.app.vault.cachedRead(sourceFile),
+        { ...block.sourceReference, filePath: referencePath },
+        block.language,
+        harness,
+        {
+          pythonExecutable: this.settings.pythonExecutable.trim() || "python3",
+          externalExtractor,
+          readFile: async (filePath) => {
+            const importedFile = this.app.vault.getAbstractFileByPath(normalizePath(filePath));
+            return importedFile instanceof TFile ? this.app.vault.cachedRead(importedFile) : null;
+          },
+          resolvePythonImport: async (fromFilePath, moduleName, level) => this.resolvePythonImportVaultPath(fromFilePath, moduleName, level),
+        },
+      );
+      executableBlock = {
         ...block,
         content: resolved.content,
-      },
-      sourcePreview: shouldShowPreview ? {
+      };
+      const capability = getLanguageCapability(block.language, Boolean(externalExtractor));
+      sourcePreview = shouldShowPreview ? {
         description: resolved.description,
         language: block.language,
         content: resolved.content,
         capability,
         expanded: this.settings.extractedSourcePreviewMode === "expanded",
         showCapabilityMetadata: this.settings.showLanguageCapabilityMetadata ?? true,
-      } : undefined,
+      } : undefined;
+    }
+
+    const preprocessorPipeline = this.getCustomLanguagePreprocessorPipeline(block, file, signal);
+    if (!preprocessorPipeline) {
+      return { block: executableBlock, sourcePreview };
+    }
+
+    const preprocessed = await runExternalSourcePreprocessorPipeline(executableBlock.content, executableBlock, preprocessorPipeline);
+    const preprocessDescription = `${preprocessed.description || preprocessorPipeline.languageName} (artifacts: ${preprocessed.artifactDirectory})`;
+    const capability = getLanguageCapability(preprocessed.block.language);
+    return {
+      block: preprocessed.block,
+      sourcePreview: shouldShowPreview
+        ? {
+          description: sourcePreview
+            ? `${sourcePreview.description}; preprocessed by ${preprocessed.description || preprocessorPipeline.languageName}`
+            : `preprocessed by ${preprocessed.description || preprocessorPipeline.languageName}`,
+          language: preprocessed.block.language,
+          content: preprocessed.block.content,
+          capability,
+          stages: preprocessed.stages,
+          expanded: this.settings.extractedSourcePreviewMode === "expanded",
+          showCapabilityMetadata: this.settings.showLanguageCapabilityMetadata ?? true,
+        }
+        : undefined,
+      preprocessDescription,
     };
   }
 
@@ -2881,6 +2920,61 @@ export default class lotusPlugin extends Plugin {
       workingDirectory: executionContext.workingDirectory,
       timeoutMs: executionContext.timeoutMs,
     };
+  }
+
+  private getCustomLanguagePreprocessorPipeline(block: lotusCodeBlock, file: TFile, signal?: AbortSignal): lotusPreprocessorPipelineSpec | undefined {
+    const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
+    if (!language) {
+      return undefined;
+    }
+
+    const stages = this.getCustomLanguagePreprocessorStages(language);
+    if (!stages.length) {
+      return undefined;
+    }
+    const executionContext = this.resolveExecutionContext(file, block);
+    return {
+      languageName: language.name,
+      initialExtension: language.extension || language.name,
+      stages,
+      artifactDirectory: this.getPreprocessorArtifactDirectory(file, block, executionContext),
+      workingDirectory: executionContext.workingDirectory,
+      timeoutMs: executionContext.timeoutMs,
+      signal,
+    };
+  }
+
+  private getCustomLanguagePreprocessorStages(language: NonNullable<ReturnType<typeof findEnabledCommandLanguage>>): lotusExternalSourcePreprocessor[] {
+    const stages = (language.preprocessors ?? [])
+      .filter((stage) => stage.executable.trim())
+      .map((stage, index) => ({
+        name: stage.name.trim() || `stage-${index + 1}`,
+        executable: stage.executable.trim(),
+        args: stage.args || "{request}",
+        language: stage.language?.trim(),
+        extension: stage.extension?.trim(),
+      }));
+    if (stages.length) {
+      return stages;
+    }
+
+    const executable = language.preprocessorExecutable?.trim();
+    if (!executable) {
+      return [];
+    }
+    return [{
+      name: "preprocess",
+      executable,
+      args: language.preprocessorArgs || "{request}",
+      language: language.preprocessorLanguage?.trim(),
+      extension: language.preprocessorExtension?.trim(),
+    }];
+  }
+
+  private getPreprocessorArtifactDirectory(file: TFile, block: lotusCodeBlock, executionContext: lotusResolvedExecutionContext): string {
+    const vaultBasePath = (file.vault.adapter as { basePath?: string }).basePath;
+    const root = vaultBasePath || executionContext.workingDirectory || process.cwd();
+    return join(root, ".lotus", "preprocess", sanitizeArtifactSegment(file.path), `block-${block.ordinal}-${sanitizeArtifactSegment(block.sourceLanguage || block.language)}`);
   }
 
   private async writeManagedOutputBlock(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"]): Promise<void> {
@@ -3529,11 +3623,48 @@ function parseExternalLanguage(value: unknown, filePath: string): lotusExternalL
     executable,
     args: readString(value.args) || "{file}",
     extension: normalizeExtension(readString(value.extension), name),
+    preprocessors: readPreprocessorList(value.preprocessors, filePath),
+    preprocessorExecutable: readString(value.preprocessorExecutable),
+    preprocessorArgs: readString(value.preprocessorArgs) || "{request}",
+    preprocessorLanguage: normalizeManifestId(readString(value.preprocessorLanguage)),
+    preprocessorExtension: readString(value.preprocessorExtension),
     extractorMode: readString(value.extractorMode) === "transpile-c" ? "transpile-c" : "command",
     extractorExecutable: readString(value.extractorExecutable),
     extractorArgs: readString(value.extractorArgs) || "{request}",
     transpileExecutable: readString(value.transpileExecutable),
     transpileArgs: readString(value.transpileArgs) || "{request}",
+  };
+}
+
+function readPreprocessorList(value: unknown, filePath: string): lotusCustomPreprocessor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((stage, index) => readPreprocessorStage(stage, index, filePath))
+    .filter((stage): stage is lotusCustomPreprocessor => Boolean(stage));
+}
+
+function readPreprocessorStage(value: unknown, index: number, filePath: string): lotusCustomPreprocessor | null {
+  if (!isRecord(value)) {
+    console.warn(`Ignoring preprocessor stage ${index + 1} in ${filePath}: stage must be an object`);
+    return null;
+  }
+
+  const executable = readString(value.executable);
+  if (!executable) {
+    console.warn(`Ignoring preprocessor stage ${index + 1} in ${filePath}: executable is required`);
+    return null;
+  }
+
+  const rawName = readString(value.id) || readString(value.name) || `stage-${index + 1}`;
+  return {
+    name: normalizeManifestId(rawName) || `stage-${index + 1}`,
+    executable,
+    args: readString(value.args) || "{request}",
+    language: normalizeManifestId(readString(value.language)),
+    extension: readString(value.extension),
   };
 }
 
@@ -3571,6 +3702,14 @@ function normalizeExtension(value: string, name: string): string {
     return `.${name}`;
   }
   return value.startsWith(".") ? value : `.${value}`;
+}
+
+function sanitizeArtifactSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, "-")
+    .replace(/^-+|-+$/g, "") || "note";
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {

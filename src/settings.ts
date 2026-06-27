@@ -15,11 +15,12 @@ import {
 } from "./buildProfile";
 import { CUSTOM_LANGUAGE_PACKAGE_ID, getAvailableLanguagePackages, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
 import { sha256Hash } from "./utils/hash";
-import type { lotusCustomLanguage, lotusPluginSettings } from "./types";
+import type { lotusCustomLanguage, lotusCustomPreprocessor, lotusPluginSettings } from "./types";
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
-type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode">;
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "preprocessors">;
+type lotusCustomPreprocessorTextKey = keyof lotusCustomPreprocessor;
 type lotusContainerEditorRuntime = lotusCompileContainerRuntime;
 type lotusRemoteUploadMode = "inline" | "scp";
 
@@ -785,6 +786,7 @@ export class lotusSettingTab extends PluginSettingTab {
             executable: "",
             args: "{file}",
             extension: ".txt",
+            preprocessors: [],
             extractorMode: "command",
             extractorExecutable: "",
             extractorArgs: "{request}",
@@ -819,6 +821,7 @@ export class lotusSettingTab extends PluginSettingTab {
       this.addCustomLanguageTextSetting(body, language, "Executable", "Local command or absolute executable path.", "executable");
       this.addCustomLanguageTextSetting(body, language, "Arguments", "Space-separated arguments. Use {file} for the temp source file.", "args");
       this.addCustomLanguageTextSetting(body, language, "Extension", "Temp source file extension, for example .py.", "extension");
+      this.renderCustomPreprocessorList(body, language);
 
       new Setting(body)
         .setName("Partial extraction strategy")
@@ -851,6 +854,65 @@ export class lotusSettingTab extends PluginSettingTab {
           });
         });
     });
+  }
+
+  private renderCustomPreprocessorList(containerEl: HTMLElement, language: lotusCustomLanguage): void {
+    const details = containerEl.createEl("details", { cls: "lotus-custom-preprocessors" });
+    details.open = Boolean(language.preprocessors?.length);
+    details.createEl("summary", { text: "Preprocessor stages" });
+    const body = details.createDiv({ cls: "lotus-custom-preprocessor-list" });
+    const stages = language.preprocessors ?? [];
+
+    if (!stages.length) {
+      body.createEl("p", {
+        text: "No preprocessor stages configured.",
+        cls: "setting-item-description",
+      });
+    }
+
+    stages.forEach((stage, index) => {
+      const stageEl = body.createEl("details", { cls: "lotus-custom-preprocessor" });
+      stageEl.open = true;
+      stageEl.createEl("summary", { text: stage.name || `Stage ${index + 1}` });
+      const stageBody = stageEl.createDiv({ cls: "lotus-custom-preprocessor-body" });
+      this.addCustomPreprocessorTextSetting(stageBody, stage, "Name", "Stage label used in previews and stable artifact filenames.", "name");
+      this.addCustomPreprocessorTextSetting(stageBody, stage, "Executable", "Command that transforms the current stage file.", "executable");
+      this.addCustomPreprocessorTextSetting(stageBody, stage, "Arguments", "Use {request}, {input}, {output}, {artifactDir}, {language}, {outputLanguage}, {extension}, {outputExtension}, {sourceLanguage}, {alias}, {note}, {blockId}, {stage}, and {stageName}.", "args");
+      this.addCustomPreprocessorTextSetting(stageBody, stage, "Output language", "Optional language id for the next stage or final runner.", "language");
+      this.addCustomPreprocessorTextSetting(stageBody, stage, "Output extension", "Optional stable file extension for this stage output.", "extension");
+
+      new Setting(stageBody)
+        .setName("Delete stage")
+        .setDesc("Remove this preprocessor stage.")
+        .addButton((button) => {
+          button.buttonEl.addClass("mod-warning");
+          button.setButtonText("Delete").onClick(async () => {
+            language.preprocessors?.splice(index, 1);
+            await this.lotusPlugin.saveSettings();
+            this.renderSettings();
+          });
+        });
+    });
+
+    new Setting(body)
+      .setName("Add preprocessor stage")
+      .setDesc("Append a command-backed source transformation stage.")
+      .addButton((button) =>
+        button.setButtonText("+").onClick(async () => {
+          if (!language.preprocessors) {
+            language.preprocessors = [];
+          }
+          language.preprocessors.push({
+            name: `stage-${language.preprocessors.length + 1}`,
+            executable: "",
+            args: "{request}",
+            language: "",
+            extension: "",
+          });
+          await this.lotusPlugin.saveSettings();
+          this.renderSettings();
+        }),
+      );
   }
 
   private async renderContainerGroups(containerEl: HTMLElement): Promise<void> {
@@ -985,6 +1047,24 @@ export class lotusSettingTab extends PluginSettingTab {
       .addText((text) =>
         text.setValue(String(language[key] ?? "")).onChange(async (value) => {
           language[key] = value.trim();
+          await this.lotusPlugin.saveSettings();
+        }),
+      );
+  }
+
+  private addCustomPreprocessorTextSetting<K extends lotusCustomPreprocessorTextKey>(
+    containerEl: HTMLElement,
+    stage: lotusCustomPreprocessor,
+    name: string,
+    description: string,
+    key: K,
+  ): void {
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addText((text) =>
+        text.setValue(String(stage[key] ?? "")).onChange(async (value) => {
+          stage[key] = value.trim();
           await this.lotusPlugin.saveSettings();
         }),
       );

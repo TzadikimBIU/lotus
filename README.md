@@ -126,7 +126,7 @@ Use `lotus: Open Log Viewer` to inspect the configured JSONL log inside Obsidian
 
 For more specialized setups, refer to the guides in the [docs/](docs/) directory:
 
-- [Custom Languages](docs/custom-languages.md): Configure local interpreters, JSON request/response schema extractors, and C transpilation strategies.
+- [Custom Languages](docs/custom-languages.md): Configure local interpreters, staged preprocessors, JSON request/response schema extractors, and C transpilation strategies.
 - [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.
 - [eBPF Execution](docs/ebpf.md): Compile BPF programs, inspect ELF objects, and load probes safely.
