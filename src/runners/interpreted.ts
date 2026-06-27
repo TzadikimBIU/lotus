@@ -1,4 +1,5 @@
 import { runTempFileProcess } from "../execution/processRunner";
+import { withMinimumTimeout } from "../utils/timeout";
 import type { lotusCodeBlock, lotusNormalizedLanguage, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 interface InterpretedSpec {
@@ -86,7 +87,7 @@ export class InterpretedRunner implements lotusRunner {
       fileExtension: spec.fileExtension,
       source: block.content,
       workingDirectory: context.workingDirectory,
-      timeoutMs: Math.max(context.timeoutMs, spec.minimumTimeoutMs ?? 0),
+      timeoutMs: withMinimumTimeout(context.timeoutMs, spec.minimumTimeoutMs ?? 0),
       signal: context.signal,
       stdin: context.stdin,
       stdinSession: context.stdinSession,

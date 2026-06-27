@@ -4,6 +4,7 @@ import { dirname } from "path";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunResult } from "./types";
+import type { lotusTimeoutMs } from "./utils/timeout";
 
 export interface lotusLogInput {
   type: string;
@@ -26,7 +27,7 @@ export interface lotusLogTarget {
   runnerName?: string;
   containerGroup?: string;
   workingDirectory?: string;
-  timeoutMs?: number;
+  timeoutMs?: lotusTimeoutMs;
   source?: Record<string, unknown>;
 }
 
@@ -148,7 +149,7 @@ export class lotusLogger {
       id: createLogId(),
       timestamp: new Date().toISOString(),
       type: input.type,
-      machineHash: sha256Hash(settings.loggingMachineId),
+      machineHash: this.createMachineHash(settings),
       message: input.message,
       data: input.data,
       error: input.error,
@@ -183,6 +184,20 @@ export class lotusLogger {
     }
 
     return event;
+  }
+
+  private createMachineHash(settings: lotusPluginSettings): string {
+    switch (settings.loggingMachineHashScope) {
+      case "vault":
+        return sha256Hash(`vault:${this.app.vault.getName()}`);
+      case "install-vault":
+        return sha256Hash(JSON.stringify({
+          installId: settings.loggingMachineId,
+          vaultName: this.app.vault.getName(),
+        }));
+      case "install":
+        return sha256Hash(settings.loggingMachineId);
+    }
   }
 
   private stringifyEvent(event: lotusLogEvent, settings: lotusPluginSettings): string {
@@ -307,7 +322,7 @@ export class lotusLogger {
       stdio: ["pipe", "ignore", "pipe"],
       shell: false,
     });
-    child.stderr?.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       const message = chunk.toString().trim();
       if (message) {
         console.warn(`lotus logging process stderr: ${message}`);

@@ -1,5 +1,6 @@
 import { join } from "path";
 import { runProcess, withNamedTempSourceFile, withTempSourceFile } from "../execution/processRunner";
+import { withMinimumTimeout } from "../utils/timeout";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 export class ManagedCompiledRunner implements lotusRunner {
@@ -40,7 +41,7 @@ export class ManagedCompiledRunner implements lotusRunner {
         executable: settings.rustExecutable.trim(),
         args: [tempFile, "-o", binaryPath],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
       });
 
@@ -54,7 +55,7 @@ export class ManagedCompiledRunner implements lotusRunner {
         executable: binaryPath,
         args: [],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,
@@ -73,7 +74,7 @@ export class ManagedCompiledRunner implements lotusRunner {
           executable: settings.javaExecutable.trim(),
           args: [tempFile],
           workingDirectory: context.workingDirectory,
-          timeoutMs: Math.max(context.timeoutMs, 30_000),
+          timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
           signal: context.signal,
           stdin: context.stdin,
           stdinSession: context.stdinSession,
@@ -88,7 +89,7 @@ export class ManagedCompiledRunner implements lotusRunner {
         executable: settings.javaCompilerExecutable.trim(),
         args: [tempFile],
         workingDirectory: tempDir,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
       });
 
@@ -102,7 +103,7 @@ export class ManagedCompiledRunner implements lotusRunner {
         executable: settings.javaExecutable.trim(),
         args: ["-cp", tempDir, "Main"],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,

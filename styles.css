@@ -219,6 +219,10 @@
   resize: vertical;
 }
 
+.lotus-hidden-file-input {
+  display: none;
+}
+
 .lotus-source-preview {
   display: grid;
   gap: 0.45rem;

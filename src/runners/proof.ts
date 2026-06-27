@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { runTempFileProcess } from "../execution/processRunner";
+import { withMinimumTimeout } from "../utils/timeout";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 export class ProofRunner implements lotusRunner {
@@ -34,7 +35,7 @@ export class ProofRunner implements lotusRunner {
         fileExtension: ".lean",
         source: block.content,
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,
@@ -52,7 +53,7 @@ export class ProofRunner implements lotusRunner {
         fileExtension: ".v",
         source: block.content,
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,
@@ -70,7 +71,7 @@ export class ProofRunner implements lotusRunner {
         fileExtension: ".smt2",
         source: block.content,
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
         stdin: context.stdin,
         stdinSession: context.stdinSession,

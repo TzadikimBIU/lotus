@@ -1,6 +1,8 @@
 import type { TFile } from "obsidian";
+import type { lotusTimeoutMs } from "./utils/timeout";
 
 export type lotusNormalizedLanguage = string;
+export type lotusLoggingMachineHashScope = "install" | "vault" | "install-vault";
 
 export interface lotusCodeBlock {
   id: string;
@@ -23,13 +25,13 @@ export interface lotusExecutionContextOverride {
   containerGroup?: string;
   disableContainer?: boolean;
   workingDirectory?: string;
-  timeoutMs?: number;
+  timeoutMs?: lotusTimeoutMs;
 }
 
 export interface lotusResolvedExecutionContext {
   containerGroup?: string;
   workingDirectory: string;
-  timeoutMs: number;
+  timeoutMs: lotusTimeoutMs;
   source: {
     container: "global" | "note" | "block" | "none";
     workingDirectory: "global" | "note" | "block" | "default";
@@ -55,7 +57,7 @@ export interface lotusSourceCallHarness {
 export interface lotusRunContext {
   file: TFile;
   workingDirectory: string;
-  timeoutMs: number;
+  timeoutMs: lotusTimeoutMs;
   signal: AbortSignal;
   stdin?: string;
   stdinSession?: lotusStdinSession;
@@ -188,6 +190,7 @@ export interface lotusPluginSettings {
   loggingViewerJsonlPath: string;
   loggingRedactionRules: string;
   loggingNotePathMode: "plain" | "hash" | "omit";
+  loggingMachineHashScope: lotusLoggingMachineHashScope;
   loggingIncludeCode: boolean;
   loggingIncludeOutput: boolean;
   loggingIncludeInput: boolean;

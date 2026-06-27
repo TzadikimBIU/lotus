@@ -1,6 +1,7 @@
 import { join } from "path";
 import { runProcess, withTempSourceFile } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
+import { withMinimumTimeout } from "../utils/timeout";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 type EbpfCMode = "compile" | "load";
@@ -59,7 +60,7 @@ export class EbpfRunner implements lotusRunner {
           objectPath,
         ],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
       });
 
@@ -91,7 +92,7 @@ export class EbpfRunner implements lotusRunner {
       executable: objdump,
       args: ["-h", objectPath],
       workingDirectory: context.workingDirectory,
-      timeoutMs: Math.max(context.timeoutMs, 30_000),
+      timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
       signal: context.signal,
     });
 
@@ -134,7 +135,7 @@ export class EbpfRunner implements lotusRunner {
       executable: settings.ebpfBpftoolExecutable.trim() || "bpftool",
       args: ["-d", "prog", "loadall", objectPath, pinPath],
       workingDirectory: context.workingDirectory,
-      timeoutMs: Math.max(context.timeoutMs, 30_000),
+      timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
       signal: context.signal,
     });
 
@@ -157,7 +158,7 @@ export class EbpfRunner implements lotusRunner {
           executable,
           args: [...extraArgs, tempFile],
           workingDirectory: context.workingDirectory,
-          timeoutMs: Math.max(context.timeoutMs, 30_000),
+          timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
           signal: context.signal,
           stdin: context.stdin,
           stdinSession: context.stdinSession,
@@ -172,7 +173,7 @@ export class EbpfRunner implements lotusRunner {
         executable,
         args: ["--dry-run", ...extraArgs, tempFile],
         workingDirectory: context.workingDirectory,
-        timeoutMs: Math.max(context.timeoutMs, 30_000),
+        timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
         signal: context.signal,
       });
 
@@ -183,7 +184,7 @@ export class EbpfRunner implements lotusRunner {
           executable,
           args: ["-d", ...extraArgs, tempFile],
           workingDirectory: context.workingDirectory,
-          timeoutMs: Math.max(context.timeoutMs, 30_000),
+          timeoutMs: withMinimumTimeout(context.timeoutMs, 30_000),
           signal: context.signal,
         });
       }

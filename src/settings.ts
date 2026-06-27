@@ -2,13 +2,16 @@ import { App, Modal, Notice, PluginSettingTab, Setting, normalizePath } from "ob
 import type lotusPlugin from "./main";
 import {
   getCompileContainerRuntimes,
+  getCompileMachineHashScopeOverride,
   getCompileProfileSummary,
   hasCompileContainerGroupSelection,
   isCompileContainerGroupAllowed,
   isCompileCustomLanguagesAllowed,
   isCompileExternalLanguagePacksAllowed,
   isCompileFeatureAllowed,
+  isCompileLoggingForced,
   isLightCompileMode,
+  type lotusCompileContainerRuntime,
 } from "./buildProfile";
 import { CUSTOM_LANGUAGE_PACKAGE_ID, getAvailableLanguagePackages, getDefaultLanguageIds, getDefaultLanguagePackIds, isLanguageEnabled, normalizeLanguageConfiguration } from "./languagePackages";
 import { sha256Hash } from "./utils/hash";
@@ -17,13 +20,95 @@ import type { lotusCustomLanguage, lotusPluginSettings } from "./types";
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
 type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode">;
+type lotusContainerEditorRuntime = lotusCompileContainerRuntime;
+type lotusRemoteUploadMode = "inline" | "scp";
+
+interface lotusContainerEditorElevation {
+  mode?: "default" | "root";
+  commandPrefix?: string;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorRemoteConfig {
+  target?: string;
+  sshTarget?: string;
+  workspace?: string;
+  remoteWorkspace?: string;
+  sshExecutable?: string;
+  sshArgs?: string;
+  sshAuthSock?: string;
+  authSock?: string;
+  sshAgentSocket?: string;
+  scpExecutable?: string;
+  scpArgs?: string;
+  uploadMode?: lotusRemoteUploadMode;
+  cleanupRemoteFile?: boolean;
+  mkdirCommand?: string;
+  cleanupCommand?: string;
+  healthCheck?: lotusContainerEditorHealthCheck;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorHealthCheck {
+  command?: string;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorWslConfig {
+  interactive?: boolean;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorCustomConfig {
+  executable?: string;
+  args?: string;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorOutputFilters {
+  stripAnsi?: boolean;
+  stdoutStart?: string;
+  stdoutEnd?: string;
+  stderrStart?: string;
+  stderrEnd?: string;
+  stripStdout?: string | string[];
+  stripStderr?: string | string[];
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorLanguageConfig {
+  command?: string;
+  extension?: string;
+  useDefault?: boolean;
+  [key: string]: unknown;
+}
+
+interface lotusContainerEditorConfig {
+  runtime?: lotusContainerEditorRuntime;
+  image?: string;
+  elevation?: lotusContainerEditorElevation;
+  wsl?: lotusContainerEditorWslConfig;
+  ssh?: lotusContainerEditorRemoteConfig;
+  remote?: lotusContainerEditorRemoteConfig;
+  qemu?: lotusContainerEditorRemoteConfig;
+  custom?: lotusContainerEditorCustomConfig;
+  outputFilters?: lotusContainerEditorOutputFilters;
+  languages?: Record<string, lotusContainerEditorLanguageConfig>;
+  [key: string]: unknown;
+}
 
 export class lotusSettingTab extends PluginSettingTab {
+  private readonly languagePackageOpenState = new Map<string, boolean>();
+
   constructor(private readonly lotusPlugin: lotusPlugin) {
     super(lotusPlugin.app, lotusPlugin);
   }
 
   display(): void {
+    this.renderSettings();
+  }
+
+  private renderSettings(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
@@ -85,7 +170,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Default timeout")
-      .setDesc("Maximum execution time in milliseconds before Lotus terminates the process.")
+      .setDesc("Maximum execution time in milliseconds before Lotus terminates the process. Set a note or block timeout to infinite to disable it for that run.")
       .addText((text) =>
         text.setPlaceholder("8000").setValue(String(this.lotusPlugin.settings.defaultTimeoutMs)).onChange(async (value) => {
           const parsed = Number.parseInt(value, 10);
@@ -98,9 +183,9 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Working directory")
-      .setDesc("Optional. Empty uses the current note folder when possible, otherwise the vault root.")
+      .setDesc("Empty uses the current note folder when possible. Use a single dot for the vault root, or a relative path from the vault root.")
       .addText((text) =>
-        text.setPlaceholder("Vault root").setValue(this.lotusPlugin.settings.workingDirectory).onChange(async (value) => {
+        text.setPlaceholder(".").setValue(this.lotusPlugin.settings.workingDirectory).onChange(async (value) => {
           this.lotusPlugin.settings.workingDirectory = value.trim() ? normalizePath(value.trim()) : "";
           await this.lotusPlugin.saveSettings();
         }),
@@ -217,10 +302,9 @@ export class lotusSettingTab extends PluginSettingTab {
           .addOption("rsa", "RSA-PSS")
           .addOption("ssh", "OpenSSH / SSH-agent")
           .setValue(this.lotusPlugin.settings.signingMode || "passphrase")
-          .onChange(async (value) => {
+          .onChange((value) => {
             this.lotusPlugin.settings.signingMode = value as "passphrase" | "rsa" | "ssh";
-            await this.lotusPlugin.saveSettings();
-            this.display();
+            void this.lotusPlugin.saveSettings().then(() => this.renderSettings());
           }),
       );
 
@@ -266,11 +350,16 @@ export class lotusSettingTab extends PluginSettingTab {
   }
 
   private renderLoggingSettings(containerEl: HTMLElement): void {
+    const loggingForced = isCompileLoggingForced();
+    const machineHashScopeOverride = getCompileMachineHashScopeOverride();
+
     new Setting(containerEl)
       .setName("Enable logging")
-      .setDesc("Write Lotus execution, note modification, reproducibility, and settings events to configured sinks.")
+      .setDesc(loggingForced
+        ? "Logging is forced on by this compile profile."
+        : "Write Lotus execution, note modification, reproducibility, and settings events to configured sinks.")
       .addToggle((toggle) =>
-        toggle.setValue(this.lotusPlugin.settings.loggingEnabled).onChange(async (value) => {
+        toggle.setDisabled(loggingForced).setValue(this.lotusPlugin.settings.loggingEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.loggingEnabled = value;
           await this.lotusPlugin.saveSettings();
         }),
@@ -278,7 +367,44 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Machine hash")
-      .setDesc(`Stable machine/install identifier emitted in logs: ${sha256Hash(this.lotusPlugin.settings.loggingMachineId).slice(0, 16)}`);
+      .setDesc(`Stable identifier emitted in logs: ${formatMachineHashPreview(this.lotusPlugin.settings, this.app.vault.getName())}`);
+
+    new Setting(containerEl)
+      .setName("Machine hash scope")
+      .setDesc(machineHashScopeOverride
+        ? "This compile profile fixes what contributes to the machine hash."
+        : "Choose what contributes to the logged machine hash without reading OS identity data.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("install", "Install id")
+          .addOption("vault", "Vault name")
+          .addOption("install-vault", "Install id and vault name")
+          .setDisabled(machineHashScopeOverride !== null)
+          .setValue(this.lotusPlugin.settings.loggingMachineHashScope)
+          .onChange(async (value) => {
+            this.lotusPlugin.settings.loggingMachineHashScope = value as lotusPluginSettings["loggingMachineHashScope"];
+            await this.lotusPlugin.saveSettings();
+            this.renderSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Machine hash seed")
+      .setDesc("Stored install identifier used when the machine hash scope includes the install id.")
+      .addText((text) =>
+        text.setValue(this.lotusPlugin.settings.loggingMachineId).onChange(async (value) => {
+          this.lotusPlugin.settings.loggingMachineId = value.trim();
+          await this.lotusPlugin.saveSettings();
+          this.renderSettings();
+        }),
+      )
+      .addButton((button) =>
+        button.setButtonText("Regenerate").onClick(async () => {
+          this.lotusPlugin.settings.loggingMachineId = createMachineIdSeed();
+          await this.lotusPlugin.saveSettings();
+          this.renderSettings();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("Global text log")
@@ -516,7 +642,10 @@ export class lotusSettingTab extends PluginSettingTab {
 
     for (const pack of getAvailableLanguagePackages(this.lotusPlugin.settings)) {
       const packEl = containerEl.createEl("details", { cls: "lotus-language-package" });
-      packEl.open = this.lotusPlugin.settings.enabledLanguagePacks.includes(pack.id);
+      packEl.open = this.languagePackageOpenState.get(pack.id) ?? this.lotusPlugin.settings.enabledLanguagePacks.includes(pack.id);
+      packEl.addEventListener("toggle", () => {
+        this.languagePackageOpenState.set(pack.id, packEl.open);
+      });
       packEl.createEl("summary", { text: pack.displayName });
       packEl.createEl("p", { text: pack.description, cls: "setting-item-description" });
 
@@ -530,7 +659,8 @@ export class lotusSettingTab extends PluginSettingTab {
               this.setEnabledValue(this.lotusPlugin.settings.enabledLanguages, language.id, value);
             }
             await this.lotusPlugin.saveSettings();
-            this.display();
+            this.languagePackageOpenState.set(pack.id, true);
+            this.renderSettings();
           }),
         );
 
@@ -556,10 +686,11 @@ export class lotusSettingTab extends PluginSettingTab {
         .setName("Reload external language packs")
         .setDesc("Load JSON language pack manifests from the plugin language-packs folder.")
         .addButton((button) =>
-          button.setButtonText("Reload").onClick(async () => {
-            await this.lotusPlugin.loadExternalLanguagePacks(true);
-            await this.lotusPlugin.saveSettings();
-            this.display();
+          button.setButtonText("Reload").onClick(() => {
+            void this.lotusPlugin.loadExternalLanguagePacks(true).then(async () => {
+              await this.lotusPlugin.saveSettings();
+              this.renderSettings();
+            });
           }),
         );
 
@@ -569,25 +700,9 @@ export class lotusSettingTab extends PluginSettingTab {
           accept: ".zip,.tar,.tgz,.tar.gz,application/zip,application/x-tar,application/gzip",
         },
       });
-      bundleInput.setCssStyles({ display: "none" });
-      bundleInput.addEventListener("change", async () => {
-        const file = bundleInput.files?.[0];
-        if (!file) {
-          return;
-        }
-
-        try {
-          const result = await this.lotusPlugin.importExternalLanguageBundle(file);
-          await this.lotusPlugin.saveSettings();
-          new Notice(`Imported language bundle ${result.packId} (${result.fileCount} files)`);
-          this.display();
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          new Notice(`Failed to import language bundle: ${message}`);
-          console.warn("Failed to import lotus language bundle", error);
-        } finally {
-          bundleInput.value = "";
-        }
+      bundleInput.addClass("lotus-hidden-file-input");
+      bundleInput.addEventListener("change", () => {
+        void this.importLanguageBundle(bundleInput);
       });
 
       new Setting(containerEl)
@@ -608,7 +723,7 @@ export class lotusSettingTab extends PluginSettingTab {
           toggle.setValue(this.lotusPlugin.settings.enabledLanguagePacks.includes(CUSTOM_LANGUAGE_PACKAGE_ID)).onChange(async (value) => {
             this.setEnabledValue(this.lotusPlugin.settings.enabledLanguagePacks, CUSTOM_LANGUAGE_PACKAGE_ID, value);
             await this.lotusPlugin.saveSettings();
-            this.display();
+            this.renderSettings();
           }),
         );
     }
@@ -621,9 +736,29 @@ export class lotusSettingTab extends PluginSettingTab {
           this.lotusPlugin.settings.enabledLanguagePacks = getDefaultLanguagePackIds();
           this.lotusPlugin.settings.enabledLanguages = getDefaultLanguageIds();
           await this.lotusPlugin.saveSettings();
-          this.display();
+          this.renderSettings();
         }),
       );
+  }
+
+  private async importLanguageBundle(bundleInput: HTMLInputElement): Promise<void> {
+    const file = bundleInput.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const result = await this.lotusPlugin.importExternalLanguageBundle(file);
+      await this.lotusPlugin.saveSettings();
+      new Notice(`Imported language bundle ${result.packId} (${result.fileCount} files)`);
+      this.renderSettings();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to import language bundle: ${message}`);
+      console.warn("Failed to import lotus language bundle", error);
+    } finally {
+      bundleInput.value = "";
+    }
   }
 
   private setEnabledValue(values: string[], id: string, enabled: boolean): void {
@@ -657,7 +792,7 @@ export class lotusSettingTab extends PluginSettingTab {
             transpileArgs: "{request}",
           });
           await this.lotusPlugin.saveSettings();
-          this.display();
+          this.renderSettings();
         }),
       );
   }
@@ -707,13 +842,14 @@ export class lotusSettingTab extends PluginSettingTab {
       new Setting(body)
         .setName("Delete language")
         .setDesc("Remove this custom language.")
-        .addButton((button) =>
-          button.setButtonText("Delete").setWarning().onClick(async () => {
+        .addButton((button) => {
+          button.buttonEl.addClass("mod-warning");
+          button.setButtonText("Delete").onClick(async () => {
             this.lotusPlugin.settings.customLanguages.splice(index, 1);
             await this.lotusPlugin.saveSettings();
-            this.display();
-          }),
-        );
+            this.renderSettings();
+          });
+        });
     });
   }
 
@@ -780,7 +916,7 @@ export class lotusSettingTab extends PluginSettingTab {
                 };
                 await adapter.write(configPath, JSON.stringify(defaultConfig, null, 2));
                 new Notice(`Execution group "${cleanName}" created.`);
-                this.display();
+                this.renderSettings();
               }).open();
             }),
           );
@@ -808,7 +944,7 @@ export class lotusSettingTab extends PluginSettingTab {
             button.setButtonText("Edit").onClick(() => {
               const pluginDir = this.getPluginConfigDir();
               new EditContainerGroupModal(this.lotusPlugin, group.name, pluginDir, () => {
-                this.display();
+                this.renderSettings();
               }).open();
             }),
           );
@@ -863,6 +999,37 @@ export function showExecutionDisabledNotice(): void {
   new Notice("Lotus local execution is disabled. Enable it in settings or confirm the execution warning first.");
 }
 
+function readContainerEditorConfig(value: unknown): lotusContainerEditorConfig {
+  return isRecord(value) ? value : {};
+}
+
+function isContainerEditorRuntime(value: unknown): value is lotusContainerEditorRuntime {
+  return typeof value === "string" && ["custom", "docker", "podman", "qemu", "ssh", "wsl"].includes(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function createMachineIdSeed(): string {
+  const cryptoApi = typeof crypto === "undefined" ? undefined : crypto as { randomUUID?: () => string };
+  return cryptoApi?.randomUUID?.() ?? `lotus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function formatMachineHashPreview(settings: lotusPluginSettings, vaultName: string): string {
+  switch (settings.loggingMachineHashScope) {
+    case "vault":
+      return sha256Hash(`vault:${vaultName}`).slice(0, 16);
+    case "install-vault":
+      return sha256Hash(JSON.stringify({
+        installId: settings.loggingMachineId,
+        vaultName,
+      })).slice(0, 16);
+    case "install":
+      return sha256Hash(settings.loggingMachineId).slice(0, 16);
+  }
+}
+
 class ContainerGroupNameModal extends Modal {
   private name = "";
 
@@ -892,9 +1059,10 @@ class ContainerGroupNameModal extends Modal {
         btn
           .setButtonText("Create")
           .setCta()
-          .onClick(async () => {
-            await this.onSubmit(this.name);
-            this.close();
+          .onClick(() => {
+            void this.onSubmit(this.name).then(() => {
+              this.close();
+            });
           }),
       );
   }
@@ -902,7 +1070,7 @@ class ContainerGroupNameModal extends Modal {
 
 class EditContainerGroupModal extends Modal {
   private activeTab: "general" | "languages" | "dockerfile" | "raw" = "general";
-  private configObj: any = {};
+  private configObj: lotusContainerEditorConfig = {};
   private rawJsonText = "";
   private dockerfileText: string | null = null;
   private newLanguageName = "";
@@ -929,7 +1097,8 @@ class EditContainerGroupModal extends Modal {
 
     try {
       const rawConfig = await adapter.read(configPath);
-      this.configObj = JSON.parse(rawConfig);
+      const parsedConfig: unknown = JSON.parse(rawConfig);
+      this.configObj = readContainerEditorConfig(parsedConfig);
       this.rawJsonText = rawConfig;
     } catch {
       new Notice("Could not read configuration file.");
@@ -960,8 +1129,8 @@ class EditContainerGroupModal extends Modal {
     const actions = contentEl.createDiv({ cls: "lotus-modal-actions" });
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     const saveBtn = actions.createEl("button", { text: "Save", cls: "mod-cta" });
-    saveBtn.addEventListener("click", async () => {
-      await this.saveAndClose();
+    saveBtn.addEventListener("click", () => {
+      void this.saveAndClose();
     });
 
     this.renderActiveTab();
@@ -990,7 +1159,8 @@ class EditContainerGroupModal extends Modal {
   async switchTab(tab: "general" | "languages" | "dockerfile" | "raw") {
     if (this.activeTab === "raw") {
       try {
-        this.configObj = JSON.parse(this.rawJsonText);
+        const parsedConfig: unknown = JSON.parse(this.rawJsonText);
+        this.configObj = readContainerEditorConfig(parsedConfig);
       } catch {
         new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before switching.");
         return;
@@ -1032,12 +1202,14 @@ class EditContainerGroupModal extends Modal {
         for (const runtime of allowedRuntimes) {
           dropdown.addOption(runtime, runtimeLabels[runtime]);
         }
-        const selectedRuntime = allowedRuntimes.includes(this.configObj.runtime) ? this.configObj.runtime : allowedRuntimes[0] ?? "docker";
+        const selectedRuntime = isContainerEditorRuntime(this.configObj.runtime) && allowedRuntimes.includes(this.configObj.runtime) ? this.configObj.runtime : allowedRuntimes[0] ?? "docker";
         this.configObj.runtime = selectedRuntime;
         dropdown
           .setValue(selectedRuntime)
           .onChange((value) => {
-            this.configObj.runtime = value;
+            if (isContainerEditorRuntime(value)) {
+              this.configObj.runtime = value;
+            }
             this.renderActiveTab();
           });
       });
@@ -1067,6 +1239,7 @@ class EditContainerGroupModal extends Modal {
     if (!this.configObj.elevation || typeof this.configObj.elevation !== "object") {
       this.configObj.elevation = { mode: "default" };
     }
+    const elevation = this.configObj.elevation;
 
     new Setting(containerEl)
       .setName("Elevation")
@@ -1079,15 +1252,15 @@ class EditContainerGroupModal extends Modal {
         dropdown
           .addOption("default", "Default")
           .addOption("root", "Root")
-          .setValue(this.configObj.elevation.mode || "default")
+          .setValue(elevation.mode || "default")
           .onChange((value) => {
-            this.configObj.elevation.mode = value;
+            elevation.mode = value === "root" ? "root" : "default";
             this.renderActiveTab();
           });
       });
 
     if (
-      this.configObj.elevation.mode === "root" &&
+      elevation.mode === "root" &&
       (this.configObj.runtime === "qemu" || this.configObj.runtime === "wsl" || this.configObj.runtime === "custom" || this.configObj.runtime === "ssh")
     ) {
       new Setting(containerEl)
@@ -1096,9 +1269,9 @@ class EditContainerGroupModal extends Modal {
         .addText((text) => {
           text
             .setPlaceholder("Sudo -n")
-            .setValue(this.configObj.elevation.commandPrefix || "")
+            .setValue(elevation.commandPrefix || "")
             .onChange((val) => {
-              this.configObj.elevation.commandPrefix = val.trim() || undefined;
+              elevation.commandPrefix = val.trim() || undefined;
             });
         });
     }
@@ -1107,14 +1280,15 @@ class EditContainerGroupModal extends Modal {
       if (!this.configObj.wsl) {
         this.configObj.wsl = {};
       }
+      const wsl = this.configObj.wsl;
       new Setting(containerEl)
         .setName("Use interactive shell")
         .setDesc("Use interactive login shell flags (-i -l) to ensure ~/.bashrc initialization works (e.g., for nvm).")
         .addToggle((toggle) => {
           toggle
-            .setValue(this.configObj.wsl.interactive ?? false)
+            .setValue(wsl.interactive ?? false)
             .onChange((val) => {
-              this.configObj.wsl.interactive = val;
+              wsl.interactive = val;
             });
         });
     }
@@ -1125,15 +1299,16 @@ class EditContainerGroupModal extends Modal {
           ? this.configObj.remote
           : { target: "", workspace: "/tmp/lotus" };
       }
+      const ssh = this.configObj.ssh;
 
       new Setting(containerEl)
         .setName("SSH target")
         .setDesc("Remote SSH target, for example user@vps or user@host.")
         .addText((text) => {
           text
-            .setValue(this.configObj.ssh.target || this.configObj.ssh.sshTarget || "")
+            .setValue(ssh.target || ssh.sshTarget || "")
             .onChange((val) => {
-              this.configObj.ssh.target = val.trim();
+              ssh.target = val.trim();
             });
         });
 
@@ -1142,13 +1317,13 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Remote folder where Lotus uploads snippets before running them.")
         .addText((text) => {
           text
-            .setValue(this.configObj.ssh.workspace || this.configObj.ssh.remoteWorkspace || "/tmp/lotus")
+            .setValue(ssh.workspace || ssh.remoteWorkspace || "/tmp/lotus")
             .onChange((val) => {
-              this.configObj.ssh.workspace = val.trim();
+              ssh.workspace = val.trim();
             });
         });
 
-      this.renderRemoteTransportSettings(containerEl, this.configObj.ssh, true);
+      this.renderRemoteTransportSettings(containerEl, ssh, true);
     }
 
     // Conditional QEMU Settings
@@ -1156,15 +1331,16 @@ class EditContainerGroupModal extends Modal {
       if (!this.configObj.qemu) {
         this.configObj.qemu = { sshTarget: "", remoteWorkspace: "" };
       }
+      const qemu = this.configObj.qemu;
 
       new Setting(containerEl)
         .setName("SSH target")
         .setDesc("SSH target address (e.g. User@hostname or localhost -p 2222).")
         .addText((text) => {
           text
-            .setValue(this.configObj.qemu.sshTarget || "")
+            .setValue(qemu.sshTarget || "")
             .onChange((val) => {
-              this.configObj.qemu.sshTarget = val.trim();
+              qemu.sshTarget = val.trim();
             });
         });
 
@@ -1173,9 +1349,9 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Remote folder path to copy code snippets and run commands (e.g., /home/user/workspace).")
         .addText((text) => {
           text
-            .setValue(this.configObj.qemu.remoteWorkspace || "")
+            .setValue(qemu.remoteWorkspace || "")
             .onChange((val) => {
-              this.configObj.qemu.remoteWorkspace = val.trim();
+              qemu.remoteWorkspace = val.trim();
             });
         });
 
@@ -1184,9 +1360,9 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Optional. Path to SSH client executable (defaults to SSH).")
         .addText((text) => {
           text
-            .setValue(this.configObj.qemu.sshExecutable || "")
+            .setValue(qemu.sshExecutable || "")
             .onChange((val) => {
-              this.configObj.qemu.sshExecutable = val.trim() || undefined;
+              qemu.sshExecutable = val.trim() || undefined;
             });
         });
 
@@ -1195,13 +1371,13 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Optional. Additional SSH cli flags.")
         .addText((text) => {
           text
-            .setValue(this.configObj.qemu.sshArgs || "")
+            .setValue(qemu.sshArgs || "")
             .onChange((val) => {
-              this.configObj.qemu.sshArgs = val.trim() || undefined;
+              qemu.sshArgs = val.trim() || undefined;
             });
         });
 
-      this.renderRemoteTransportSettings(containerEl, this.configObj.qemu, false);
+      this.renderRemoteTransportSettings(containerEl, qemu, false);
     }
 
     if (isCompileFeatureAllowed("output-filters")) {
@@ -1213,15 +1389,16 @@ class EditContainerGroupModal extends Modal {
       if (!this.configObj.custom) {
         this.configObj.custom = { executable: "" };
       }
+      const custom = this.configObj.custom;
 
       new Setting(containerEl)
         .setName("Custom executable")
         .setDesc("Path to custom runtime wrapper executable or script.")
         .addText((text) => {
           text
-            .setValue(this.configObj.custom.executable || "")
+            .setValue(custom.executable || "")
             .onChange((val) => {
-              this.configObj.custom.executable = val.trim();
+              custom.executable = val.trim();
             });
         });
 
@@ -1230,15 +1407,15 @@ class EditContainerGroupModal extends Modal {
         .setDesc("Optional. Command arguments. Use {request} for JSON config path.")
         .addText((text) => {
           text
-            .setValue(this.configObj.custom.args || "")
+            .setValue(custom.args || "")
             .onChange((val) => {
-              this.configObj.custom.args = val.trim() || undefined;
+              custom.args = val.trim() || undefined;
             });
         });
     }
   }
 
-  renderRemoteTransportSettings(containerEl: HTMLElement, remoteConfig: any, includeSshSettings: boolean) {
+  renderRemoteTransportSettings(containerEl: HTMLElement, remoteConfig: lotusContainerEditorRemoteConfig, includeSshSettings: boolean) {
     if (includeSshSettings) {
       new Setting(containerEl)
         .setName("SSH executable")
@@ -1390,27 +1567,29 @@ class EditContainerGroupModal extends Modal {
     this.addOutputFilterList(containerEl, filters, "Strip stderr regexes", "One regex per line to remove from stderr.", "stripStderr");
   }
 
-  addOutputFilterText(containerEl: HTMLElement, filters: any, name: string, description: string, key: string) {
+  addOutputFilterText(containerEl: HTMLElement, filters: lotusContainerEditorOutputFilters, name: string, description: string, key: keyof lotusContainerEditorOutputFilters) {
     new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addText((text) => {
+        const value = filters[key];
         text
-          .setValue(filters[key] || "")
+          .setValue(typeof value === "string" ? value : "")
           .onChange((val) => {
             filters[key] = val.trim() || undefined;
           });
       });
   }
 
-  addOutputFilterList(containerEl: HTMLElement, filters: any, name: string, description: string, key: string) {
+  addOutputFilterList(containerEl: HTMLElement, filters: lotusContainerEditorOutputFilters, name: string, description: string, key: keyof lotusContainerEditorOutputFilters) {
     new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addTextArea((text) => {
         text.inputEl.rows = 3;
         text.inputEl.setCssStyles({ fontFamily: "monospace" });
-        text.setValue(Array.isArray(filters[key]) ? filters[key].join("\n") : filters[key] || "");
+        const value = filters[key];
+        text.setValue(Array.isArray(value) ? value.join("\n") : typeof value === "string" ? value : "");
         text.onChange((val) => {
           const values = val.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
           filters[key] = values.length ? values : undefined;
@@ -1424,9 +1603,10 @@ class EditContainerGroupModal extends Modal {
     if (!this.configObj.languages) {
       this.configObj.languages = {};
     }
+    const configuredLanguages = this.configObj.languages;
 
     const langsListEl = containerEl.createDiv({ cls: "lotus-languages-list" });
-    const languages = Object.entries(this.configObj.languages as Record<string, { command?: string; extension?: string; useDefault?: boolean }>);
+    const languages = Object.entries(configuredLanguages);
 
     if (languages.length === 0) {
       langsListEl.createEl("p", { text: "No languages configured for this group.", cls: "setting-item-description" });
@@ -1435,7 +1615,7 @@ class EditContainerGroupModal extends Modal {
         const card = langsListEl.createDiv({ cls: "lotus-language-card" });
         card.createEl("strong", { text: langName, attr: { style: "display: block; margin-bottom: 0.5rem; font-size: 1.1em;" } });
 
-        const isDefault = (langConfig as any).useDefault === true;
+        const isDefault = langConfig.useDefault === true;
 
         new Setting(card)
           .setName("Use default configuration")
@@ -1445,11 +1625,11 @@ class EditContainerGroupModal extends Modal {
               .setValue(isDefault)
               .onChange((val) => {
                 if (val) {
-                  (langConfig as any).useDefault = true;
+                  langConfig.useDefault = true;
                   delete langConfig.command;
                   delete langConfig.extension;
                 } else {
-                  delete (langConfig as any).useDefault;
+                  delete langConfig.useDefault;
                   const defaults = this.lotusPlugin.containerRunner.getDefaultLanguageConfig(langName, this.lotusPlugin.settings);
                   langConfig.command = defaults?.command || "";
                   langConfig.extension = defaults?.extension || "";
@@ -1488,11 +1668,11 @@ class EditContainerGroupModal extends Modal {
 
         new Setting(card)
           .addButton((btn) => {
+            btn.buttonEl.addClass("mod-warning");
             btn
               .setButtonText("Remove language")
-              .setWarning()
               .onClick(() => {
-                delete this.configObj.languages[langName];
+                delete configuredLanguages[langName];
                 this.renderActiveTab();
               });
           });
@@ -1515,11 +1695,11 @@ class EditContainerGroupModal extends Modal {
             new Notice("Please enter a language name.");
             return;
           }
-          if (this.configObj.languages[this.newLanguageName]) {
+          if (configuredLanguages[this.newLanguageName]) {
             new Notice("Language already configured.");
             return;
           }
-          this.configObj.languages[this.newLanguageName] = {
+          configuredLanguages[this.newLanguageName] = {
             command: `${this.newLanguageName} {file}`,
             extension: `.${this.newLanguageName}`,
           };
@@ -1602,7 +1782,8 @@ class EditContainerGroupModal extends Modal {
     // If the active tab is raw JSON, parse it first to ensure we capture edits
     if (this.activeTab === "raw") {
       try {
-        this.configObj = JSON.parse(this.rawJsonText);
+        const parsedConfig: unknown = JSON.parse(this.rawJsonText);
+        this.configObj = readContainerEditorConfig(parsedConfig);
       } catch {
         new Notice("Invalid JSON syntax in raw JSON tab. Please fix it before saving.");
         return;

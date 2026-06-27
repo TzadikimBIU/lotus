@@ -4,7 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { lotusNormalizedLanguage, lotusSourceReference } from "./types";
 import { splitCommandLine } from "./utils/command";
-import { lotusClearTimeout, lotusSetTimeout } from "./utils/timers";
+import { formatTimeoutMs, type lotusTimeoutMs } from "./utils/timeout";
+import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "./utils/timers";
 
 interface SourceRange {
   start: number;
@@ -60,7 +61,7 @@ export interface lotusExternalSourceExtractor {
   executable: string;
   args: string[];
   workingDirectory: string;
-  timeoutMs: number;
+  timeoutMs: lotusTimeoutMs;
 }
 
 interface ExternalExtractorResult {
@@ -271,10 +272,12 @@ async function runExternalExtractor(
     });
     let stdout = "";
     let stderr = "";
-    const timeout = lotusSetTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`Custom source extractor timed out after ${extractor.timeoutMs} ms.`));
-    }, extractor.timeoutMs);
+    const timeout: LotusTimeoutHandle | null = extractor.timeoutMs === null
+      ? null
+      : lotusSetTimeout(() => {
+        child.kill("SIGTERM");
+        reject(new Error(`Custom source extractor timed out after ${formatTimeoutMs(extractor.timeoutMs)}.`));
+      }, extractor.timeoutMs);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -285,11 +288,15 @@ async function runExternalExtractor(
       stderr += chunk;
     });
     child.on("error", (error) => {
-      lotusClearTimeout(timeout);
+      if (timeout !== null) {
+        lotusClearTimeout(timeout);
+      }
       reject(formatSpawnError(error, extractor.executable, "Custom source extractor"));
     });
     child.on("close", (code) => {
-      lotusClearTimeout(timeout);
+      if (timeout !== null) {
+        lotusClearTimeout(timeout);
+      }
       if (code !== 0) {
         reject(new Error((stderr || stdout || `Custom source extractor exited with code ${code}.`).trim()));
         return;
@@ -720,7 +727,7 @@ async function runPythonAst<T>(source: string, mode: "module" | "usage", host: l
       try {
         resolve(JSON.parse(stdout) as T);
       } catch (error) {
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
 

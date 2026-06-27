@@ -1,5 +1,6 @@
 import { join } from "path";
 import { runProcess, withTempSourceFile } from "../execution/processRunner";
+import { withMinimumTimeout } from "../utils/timeout";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 export class NativeCompiledRunner implements lotusRunner {
@@ -23,8 +24,8 @@ export class NativeCompiledRunner implements lotusRunner {
     const executable = block.language === "c" ? settings.cExecutable.trim() : settings.cppExecutable.trim();
     const fileExtension = block.language === "c" ? ".c" : ".cpp";
     const runnerName = block.language === "c" ? "C (GCC)" : "C++ (G++)";
-    const compileTimeoutMs = Math.max(context.timeoutMs, process.platform === "win32" ? 60_000 : 30_000);
-    const runTimeoutMs = Math.max(context.timeoutMs, 30_000);
+    const compileTimeoutMs = withMinimumTimeout(context.timeoutMs, process.platform === "win32" ? 60_000 : 30_000);
+    const runTimeoutMs = withMinimumTimeout(context.timeoutMs, 30_000);
 
     return withTempSourceFile(fileExtension, block.content, async ({ tempDir, tempFile }) => {
       const binaryPath = join(tempDir, process.platform === "win32" ? "snippet.exe" : "snippet.out");

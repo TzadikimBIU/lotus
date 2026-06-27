@@ -74,6 +74,7 @@ export const DEFAULT_SETTINGS: lotusPluginSettings = {
   loggingViewerJsonlPath: ".lotus/logs/events.jsonl",
   loggingRedactionRules: "",
   loggingNotePathMode: "hash",
+  loggingMachineHashScope: "install",
   loggingIncludeCode: false,
   loggingIncludeOutput: false,
   loggingIncludeInput: false,

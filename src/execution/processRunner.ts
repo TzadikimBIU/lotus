@@ -3,7 +3,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawn } from "child_process";
 import type { lotusRunResult, lotusStdinSession } from "../types";
-import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
+import { formatTimeoutMs, type lotusTimeoutMs } from "../utils/timeout";
+import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
 
 const FORCE_KILL_GRACE_MS = 1_500;
 
@@ -13,7 +14,7 @@ export interface lotusProcessSpec {
   executable: string;
   args: string[];
   workingDirectory: string;
-  timeoutMs: number;
+  timeoutMs: lotusTimeoutMs;
   signal: AbortSignal;
   stdinPrefix?: string | Buffer;
   stdin?: string;
@@ -104,8 +105,8 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   let cancelled = false;
   let child: ReturnType<typeof spawn> | null = null;
   let childExited = false;
-  let timeoutHandle: any = null;
-  let killHandle: any = null;
+  let timeoutHandle: LotusTimeoutHandle | null = null;
+  let killHandle: LotusTimeoutHandle | null = null;
   let abortHandler: (() => void) | null = null;
   let detachStdinSession: (() => void) | undefined;
 
@@ -116,7 +117,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
           return;
         }
         child.kill(signal);
-        if (!killHandle) {
+        if (killHandle === null) {
           killHandle = lotusSetTimeout(() => {
             if (child && !childExited) {
               child.kill("SIGKILL");
@@ -192,18 +193,20 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
         spec.signal.addEventListener("abort", abort, { once: true });
       }
 
-      timeoutHandle = lotusSetTimeout(() => {
-        timedOut = true;
-        terminateChild("SIGTERM");
-      }, spec.timeoutMs);
+      if (spec.timeoutMs !== null) {
+        timeoutHandle = lotusSetTimeout(() => {
+          timedOut = true;
+          terminateChild("SIGTERM");
+        }, spec.timeoutMs);
+      }
 
-      child.stdout?.on("data", (chunk) => {
+      child.stdout?.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
         stdout += text;
         spec.onStdout?.(text);
       });
 
-      child.stderr?.on("data", (chunk) => {
+      child.stderr?.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
         stderr += text;
         spec.onStderr?.(text);
@@ -215,7 +218,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
 
       child.on("close", (code, signal) => {
         childExited = true;
-        if (killHandle) {
+        if (killHandle !== null) {
           lotusClearTimeout(killHandle);
           killHandle = null;
         }
@@ -235,10 +238,10 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
       detachStdinSession();
       detachStdinSession = undefined;
     }
-    if (timeoutHandle) {
+    if (timeoutHandle !== null) {
       lotusClearTimeout(timeoutHandle);
     }
-    if (killHandle) {
+    if (killHandle !== null) {
       lotusClearTimeout(killHandle);
     }
   }
@@ -247,7 +250,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   const durationMs = finishedAt.getTime() - startedAt.getTime();
   if (!stderr.trim()) {
     if (timedOut) {
-      stderr = `Process timed out after ${spec.timeoutMs} ms.`;
+      stderr = `Process timed out after ${formatTimeoutMs(spec.timeoutMs)}.`;
     } else if (cancelled) {
       stderr = "Process was cancelled.";
     } else if (exitCode == null && exitSignal) {

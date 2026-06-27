@@ -1,13 +1,14 @@
 import { Notice, type App, type TFile } from "obsidian";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
-import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
+import { formatTimeoutMs } from "../utils/timeout";
+import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
 
 const OBSIDIAN_CONTEXT_WARNING = "No but seriously, you are risking your life";
 
 type AsyncUserFunction = (...args: unknown[]) => Promise<unknown>;
 type AsyncFunctionConstructor = new (...args: string[]) => AsyncUserFunction;
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as AsyncFunctionConstructor;
+const AsyncFunction = readAsyncFunctionConstructor();
 
 interface ObsidianContextRunnerHost {
   app: App;
@@ -41,7 +42,7 @@ export class ObsidianContextRunner implements lotusRunner {
     let exitCode: number | null = 0;
     let timedOut = false;
     let cancelled = false;
-    let timeoutHandle: any = null;
+    let timeoutHandle: LotusTimeoutHandle | null = null;
     let abortHandler: (() => void) | null = null;
 
     try {
@@ -70,12 +71,15 @@ export class ObsidianContextRunner implements lotusRunner {
         context.stdin ?? "",
       ));
 
-      const timeout = new Promise<never>((_resolve, reject) => {
-        timeoutHandle = lotusSetTimeout(() => {
-          timedOut = true;
-          reject(new Error(`Execution timed out after ${context.timeoutMs} ms. Obsidian-context JavaScript cannot be force-killed once started.`));
-        }, context.timeoutMs);
-      });
+      const timeoutMs = context.timeoutMs;
+      const timeout = timeoutMs === null
+        ? new Promise<never>(() => undefined)
+        : new Promise<never>((_resolve, reject) => {
+          timeoutHandle = lotusSetTimeout(() => {
+            timedOut = true;
+            reject(new Error(`Execution timed out after ${formatTimeoutMs(timeoutMs)}. Obsidian-context JavaScript cannot be force-killed once started.`));
+          }, timeoutMs);
+        });
 
       const abort = new Promise<never>((_resolve, reject) => {
         abortHandler = () => {
@@ -97,7 +101,7 @@ export class ObsidianContextRunner implements lotusRunner {
       exitCode = -1;
       stderr.push(formatError(error));
     } finally {
-      if (timeoutHandle) {
+      if (timeoutHandle !== null) {
         lotusClearTimeout(timeoutHandle);
       }
       if (abortHandler) {
@@ -135,7 +139,7 @@ function createNoteHelper(app: App, file: TFile): ObsidianContextNoteHelper {
       let updatedValue: unknown;
       await app.vault.process(file, (text) =>
         replaceMarkedContent(text, startMarker, endMarker, (current) => {
-          const parsed = current.trim() ? JSON.parse(current) : {};
+          const parsed: unknown = current.trim() ? JSON.parse(current) : {};
           const next = updater(parsed);
           updatedValue = next === undefined ? parsed : next;
           return JSON.stringify(updatedValue, null, 2);
@@ -152,6 +156,18 @@ function createNoteHelper(app: App, file: TFile): ObsidianContextNoteHelper {
         (frontmatter as Record<string, unknown>)[key] = value;
       }),
   };
+}
+
+function readAsyncFunctionConstructor(): AsyncFunctionConstructor {
+  const prototype: unknown = Object.getPrototypeOf(async function () {});
+  if (prototype === null || typeof prototype !== "object") {
+    throw new Error("Unable to access AsyncFunction constructor.");
+  }
+  const constructor = (prototype as { constructor?: unknown }).constructor;
+  if (typeof constructor !== "function") {
+    throw new Error("Unable to access AsyncFunction constructor.");
+  }
+  return constructor as AsyncFunctionConstructor;
 }
 
 function replaceMarkedContent(

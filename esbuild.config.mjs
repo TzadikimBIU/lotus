@@ -19,6 +19,8 @@ const lightLanguagePacks = readListOption("language-packs", "LOTUS_LIGHT_LANGUAG
 const lightFeatures = readListOption("features", "LOTUS_LIGHT_FEATURES");
 const lightContainerGroups = readListOption("container-groups", "LOTUS_LIGHT_CONTAINER_GROUPS");
 const lightContainerRuntimes = readListOption("container-runtimes", "LOTUS_LIGHT_CONTAINER_RUNTIMES");
+const forceLogging = readBooleanOption("force-logging", "LOTUS_FORCE_LOGGING");
+const machineHashScope = normalizeMachineHashScope(readOption("machine-hash-scope") ?? process.env.LOTUS_MACHINE_HASH_SCOPE ?? "");
 const pluginName = "lotus";
 const explicitDeployDirs = [
   ...(process.env.LOTUS_PLUGIN_DIRS ?? "")
@@ -57,6 +59,8 @@ await esbuild.build({
     __LOTUS_LIGHT_FEATURES__: JSON.stringify(lightFeatures),
     __LOTUS_LIGHT_CONTAINER_GROUPS__: JSON.stringify(lightContainerGroups),
     __LOTUS_LIGHT_CONTAINER_RUNTIMES__: JSON.stringify(lightContainerRuntimes),
+    __LOTUS_FORCE_LOGGING__: JSON.stringify(forceLogging),
+    __LOTUS_MACHINE_HASH_SCOPE__: JSON.stringify(machineHashScope),
   },
   logLevel: "info",
 });
@@ -158,8 +162,21 @@ function readListOption(name, envName) {
   return normalizeList(readOption(name) ?? process.env[envName] ?? "");
 }
 
+function readBooleanOption(name, envName) {
+  const raw = readOption(name) ?? process.env[envName];
+  if (raw != null) {
+    return ["1", "true", "yes", "on", "force", "forced"].includes(String(raw).trim().toLowerCase());
+  }
+  return readFlag(name);
+}
+
 function normalizeCompileMode(value) {
   return String(value ?? "").trim().toLowerCase() === "light" ? "light" : "strict";
+}
+
+function normalizeMachineHashScope(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["install", "vault", "install-vault"].includes(normalized) ? normalized : "";
 }
 
 function normalizeList(value) {
@@ -172,14 +189,32 @@ function normalizeList(value) {
 
 function formatCompileProfile() {
   if (compileMode === "strict") {
-    return "STRICT";
+    return `STRICT${formatAuditProfileSummary()}`;
   }
-  return [
+  const pieces = [
     "LIGHT",
     `languages=${lightLanguages.length ? lightLanguages.join(",") : "all"}`,
     `language-packs=${lightLanguagePacks.length ? lightLanguagePacks.join(",") : "all"}`,
     `features=${lightFeatures.length ? lightFeatures.join(",") : "all"}`,
     `container-groups=${lightContainerGroups.length ? lightContainerGroups.join(",") : "all"}`,
     `container-runtimes=${lightContainerRuntimes.length ? lightContainerRuntimes.join(",") : "all"}`,
-  ].join("; ");
+  ];
+  if (forceLogging) {
+    pieces.push("force-logging=true");
+  }
+  if (machineHashScope) {
+    pieces.push(`machine-hash-scope=${machineHashScope}`);
+  }
+  return pieces.join("; ");
+}
+
+function formatAuditProfileSummary() {
+  const pieces = [];
+  if (forceLogging) {
+    pieces.push("force-logging=true");
+  }
+  if (machineHashScope) {
+    pieces.push(`machine-hash-scope=${machineHashScope}`);
+  }
+  return pieces.length ? `; ${pieces.join("; ")}` : "";
 }

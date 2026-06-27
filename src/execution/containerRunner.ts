@@ -9,9 +9,11 @@ import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult } from "../types";
 import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
+import { type lotusTimeoutMs } from "../utils/timeout";
 
 type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 type lotusContainerElevationMode = "default" | "root";
+const ANSI_ESCAPE_SEQUENCE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
 
 interface lotusContainerLanguageConfig {
   command?: string;
@@ -133,7 +135,7 @@ interface lotusCustomRuntimeRequest {
   filePath?: string;
   command?: string;
   stdin?: string;
-  timeoutMs: number;
+  timeoutMs: lotusTimeoutMs;
   config: {
     executable?: string;
     custom?: lotusCustomRuntimeConfig;
@@ -162,7 +164,7 @@ export class lotusContainerRunner {
   ) { }
 
   getContainerGroupName(file: TFile): string | null {
-    const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const frontmatter = readFrontmatterRecord(this.app, file);
     const value = frontmatter?.["lotus-execution"] ?? frontmatter?.["lotus-container"];
     return typeof value === "string" && value.trim() ? value.trim() : null;
   }
@@ -677,7 +679,7 @@ export class lotusContainerRunner {
     runtimeId: "ssh" | "qemu",
     runnerName: string,
     remote: lotusRemoteConfig,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<void> {
     const command = (remote.mkdirCommand || "mkdir -p {workspace}").replaceAll("{workspace}", shellQuote(remote.workspace));
@@ -693,7 +695,7 @@ export class lotusContainerRunner {
     runtimeId: "ssh" | "qemu",
     runnerName: string,
     remote: lotusRemoteConfig,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<void> {
     if (!remote.healthCheck) {
@@ -720,7 +722,7 @@ export class lotusContainerRunner {
     remote: lotusRemoteConfig,
     localFile: string,
     remoteFile: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<void> {
     const result = await runProcess({
@@ -749,7 +751,7 @@ export class lotusContainerRunner {
     runnerName: string,
     remote: lotusRemoteConfig,
     remoteFile: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<lotusRunResult> {
     const command = (remote.cleanupCommand || "rm -f {file}").replaceAll("{file}", shellQuote(remoteFile));
@@ -763,7 +765,7 @@ export class lotusContainerRunner {
     runnerName: string,
     remote: lotusRemoteConfig,
     command: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
     stdinPrefix: string | Buffer | undefined,
     stdin: string | undefined,
@@ -828,7 +830,7 @@ export class lotusContainerRunner {
       return image;
     }
 
-    const result = await this.buildImage(groupName, groupPath, config, Math.max(context.timeoutMs, settings.defaultTimeoutMs, 120_000), context.signal);
+    const result = await this.buildImage(groupName, groupPath, config, Math.max(finiteTimeoutMs(context.timeoutMs, settings.defaultTimeoutMs), 120_000), context.signal);
     if (!result.success) {
       throw new Error(result.stderr || result.stdout || `${runtimeLabel(config.runtime)} build failed for ${groupName}.`);
     }
@@ -1206,7 +1208,7 @@ export class lotusContainerRunner {
     strip: RegExp[] | undefined,
     stripAnsi: boolean | undefined,
   ): string {
-    let output = stripAnsi ? value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "") : value;
+    let output = stripAnsi ? value.replace(ANSI_ESCAPE_SEQUENCE_PATTERN, "") : value;
     if (start) {
       start.lastIndex = 0;
       const match = start.exec(output);
@@ -1231,7 +1233,7 @@ export class lotusContainerRunner {
   private async runHealthCheck(
     healthCheck: lotusCommandExpectation | undefined,
     workingDirectory: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
     runnerId: string,
     runnerName: string,
@@ -1256,7 +1258,7 @@ export class lotusContainerRunner {
   private async runOptionalCommand(
     command: string | undefined,
     workingDirectory: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
     runnerId: string,
     runnerName: string,
@@ -1273,7 +1275,7 @@ export class lotusContainerRunner {
   private async runCommandLine(
     command: string,
     workingDirectory: string,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
     runnerId: string,
     runnerName: string,
@@ -1293,7 +1295,7 @@ export class lotusContainerRunner {
     });
   }
 
-  private async ensureManagedQemu(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  private async ensureManagedQemu(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: lotusTimeoutMs, signal: AbortSignal): Promise<void> {
     const manager = qemu.manager;
     if (!manager?.enabled) {
       return;
@@ -1372,7 +1374,7 @@ export class lotusContainerRunner {
     groupName: string,
     groupPath: string,
     qemu: lotusQemuConfig,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<void> {
     const manager = qemu.manager;
@@ -1385,7 +1387,7 @@ export class lotusContainerRunner {
       return;
     }
 
-    const timeout = Math.min(manager.readinessTimeoutMs ?? 60_000, Math.max(timeoutMs, 1));
+    const timeout = Math.min(manager.readinessTimeoutMs ?? 60_000, Math.max(finiteTimeoutMs(timeoutMs, 60_000), 1));
     const interval = manager.readinessIntervalMs ?? 1_000;
     const startedAt = Date.now();
     let lastError = "";
@@ -1408,7 +1410,7 @@ export class lotusContainerRunner {
     throw new Error(`QEMU ${groupName} did not become ready within ${timeout} ms${lastError ? `: ${lastError}` : "."}`);
   }
 
-  private async stopManagedQemuIfNeeded(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  private async stopManagedQemuIfNeeded(groupName: string, groupPath: string, qemu: lotusQemuConfig, timeoutMs: lotusTimeoutMs, signal: AbortSignal): Promise<void> {
     const manager = qemu.manager;
     if (!manager?.enabled || manager.persist !== false) {
       return;
@@ -1424,7 +1426,7 @@ export class lotusContainerRunner {
       await this.runOptionalCommand(
         manager.shutdownCommand,
         groupPath,
-        Math.min(manager.shutdownTimeoutMs ?? timeoutMs, timeoutMs),
+        Math.min(manager.shutdownTimeoutMs ?? finiteTimeoutMs(timeoutMs, 10_000), finiteTimeoutMs(timeoutMs, 10_000)),
         signal,
         `container:${groupName}:qemu:shutdown`,
         `QEMU ${groupName} shutdown`,
@@ -1489,7 +1491,7 @@ export class lotusContainerRunner {
     groupPath: string,
     config: lotusContainerConfig,
     request: lotusCustomRuntimeRequest,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     signal: AbortSignal,
   ): Promise<lotusRunResult> {
     const custom = this.requireCustomConfig(config);
@@ -1524,7 +1526,7 @@ export class lotusContainerRunner {
     groupName: string,
     groupPath: string,
     config: lotusContainerConfig,
-    timeoutMs: number,
+    timeoutMs: lotusTimeoutMs,
     extra: Partial<lotusCustomRuntimeRequest> = {},
   ): lotusCustomRuntimeRequest {
     return {
@@ -1870,6 +1872,18 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function finiteTimeoutMs(timeoutMs: lotusTimeoutMs, fallbackMs: number): number {
+  return timeoutMs ?? fallbackMs;
+}
+
+function readFrontmatterRecord(app: App, file: TFile): Record<string, unknown> | undefined {
+  const frontmatter: unknown = app.metadataCache.getFileCache(file)?.frontmatter;
+  return isRecord(frontmatter) ? frontmatter : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function optionalUploadMode(value: unknown): lotusRemoteUploadMode | undefined {
   if (value == null || value === "") {

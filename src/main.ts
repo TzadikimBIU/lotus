@@ -19,7 +19,7 @@ import JSZip from "jszip";
 import { dirname, isAbsolute, join } from "path";
 import { homedir } from "os";
 import { lotusContainerRunner } from "./execution/containerRunner";
-import { isCompileContainerGroupAllowed, isCompileFeatureAllowed } from "./buildProfile";
+import { getCompileMachineHashScopeOverride, isCompileContainerGroupAllowed, isCompileFeatureAllowed, isCompileLoggingForced } from "./buildProfile";
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
 import { addLlvmDecorations } from "./llvmHighlight";
 import { lotusLogger, type lotusLogInput, type lotusLogTarget } from "./logging";
@@ -40,13 +40,14 @@ import { ProofRunner } from "./runners/proof";
 import { lotusRunnerRegistry } from "./runners/registry";
 import { DEFAULT_SETTINGS } from "./defaultSettings";
 import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
-import { resolveReferencedSource } from "./sourceExtract";
+import { resolveReferencedSource, type lotusExternalSourceExtractor } from "./sourceExtract";
 import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
+import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
 import type { lotusCodeBlock, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
 
@@ -64,6 +65,7 @@ const HASH_IGNORE_BLOCK_ATTRIBUTES_KEY = "lotus-hash-ignore-block-attributes";
 const REPRODUCIBILITY_SNAPSHOT_VERSION = 1;
 const SUPPORTED_PDF_EXPORT_MODES = new Set<lotusPluginSettings["pdfExportMode"]>(["both", "code", "output"]);
 const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<lotusPluginSettings["loggingNotePathMode"]>(["plain", "hash", "omit"]);
+const SUPPORTED_LOGGING_MACHINE_HASH_SCOPES = new Set<lotusPluginSettings["loggingMachineHashScope"]>(["install", "vault", "install-vault"]);
 type lotusOutputFileMode = "replace" | "append";
 type lotusOutputFileFormat = "text" | "json";
 type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
@@ -211,9 +213,10 @@ class ExecutionConsentModal extends Modal {
     const enableButton = actions.createEl("button", { text: "Enable and run", cls: "mod-cta" });
 
     cancelButton.addEventListener("click", () => this.close());
-    enableButton.addEventListener("click", async () => {
-      await this.onConfirm();
-      this.close();
+    enableButton.addEventListener("click", () => {
+      void this.onConfirm().then(() => {
+        this.close();
+      });
     });
   }
 }
@@ -259,9 +262,10 @@ class ReproducibilityPolicyModal extends Modal {
     const cancelButton = actions.createEl("button", { text: "Cancel" });
     const applyButton = actions.createEl("button", { text: "Apply policy", cls: "mod-cta" });
     cancelButton.addEventListener("click", () => this.close());
-    applyButton.addEventListener("click", async () => {
-      await this.onChoose(this.selectedPreset);
-      this.close();
+    applyButton.addEventListener("click", () => {
+      void this.onChoose(this.selectedPreset).then(() => {
+        this.close();
+      });
     });
 
     this.renderPresetDescription();
@@ -910,7 +914,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const loadedData = await this.loadData();
+    const loadedData = readStoredSettings(await this.loadData());
     const hadMachineId = typeof loadedData?.loggingMachineId === "string" && loadedData.loggingMachineId.trim().length > 0;
     this.settings = {
       ...DEFAULT_SETTINGS,
@@ -1092,13 +1096,12 @@ export default class lotusPlugin extends Plugin {
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
       onRun: () => void this.runOrCancelBlockById(block.id),
       onEdit: () => void this.editBlockById(block.id),
-      onCopy: async () => {
-        try {
-          await navigator.clipboard.writeText(block.content);
+      onCopy: () => {
+        void navigator.clipboard.writeText(block.content).then(() => {
           new Notice("Code copied");
-        } catch {
+        }).catch(() => {
           new Notice("Clipboard write failed.");
-        }
+        });
       },
       onRemove: () => void this.removeSnippetById(block.id),
       onToggleInput: () => {
@@ -2164,7 +2167,7 @@ export default class lotusPlugin extends Plugin {
         : await runner!.run(resolvedBlock.block, runContext, this.settings);
 
       if (result.timedOut) {
-        result.stderr = result.stderr || `Execution timed out after ${this.settings.defaultTimeoutMs} ms.`;
+        result.stderr = result.stderr || `Execution timed out after ${formatTimeoutMs(executionContext.timeoutMs)}.`;
       } else if (result.cancelled) {
         result.stderr = result.stderr || "Execution cancelled.";
       } else if (!result.success && !result.stderr.trim()) {
@@ -2621,7 +2624,7 @@ export default class lotusPlugin extends Plugin {
     if (!SUPPORTED_PDF_EXPORT_MODES.has(this.settings.pdfExportMode)) {
       this.settings.pdfExportMode = DEFAULT_SETTINGS.pdfExportMode;
     }
-    this.settings.loggingEnabled = Boolean(this.settings.loggingEnabled);
+    this.settings.loggingEnabled = isCompileLoggingForced() || Boolean(this.settings.loggingEnabled);
     this.settings.loggingGlobalTextEnabled = this.settings.loggingGlobalTextEnabled == null
       ? DEFAULT_SETTINGS.loggingGlobalTextEnabled
       : Boolean(this.settings.loggingGlobalTextEnabled);
@@ -2649,6 +2652,12 @@ export default class lotusPlugin extends Plugin {
       : DEFAULT_SETTINGS.loggingRedactionRules;
     if (!SUPPORTED_LOGGING_NOTE_PATH_MODES.has(this.settings.loggingNotePathMode)) {
       this.settings.loggingNotePathMode = DEFAULT_SETTINGS.loggingNotePathMode;
+    }
+    const compileMachineHashScope = getCompileMachineHashScopeOverride();
+    if (compileMachineHashScope) {
+      this.settings.loggingMachineHashScope = compileMachineHashScope;
+    } else if (!SUPPORTED_LOGGING_MACHINE_HASH_SCOPES.has(this.settings.loggingMachineHashScope)) {
+      this.settings.loggingMachineHashScope = DEFAULT_SETTINGS.loggingMachineHashScope;
     }
     this.settings.loggingMaxEventBytes = normalizePositiveInteger(this.settings.loggingMaxEventBytes, DEFAULT_SETTINGS.loggingMaxEventBytes);
     this.settings.defaultContainerGroup = isCompileFeatureAllowed("container-groups")
@@ -2745,14 +2754,22 @@ export default class lotusPlugin extends Plugin {
   }
 
   private createLivePreviewExtension() {
-    const plugin = this;
+    const addEditorView = (view: EditorView) => this.editorViews.add(view);
+    const deleteEditorView = (view: EditorView) => this.editorViews.delete(view);
+    const getCurrentEditorFilePath = () => this.getCurrentEditorFilePath();
+    const getSettings = () => this.settings;
+    const hasOutput = (blockId: string) => this.outputs.has(blockId);
+    const isRunning = (blockId: string) => this.running.has(blockId);
+    const shouldRenderStdinPanel = (block: lotusCodeBlock) => this.shouldRenderStdinPanel(block);
+    const createToolbarWidget = (block: lotusCodeBlock) => new lotusToolbarWidget(this, block);
+    const createOutputWidget = (block: lotusCodeBlock) => new lotusOutputWidget(this, block);
 
     return ViewPlugin.fromClass(
       class {
         decorations;
 
         constructor(private readonly view: EditorView) {
-          plugin.editorViews.add(view);
+          addEditorView(view);
           this.decorations = this.buildDecorations();
         }
 
@@ -2763,17 +2780,17 @@ export default class lotusPlugin extends Plugin {
         }
 
         destroy(): void {
-          plugin.editorViews.delete(this.view);
+          deleteEditorView(this.view);
         }
 
         private buildDecorations() {
-          const filePath = plugin.getCurrentEditorFilePath();
+          const filePath = getCurrentEditorFilePath();
           if (!filePath) {
             return Decoration.none;
           }
 
           const source = this.view.state.doc.toString();
-          const blocks = parseMarkdownCodeBlocks(filePath, source, plugin.settings);
+          const blocks = parseMarkdownCodeBlocks(filePath, source, getSettings());
           const builder = new RangeSetBuilder<Decoration>();
 
           for (const block of blocks) {
@@ -2782,18 +2799,18 @@ export default class lotusPlugin extends Plugin {
               startLine.from,
               startLine.from,
               Decoration.widget({
-                widget: new lotusToolbarWidget(plugin, block),
+                widget: createToolbarWidget(block),
                 side: -1,
               }),
             );
 
-            if (plugin.outputs.has(block.id) || plugin.running.has(block.id) || plugin.shouldRenderStdinPanel(block)) {
+            if (hasOutput(block.id) || isRunning(block.id) || shouldRenderStdinPanel(block)) {
               const endLine = this.view.state.doc.line(block.endLine + 1);
               builder.add(
                 endLine.to,
                 endLine.to,
                 Decoration.widget({
-                  widget: new lotusOutputWidget(plugin, block),
+                  widget: createOutputWidget(block),
                   side: 1,
                 }),
               );
@@ -2837,12 +2854,12 @@ export default class lotusPlugin extends Plugin {
     const pieces = [
       `execution=${context.containerGroup ?? "native"} (${context.source.container})`,
       `cwd=${context.workingDirectory} (${context.source.workingDirectory})`,
-      `timeout=${context.timeoutMs}ms (${context.source.timeout})`,
+      `timeout=${formatTimeoutLabel(context.timeoutMs)} (${context.source.timeout})`,
     ];
     return `Execution context: ${pieces.join(", ")}.`;
   }
 
-  private getCustomLanguageExtractor(block: lotusCodeBlock, file: TFile): { mode: "command" | "transpile-c"; language: string; executable: string; args: string[]; workingDirectory: string; timeoutMs: number } | undefined {
+  private getCustomLanguageExtractor(block: lotusCodeBlock, file: TFile): lotusExternalSourceExtractor | undefined {
     const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
     if (!language) {
       return undefined;
@@ -3446,7 +3463,7 @@ function isBundleManifestCandidate(entry: lotusArchiveEntry): boolean {
 
 function readBundleManifest(entry: lotusArchiveEntry): Record<string, unknown> | null {
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(entry.data));
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(entry.data));
     return isRecord(parsed) && typeof parsed.id === "string" && Array.isArray(parsed.languages) ? parsed : null;
   } catch {
     return null;
@@ -3522,6 +3539,10 @@ function parseExternalLanguage(value: unknown, filePath: string): lotusExternalL
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readStoredSettings(value: unknown): Partial<lotusPluginSettings> {
+  return isRecord(value) ? value : {};
 }
 
 function readString(value: unknown): string {
@@ -3734,7 +3755,7 @@ function splitFrontmatter(source: string): { yaml: string; body: string } | null
 
 function parseFrontmatterRecord(yaml: string): Record<string, unknown> {
   try {
-    const parsed = parseYaml(yaml);
+    const parsed: unknown = parseYaml(yaml);
     return isRecord(parsed) ? parsed : {};
   } catch {
     return {};

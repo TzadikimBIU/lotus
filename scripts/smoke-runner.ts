@@ -26,6 +26,7 @@ import { CustomLanguageRunner } from "../src/runners/custom";
 import { lotusRunnerRegistry } from "../src/runners/registry";
 import { lotusContainerRunner } from "../src/execution/containerRunner";
 import { runProcess } from "../src/execution/processRunner";
+import { parseTimeoutMs } from "../src/utils/timeout";
 import type { lotusCodeBlock, lotusPluginSettings, lotusResolvedExecutionContext, lotusRunResult, lotusSourcePreview } from "../src/types";
 
 type SmokeProfile = "minimal" | "systems" | "proofs" | "ebpf" | "full";
@@ -59,6 +60,9 @@ const artifactDir = resolve(requiredArg(argv, "artifacts"));
 const profile = readProfile(argv.profile ?? "full");
 const requirePdf = argv["require-pdf"] === "true";
 const requireAll = argv["require-all"] === "true";
+const configDir = readConfigDir(argv["config-dir"] ?? process.env.LOOM_OBSIDIAN_CONFIG_DIR);
+const configRootDir = configDir.split("/")[0] ?? configDir;
+const pluginDir = `${configDir}/plugins/lotus`;
 const settings = await loadSettings(vaultDir, profile);
 const registry = new lotusRunnerRegistry([
   new PythonRunner(),
@@ -81,7 +85,7 @@ const containerRunner = new lotusContainerRunner({
   metadataCache: {
     getFileCache: () => ({ frontmatter: {} }),
   },
-} as never, ".obsidian/plugins/lotus");
+} as never, pluginDir);
 const notes = await readNotes(vaultDir);
 const results: SmokeBlockResult[] = [];
 
@@ -448,10 +452,10 @@ async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Pr
 }
 
 async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
-  const dataPath = join(vaultPath, ".obsidian", "plugins", "lotus", "data.json");
-  let saved = {};
+  const dataPath = join(vaultPath, pluginDir, "data.json");
+  let saved: Partial<lotusPluginSettings> = {};
   try {
-    saved = JSON.parse(await fsReadFile(dataPath, "utf8"));
+    saved = readSettingsJson(await fsReadFile(dataPath, "utf8"));
   } catch {
     saved = {};
   }
@@ -466,6 +470,11 @@ async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
   applySmokeProfile(merged, profile);
   normalizeLanguageConfiguration(merged);
   return merged;
+}
+
+function readSettingsJson(raw: string): Partial<lotusPluginSettings> {
+  const parsed: unknown = JSON.parse(raw);
+  return isRecord(parsed) ? parsed : {};
 }
 
 function applySmokeExecutableOverrides(settings: lotusPluginSettings): void {
@@ -530,7 +539,7 @@ function smokeProfileConfig(selectedProfile: SmokeProfile): Pick<lotusPluginSett
 function resolveCliExecutionContext(note: NoteFile, block: lotusCodeBlock, pluginSettings: lotusPluginSettings): lotusResolvedExecutionContext {
   const noteContainer = note.frontmatter["lotus-execution"] ?? note.frontmatter["lotus-container"];
   const noteCwd = note.frontmatter["lotus-cwd"] ?? note.frontmatter["lotus-working-directory"];
-  const noteTimeout = parsePositiveInteger(note.frontmatter["lotus-timeout"]);
+  const noteTimeout = note.frontmatter["lotus-timeout"] ? parseTimeoutMs(note.frontmatter["lotus-timeout"]) : undefined;
   const blockCwd = block.executionContext.workingDirectory;
   const blockTimeout = block.executionContext.timeoutMs;
   const blockContainer = block.executionContext.disableContainer ? undefined : block.executionContext.containerGroup;
@@ -541,7 +550,7 @@ function resolveCliExecutionContext(note: NoteFile, block: lotusCodeBlock, plugi
 
   const rawWorkingDirectory = blockCwd ?? noteCwd ?? pluginSettings.workingDirectory;
   const workingDirectory = rawWorkingDirectory?.trim()
-    ? resolveVaultLocalPath(rawWorkingDirectory.trim(), dirname(note.path))
+    ? resolveVaultLocalPath(rawWorkingDirectory.trim())
     : dirname(join(vaultDir, note.path));
 
   return {
@@ -551,7 +560,7 @@ function resolveCliExecutionContext(note: NoteFile, block: lotusCodeBlock, plugi
     source: {
       container: block.executionContext.disableContainer || blockContainer ? "block" : noteContainer ? "note" : pluginSettings.defaultContainerGroup.trim() ? "global" : "none",
       workingDirectory: blockCwd ? "block" : noteCwd ? "note" : pluginSettings.workingDirectory.trim() ? "global" : "default",
-      timeout: blockTimeout ? "block" : noteTimeout ? "note" : "global",
+      timeout: blockTimeout !== undefined ? "block" : noteTimeout !== undefined ? "note" : "global",
     },
   };
 }
@@ -573,7 +582,7 @@ async function listMarkdownFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
-    if (entry.name === ".obsidian" || entry.name === ".lotus") {
+    if (entry.name === configRootDir || entry.name === ".lotus") {
       continue;
     }
     const absolutePath = join(dir, entry.name);
@@ -675,11 +684,15 @@ function decodeEscapedAttribute(value: string): string {
   return value.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
 }
 
-function resolveVaultLocalPath(value: string, noteDir: string): string {
+function resolveVaultLocalPath(value: string): string {
+  const normalized = normalizeVaultPath(value.trim());
+  if (normalized === ".") {
+    return vaultDir;
+  }
   if (isAbsolute(value)) {
     return value;
   }
-  return join(vaultDir, normalizeVaultPath(noteDir === "." ? value : `${noteDir}/${value}`));
+  return join(vaultDir, normalized);
 }
 
 function toVaultPath(absolutePath: string): string {
@@ -688,6 +701,16 @@ function toVaultPath(absolutePath: string): string {
 
 function normalizeVaultPath(value: string): string {
   return value.split(sep).join("/");
+}
+
+function readConfigDir(value: string | undefined): string {
+  const fallback = [".", "obsidian"].join("");
+  const normalized = normalizeVaultPath((value ?? fallback).trim()).replace(/^\/+|\/+$/g, "");
+  return normalized || fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function ascendVaultPath(pathValue: string, levels: number): string {
@@ -720,14 +743,6 @@ function splitAttributeList(value: string | undefined): string[] {
 
 function isMissingExecutable(result: lotusRunResult): boolean {
   return /Executable not found:/i.test(result.stderr);
-}
-
-function parsePositiveInteger(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value.trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function isDisabledValue(value: string | undefined): boolean {

@@ -1,5 +1,6 @@
 import { shortHash } from "./utils/hash";
 import { findEnabledCommandLanguage, getEnabledCommandLanguages, getEnabledLanguageAliasMap } from "./languagePackages";
+import { parseTimeoutMs } from "./utils/timeout";
 import type { lotusCodeBlock, lotusNormalizedLanguage, lotusPluginSettings, lotusSourceReference } from "./types";
 
 const OUTPUT_START = /^<!--\s*lotus:output:start\s+id=([a-f0-9]+)\s*-->$/i;
@@ -125,7 +126,7 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
 }
 
 function executionContextHasValues(context: ReturnType<typeof parseExecutionContext>): boolean {
-  return Boolean(context.containerGroup || context.disableContainer || context.workingDirectory || context.timeoutMs);
+  return Boolean(context.containerGroup || context.disableContainer || context.workingDirectory || context.timeoutMs !== undefined);
 }
 
 function parseAliasList(value: string): string[] {
@@ -170,7 +171,7 @@ function parseExecutionContext(attrs: Record<string, string>) {
   const container = attrs["lotus-execution"] ?? attrs.execution ?? attrs["lotus-container"] ?? attrs.container;
   const timeout = attrs["lotus-timeout"] ?? attrs.timeout;
   const workingDirectory = attrs["lotus-cwd"] ?? attrs.cwd ?? attrs["working-directory"];
-  const timeoutMs = timeout ? parsePositiveInteger(timeout) : undefined;
+  const timeoutMs = timeout ? parseTimeoutMs(timeout) : undefined;
 
   return {
     containerGroup: container && !isDisabledValue(container) ? container : undefined,
@@ -178,11 +179,6 @@ function parseExecutionContext(attrs: Record<string, string>) {
     workingDirectory,
     timeoutMs,
   };
-}
-
-function parsePositiveInteger(value: string): number | undefined {
-  const parsed = Number.parseInt(value.trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function isDisabledValue(value: string): boolean {

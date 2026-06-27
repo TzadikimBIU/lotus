@@ -1,12 +1,13 @@
-import { dirname } from "path";
+import { dirname, isAbsolute, join } from "path";
 import { normalizePath, type App, type TFile } from "obsidian";
 import type { lotusCodeBlock, lotusExecutionContextOverride, lotusPluginSettings, lotusResolvedExecutionContext } from "./types";
+import { readFrontmatterTimeoutMs } from "./utils/timeout";
 
 interface NoteExecutionContext {
   containerGroup?: string;
   disableContainer?: boolean;
   workingDirectory?: string;
-  timeoutMs?: number;
+  timeoutMs?: lotusResolvedExecutionContext["timeoutMs"];
 }
 
 export function resolveExecutionContext(
@@ -16,9 +17,10 @@ export function resolveExecutionContext(
   settings: lotusPluginSettings,
 ): lotusResolvedExecutionContext {
   const note = readNoteExecutionContext(app, file);
-  const defaultWorkingDirectory = resolveDefaultWorkingDirectory(file, settings);
-  const noteWorkingDirectory = normalizeWorkingDirectory(note.workingDirectory);
-  const blockWorkingDirectory = normalizeWorkingDirectory(block.executionContext.workingDirectory);
+  const vaultBasePath = readVaultBasePath(file);
+  const defaultWorkingDirectory = resolveDefaultWorkingDirectory(file, settings, vaultBasePath);
+  const noteWorkingDirectory = resolveWorkingDirectoryOverride(note.workingDirectory, vaultBasePath);
+  const blockWorkingDirectory = resolveWorkingDirectoryOverride(block.executionContext.workingDirectory, vaultBasePath);
   const noteTimeout = note.timeoutMs;
   const blockTimeout = block.executionContext.timeoutMs;
 
@@ -28,8 +30,8 @@ export function resolveExecutionContext(
     timeoutMs: blockTimeout ?? noteTimeout ?? settings.defaultTimeoutMs,
     source: {
       container: resolveContainerSource(settings.defaultContainerGroup, note, block.executionContext),
-      workingDirectory: blockWorkingDirectory ? "block" : noteWorkingDirectory ? "note" : settings.workingDirectory.trim() ? "global" : "default",
-      timeout: blockTimeout ? "block" : noteTimeout ? "note" : "global",
+      workingDirectory: blockWorkingDirectory !== undefined ? "block" : noteWorkingDirectory !== undefined ? "note" : settings.workingDirectory.trim() ? "global" : "default",
+      timeout: blockTimeout !== undefined ? "block" : noteTimeout !== undefined ? "note" : "global",
     },
   };
 }
@@ -72,7 +74,8 @@ function resolveContainerSource(
 }
 
 function readNoteExecutionContext(app: App, file: TFile): NoteExecutionContext {
-  const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
+  const rawFrontmatter: unknown = app.metadataCache.getFileCache(file)?.frontmatter;
+  const frontmatter = isRecord(rawFrontmatter) ? rawFrontmatter : null;
   if (!frontmatter) {
     return {};
   }
@@ -85,32 +88,41 @@ function readNoteExecutionContext(app: App, file: TFile): NoteExecutionContext {
     containerGroup: typeof container === "string" && !isDisabledValue(container) ? container.trim() : undefined,
     disableContainer: typeof container === "string" ? isDisabledValue(container) : undefined,
     workingDirectory: typeof workingDirectory === "string" ? workingDirectory : undefined,
-    timeoutMs: typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0
-      ? Math.trunc(timeout)
-      : typeof timeout === "string"
-        ? parsePositiveInteger(timeout)
-        : undefined,
+    timeoutMs: readFrontmatterTimeoutMs(timeout),
   };
 }
 
-function resolveDefaultWorkingDirectory(file: TFile, settings: lotusPluginSettings): string {
+function resolveDefaultWorkingDirectory(file: TFile, settings: lotusPluginSettings, vaultBasePath: string): string {
   if (settings.workingDirectory.trim()) {
-    return normalizePath(settings.workingDirectory.trim());
+    return resolveConfiguredWorkingDirectory(settings.workingDirectory, vaultBasePath);
   }
 
-  const adapterBasePath = (file.vault.adapter as { basePath?: string }).basePath ?? "";
   const fileFolder = dirname(file.path);
-  const resolved = fileFolder === "." ? adapterBasePath : `${adapterBasePath}/${fileFolder}`;
+  const resolved = fileFolder === "." ? vaultBasePath : join(vaultBasePath, fileFolder);
   return resolved || process.cwd();
 }
 
-function normalizeWorkingDirectory(value: string | undefined): string | undefined {
-  return value?.trim() ? normalizePath(value.trim()) : undefined;
+function resolveWorkingDirectoryOverride(value: string | undefined, vaultBasePath: string): string | undefined {
+  return value?.trim() ? resolveConfiguredWorkingDirectory(value, vaultBasePath) : undefined;
 }
 
-function parsePositiveInteger(value: string): number | undefined {
-  const parsed = Number.parseInt(value.trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+function resolveConfiguredWorkingDirectory(value: string, vaultBasePath: string): string {
+  const configured = normalizePath(value.trim());
+  if (configured === ".") {
+    return vaultBasePath || process.cwd();
+  }
+  if (isAbsolute(configured)) {
+    return configured;
+  }
+  return vaultBasePath ? join(vaultBasePath, configured) : configured;
+}
+
+function readVaultBasePath(file: TFile): string {
+  return (file.vault.adapter as { basePath?: string }).basePath ?? "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isDisabledValue(value: string): boolean {

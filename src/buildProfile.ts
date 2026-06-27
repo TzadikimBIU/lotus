@@ -4,10 +4,13 @@ declare const __LOTUS_LIGHT_LANGUAGE_PACKS__: string[];
 declare const __LOTUS_LIGHT_FEATURES__: string[];
 declare const __LOTUS_LIGHT_CONTAINER_GROUPS__: string[];
 declare const __LOTUS_LIGHT_CONTAINER_RUNTIMES__: string[];
+declare const __LOTUS_FORCE_LOGGING__: boolean;
+declare const __LOTUS_MACHINE_HASH_SCOPE__: string;
 
 export type lotusCompileMode = "strict" | "light";
 export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters" | "signing";
 export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
+export type lotusCompileMachineHashScope = "install" | "vault" | "install-vault";
 
 const ALL_CONTAINER_RUNTIMES: lotusCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom"];
 
@@ -19,6 +22,8 @@ const LIGHT_LANGUAGE_PACKS = normalizeList(typeof __LOTUS_LIGHT_LANGUAGE_PACKS__
 const LIGHT_FEATURES = normalizeList(typeof __LOTUS_LIGHT_FEATURES__ === "undefined" ? [] : __LOTUS_LIGHT_FEATURES__);
 const LIGHT_CONTAINER_GROUPS = normalizeList(typeof __LOTUS_LIGHT_CONTAINER_GROUPS__ === "undefined" ? [] : __LOTUS_LIGHT_CONTAINER_GROUPS__);
 const LIGHT_CONTAINER_RUNTIMES = normalizeList(typeof __LOTUS_LIGHT_CONTAINER_RUNTIMES__ === "undefined" ? [] : __LOTUS_LIGHT_CONTAINER_RUNTIMES__);
+const FORCE_LOGGING = typeof __LOTUS_FORCE_LOGGING__ === "undefined" ? false : __LOTUS_FORCE_LOGGING__;
+const MACHINE_HASH_SCOPE = readMachineHashScope(typeof __LOTUS_MACHINE_HASH_SCOPE__ === "undefined" ? "" : __LOTUS_MACHINE_HASH_SCOPE__);
 
 export function getCompileMode(): lotusCompileMode {
   return COMPILE_MODE;
@@ -92,9 +97,17 @@ export function isCompileContainerRuntimeAllowed(runtime: string): boolean {
   return getCompileContainerRuntimes().includes(runtime as lotusCompileContainerRuntime);
 }
 
+export function isCompileLoggingForced(): boolean {
+  return FORCE_LOGGING;
+}
+
+export function getCompileMachineHashScopeOverride(): lotusCompileMachineHashScope | null {
+  return MACHINE_HASH_SCOPE;
+}
+
 export function getCompileProfileSummary(): string {
   if (!isLightCompileMode()) {
-    return "STRICT";
+    return `STRICT${formatAuditProfileSummary()}`;
   }
 
   const pieces = ["LIGHT"];
@@ -103,6 +116,12 @@ export function getCompileProfileSummary(): string {
   pieces.push(`features=${LIGHT_FEATURES.length ? LIGHT_FEATURES.join(",") : "all"}`);
   pieces.push(`container-groups=${LIGHT_CONTAINER_GROUPS.length ? LIGHT_CONTAINER_GROUPS.join(",") : "all"}`);
   pieces.push(`container-runtimes=${LIGHT_CONTAINER_RUNTIMES.length ? LIGHT_CONTAINER_RUNTIMES.join(",") : "all"}`);
+  if (FORCE_LOGGING) {
+    pieces.push("force-logging=true");
+  }
+  if (MACHINE_HASH_SCOPE) {
+    pieces.push(`machine-hash-scope=${MACHINE_HASH_SCOPE}`);
+  }
   return pieces.join("; ");
 }
 
@@ -117,4 +136,20 @@ function normalizeList(values: unknown): string[] {
 
 function normalizeToken(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function readMachineHashScope(value: string): lotusCompileMachineHashScope | null {
+  const normalized = normalizeToken(value);
+  return normalized === "install" || normalized === "vault" || normalized === "install-vault" ? normalized : null;
+}
+
+function formatAuditProfileSummary(): string {
+  const pieces: string[] = [];
+  if (FORCE_LOGGING) {
+    pieces.push("force-logging=true");
+  }
+  if (MACHINE_HASH_SCOPE) {
+    pieces.push(`machine-hash-scope=${MACHINE_HASH_SCOPE}`);
+  }
+  return pieces.length ? `; ${pieces.join("; ")}` : "";
 }
