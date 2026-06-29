@@ -1,5 +1,5 @@
 import { setIcon } from "obsidian";
-import type { lotusSourcePreviewStage, lotusStoredOutput } from "../types";
+import type { lotusDisplayOutput, lotusSourcePreviewStage, lotusStoredOutput } from "../types";
 
 interface lotusOutputPanelOptions {
   defaultVisibleLines: number;
@@ -56,10 +56,21 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
   if (output.result.stderr.trim()) {
     createStream(body, "Stderr", output.result.stderr, visibleLines);
   }
+  if (output.result.displays?.length) {
+    for (const display of output.result.displays) {
+      createDisplay(body, display, visibleLines);
+    }
+  }
   if (output.sourcePreview?.content.trim()) {
     createSourcePreview(body, output.sourcePreview);
   }
-  if (!output.result.stdout.trim() && !output.result.warning?.trim() && !output.result.stderr.trim() && !output.sourcePreview?.content.trim()) {
+  if (
+    !output.result.stdout.trim()
+    && !output.result.warning?.trim()
+    && !output.result.stderr.trim()
+    && !output.result.displays?.length
+    && !output.sourcePreview?.content.trim()
+  ) {
     const empty = body.createDiv({ cls: "lotus-output-empty" });
     empty.setText("No output");
   }
@@ -74,6 +85,356 @@ function createStream(container: HTMLElement, label: string, content: string, vi
     pre.addClass("is-scroll-limited");
     pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
   }
+}
+
+function createDisplay(container: HTMLElement, display: lotusDisplayOutput, visibleLines: number): void {
+  const section = container.createDiv({ cls: "lotus-output-display" });
+  const selected = selectDisplayMime(display);
+  section.createDiv({
+    cls: "lotus-output-stream-label",
+    text: formatDisplayLabel(display, selected?.mime),
+  });
+
+  if (!selected) {
+    section.createEl("pre", {
+      cls: "lotus-output-pre",
+      text: `Unsupported display data: ${Object.keys(display.data).join(", ") || "(empty)"}`,
+    });
+    return;
+  }
+
+  if (selected.mime.startsWith("image/") && typeof selected.value === "string") {
+    createImageDisplay(section, display, selected.mime, selected.value);
+    return;
+  }
+
+  if (selected.mime === "application/json" || selected.mime.endsWith("+json")) {
+    createTextDisplay(section, JSON.stringify(selected.value, null, 2), visibleLines);
+    return;
+  }
+
+  createTextDisplay(section, typeof selected.value === "string" ? selected.value : JSON.stringify(selected.value, null, 2), visibleLines);
+}
+
+function createImageDisplay(container: HTMLElement, display: lotusDisplayOutput, mime: string, value: string): void {
+  const metadata = readDisplayMetadata(display, mime);
+  const frame = container.createDiv({ cls: "lotus-output-image-frame" });
+  const image = readImageDisplay(display, metadata, mime, value);
+  const width = readPositiveNumber(metadata.width);
+  const height = readPositiveNumber(metadata.height);
+  const viewer = createImageViewer(frame, image, {
+    width,
+    height,
+    initialZoom: 1,
+    maxZoom: 3,
+    fullscreen: false,
+    onFullscreen: () => openImageFullscreen(display, image, width, height, viewer.getZoom()),
+  });
+  viewer.update();
+}
+
+interface LotusImageDisplayData {
+  src: string;
+  alt: string;
+  title: string;
+}
+
+interface LotusImageViewer {
+  getZoom(): number;
+  update(): void;
+}
+
+interface LotusImageViewerOptions {
+  width?: number;
+  height?: number;
+  initialZoom: number;
+  maxZoom: number;
+  fullscreen: boolean;
+  onFullscreen?: () => void;
+}
+
+function readImageDisplay(display: lotusDisplayOutput, metadata: Record<string, unknown>, mime: string, value: string): LotusImageDisplayData {
+  return {
+    src: imageDataUrl(mime, value),
+    alt: readString(metadata.alt) ?? display.title ?? readString(display.data["text/plain"]) ?? "Lotus display output",
+    title: display.title?.trim() || "Lotus display",
+  };
+}
+
+function createImageViewer(container: HTMLElement, image: LotusImageDisplayData, options: LotusImageViewerOptions): LotusImageViewer {
+  const frame = container;
+  if (options.fullscreen) {
+    frame.addClass("is-fullscreen");
+  }
+  const toolbar = frame.createDiv({ cls: "lotus-output-image-toolbar" });
+  const viewport = frame.createDiv({ cls: "lotus-output-image-viewport" });
+  const img = viewport.createEl("img", { cls: "lotus-output-image" });
+  img.draggable = false;
+  img.src = image.src;
+  img.alt = image.alt;
+  let baseWidth = options.width ?? 900;
+  const baseHeight = options.height;
+  let zoom = Math.max(0.5, Math.min(options.maxZoom, options.initialZoom));
+
+  const zoomOut = createImageToolbarButton(toolbar, "Zoom out", "zoom-out", () => setZoom(zoom - 0.15));
+  const slider = toolbar.createEl("input", {
+    cls: "lotus-output-image-zoom-slider",
+    attr: {
+      type: "range",
+      min: "50",
+      max: String(Math.round(options.maxZoom * 100)),
+      step: "10",
+      value: String(Math.round(zoom * 100)),
+      "aria-label": "Image zoom",
+    },
+  });
+  const zoomIn = createImageToolbarButton(toolbar, "Zoom in", "zoom-in", () => setZoom(zoom + 0.15));
+  const reset = createImageToolbarButton(toolbar, "Reset zoom", "rotate-ccw", () => setZoom(1));
+  if (options.onFullscreen) {
+    createImageToolbarButton(toolbar, "Open fullscreen", "maximize-2", options.onFullscreen);
+  }
+  const valueEl = toolbar.createSpan({ cls: "lotus-output-image-zoom-value", text: `${Math.round(zoom * 100)}%` });
+
+  slider.addEventListener("input", () => {
+    setZoom(Number.parseInt(slider.value, 10) / 100);
+  });
+
+  installImagePan(viewport);
+
+  img.addEventListener("load", () => {
+    if (!options.width && img.naturalWidth > 0) {
+      baseWidth = Math.max(360, Math.min(img.naturalWidth, baseWidth));
+      updateImageZoom();
+    }
+  });
+
+  zoomOut.disabled = false;
+  zoomIn.disabled = false;
+  reset.disabled = false;
+  updateImageZoom();
+
+  function setZoom(value: number): void {
+    const center = readViewportCenter(viewport);
+    zoom = Math.max(0.5, Math.min(options.maxZoom, value));
+    updateImageZoom(center);
+  }
+
+  function updateImageZoom(center = readViewportCenter(viewport)): void {
+    const scaledWidth = Math.round(baseWidth * zoom);
+    img.style.width = `${scaledWidth}px`;
+    img.style.maxWidth = "none";
+    if (baseHeight) {
+      img.style.height = `${Math.round(baseHeight * zoom)}px`;
+    } else {
+      img.style.height = "auto";
+    }
+    const percent = Math.round(zoom * 100);
+    slider.value = String(percent);
+    valueEl.setText(`${percent}%`);
+    requestAnimationFrame(() => restoreViewportCenter(viewport, center));
+  }
+
+  return {
+    getZoom: () => zoom,
+    update: updateImageZoom,
+  };
+}
+
+function openImageFullscreen(
+  display: lotusDisplayOutput,
+  image: LotusImageDisplayData,
+  width: number | undefined,
+  height: number | undefined,
+  initialZoom: number,
+): void {
+  const overlay = activeDocument.createElement("div");
+  overlay.className = "lotus-output-image-fullscreen";
+  overlay.tabIndex = -1;
+
+  const shell = overlay.createDiv({ cls: "lotus-output-image-fullscreen-shell" });
+  const header = shell.createDiv({ cls: "lotus-output-image-fullscreen-header" });
+  header.createDiv({ cls: "lotus-output-image-fullscreen-title", text: display.title?.trim() || image.title });
+  const close = createImageToolbarButton(header, "Close fullscreen", "x", () => closeFullscreen());
+  close.addClass("lotus-output-image-fullscreen-close");
+
+  const frame = shell.createDiv({ cls: "lotus-output-image-frame" });
+  createImageViewer(frame, image, {
+    width,
+    height,
+    initialZoom,
+    maxZoom: 6,
+    fullscreen: true,
+  }).update();
+
+  const closeFullscreen = () => {
+    overlay.remove();
+  };
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      closeFullscreen();
+    }
+  });
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeFullscreen();
+    }
+  });
+
+  activeDocument.body.appendChild(overlay);
+  overlay.focus();
+}
+
+function installImagePan(viewport: HTMLElement): void {
+  let drag: {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null = null;
+
+  viewport.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !canPanViewport(viewport)) {
+      return;
+    }
+    drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.addClass("is-panning");
+    viewport.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  viewport.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const endDrag = (event: PointerEvent) => {
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    drag = null;
+    viewport.removeClass("is-panning");
+    try {
+      viewport.releasePointerCapture(event.pointerId);
+    } catch {
+      // The browser may have already released capture.
+    }
+  };
+
+  viewport.addEventListener("pointerup", endDrag);
+  viewport.addEventListener("pointercancel", endDrag);
+  viewport.addEventListener("lostpointercapture", () => {
+    drag = null;
+    viewport.removeClass("is-panning");
+  });
+}
+
+function canPanViewport(viewport: HTMLElement): boolean {
+  return viewport.scrollWidth > viewport.clientWidth || viewport.scrollHeight > viewport.clientHeight;
+}
+
+function readViewportCenter(viewport: HTMLElement): { x: number; y: number } {
+  const width = Math.max(1, viewport.scrollWidth);
+  const height = Math.max(1, viewport.scrollHeight);
+  return {
+    x: (viewport.scrollLeft + viewport.clientWidth / 2) / width,
+    y: (viewport.scrollTop + viewport.clientHeight / 2) / height,
+  };
+}
+
+function restoreViewportCenter(viewport: HTMLElement, center: { x: number; y: number }): void {
+  viewport.scrollLeft = Math.max(0, center.x * viewport.scrollWidth - viewport.clientWidth / 2);
+  viewport.scrollTop = Math.max(0, center.y * viewport.scrollHeight - viewport.clientHeight / 2);
+}
+
+function createImageToolbarButton(container: HTMLElement, label: string, iconName: string, onClick: () => void): HTMLButtonElement {
+  const button = container.createEl("button", { cls: "lotus-output-image-zoom-button" });
+  button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  setIcon(button, iconName);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function createTextDisplay(container: HTMLElement, content: string, visibleLines: number): void {
+  const lineCount = countLines(content);
+  const pre = container.createEl("pre", { cls: "lotus-output-pre", text: content });
+  if (visibleLines > 0 && lineCount > visibleLines) {
+    pre.addClass("is-scroll-limited");
+    pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
+  }
+}
+
+function selectDisplayMime(display: lotusDisplayOutput): { mime: string; value: unknown } | null {
+  for (const mime of [
+    "image/svg+xml",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "text/markdown",
+    "text/vnd.graphviz",
+    "application/json",
+    "text/plain",
+  ]) {
+    if (display.data[mime] != null) {
+      return { mime, value: display.data[mime] };
+    }
+  }
+
+  const firstMime = Object.keys(display.data)[0];
+  return firstMime ? { mime: firstMime, value: display.data[firstMime] } : null;
+}
+
+function formatDisplayLabel(display: lotusDisplayOutput, mime: string | undefined): string {
+  const title = display.title?.trim() || display.role || "Display";
+  return mime ? `${title} · ${mime}` : title;
+}
+
+function imageDataUrl(mime: string, value: string): string {
+  if (value.startsWith("data:")) {
+    return value;
+  }
+  if (mime === "image/svg+xml") {
+    return `data:${mime};charset=utf-8,${encodeURIComponent(value)}`;
+  }
+  return `data:${mime};base64,${value.replace(/\s/g, "")}`;
+}
+
+function readDisplayMetadata(display: lotusDisplayOutput, mime: string): Record<string, unknown> {
+  const globalMetadata = isRecord(display.metadata) ? display.metadata : {};
+  const mimeMetadata = isRecord(globalMetadata[mime]) ? globalMetadata[mime] : {};
+  return { ...globalMetadata, ...mimeMetadata };
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readPositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function createSourcePreview(container: HTMLElement, preview: NonNullable<lotusStoredOutput["sourcePreview"]>): void {

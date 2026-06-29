@@ -19,9 +19,10 @@ import JSZip from "jszip";
 import { dirname, isAbsolute, join } from "path";
 import { homedir } from "os";
 import { lotusContainerRunner } from "./execution/containerRunner";
+import { runProcess } from "./execution/processRunner";
 import { getCompileMachineHashScopeOverride, isCompileContainerGroupAllowed, isCompileFeatureAllowed, isCompileLoggingForced } from "./buildProfile";
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
-import { addLlvmDecorations } from "./llvmHighlight";
+import { addLlvmDecorations, highlightLlvmElement } from "./llvmHighlight";
 import { lotusLogger, type lotusLogInput, type lotusLogTarget } from "./logging";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
@@ -46,11 +47,12 @@ import { buildSourceReferenceHarness } from "./sourceHarness";
 import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
+import { createSourceVisualizationDisplay, createStdoutVisualizationDisplay } from "./visualization/codeGraph";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
-import type { lotusCodeBlock, lotusCustomPreprocessor, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
+import type { lotusCodeBlock, lotusCustomPreprocessor, lotusDisplayOutput, lotusExternalLanguage, lotusExternalLanguagePack, lotusPluginSettings, lotusResolvedExecutionContext, lotusStdinSession, lotusStoredOutput } from "./types";
 
 const lotusRefreshEffect = StateEffect.define<void>();
 const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
@@ -69,7 +71,8 @@ const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<lotusPluginSettings["loggingNo
 const SUPPORTED_LOGGING_MACHINE_HASH_SCOPES = new Set<lotusPluginSettings["loggingMachineHashScope"]>(["install", "vault", "install-vault"]);
 type lotusOutputFileMode = "replace" | "append";
 type lotusOutputFileFormat = "text" | "json";
-type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata";
+type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata" | "displays";
+type lotusVisualizationMode = "graphviz" | "svg";
 type lotusHashPolicyPreset = "strict" | "runtime-flexible" | "runtime-inputs" | "runtime-inputs-outputs" | "custom";
 type lotusReproducibilityStatus = "verified" | "changed" | "missing-snapshot";
 
@@ -148,6 +151,10 @@ interface lotusLiveRunState {
   notePath: string;
   block: lotusCodeBlock;
   target: lotusLogTarget;
+}
+
+interface lotusRunBlockOptions {
+  visualize?: boolean;
 }
 
 interface lotusOutputFileTarget {
@@ -578,6 +585,27 @@ export default class lotusPlugin extends Plugin {
         await this.runBlock(file, block);
       },
     });
+
+    if (isCompileFeatureAllowed("rich-displays")) {
+      this.addCommand({
+        id: "visualize-current-code-block",
+        name: "Visualize current code block",
+        editorCallback: async (editor, view) => {
+          const file = view.file;
+          if (!file) {
+            return;
+          }
+
+          const blocks = parseMarkdownCodeBlocks(file.path, editor.getValue(), this.settings);
+          const block = findBlockAtLine(blocks, editor.getCursor().line);
+          if (!block) {
+            new Notice("No supported Lotus block at the current cursor.");
+            return;
+          }
+          await this.visualizeBlock(file, block);
+        },
+      });
+    }
 
     this.addCommand({
       id: "run-all-code-blocks",
@@ -1096,6 +1124,7 @@ export default class lotusPlugin extends Plugin {
     const isFunctionInput = this.isFunctionInputBlock(block);
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
       onRun: () => void this.runOrCancelBlockById(block.id),
+      onVisualize: () => void this.visualizeActiveBlockById(block.id),
       onEdit: () => void this.editBlockById(block.id),
       onCopy: () => {
         void navigator.clipboard.writeText(block.content).then(() => {
@@ -1123,6 +1152,7 @@ export default class lotusPlugin extends Plugin {
       },
     }, {
       inputButtonLabel: isFunctionInput ? "Toggle function input" : "Toggle stdin input",
+      showVisualize: isCompileFeatureAllowed("rich-displays"),
     });
   }
 
@@ -1238,22 +1268,31 @@ export default class lotusPlugin extends Plugin {
     });
   }
 
-  async runActiveBlockById(blockId: string): Promise<void> {
+  async runActiveBlockById(blockId: string, options: lotusRunBlockOptions = {}): Promise<void> {
     const block = this.findActiveBlockById(blockId);
     const file = this.getActiveMarkdownFile();
     if (!block || !file) {
       return;
     }
-    await this.runBlock(file, block);
+    await this.runBlock(file, block, options);
   }
 
-  async runOrCancelBlockById(blockId: string): Promise<void> {
+  async runOrCancelBlockById(blockId: string, options: lotusRunBlockOptions = {}): Promise<void> {
     if (this.running.has(blockId)) {
       const block = this.findActiveBlockById(blockId);
       await this.cancelBlockRun(blockId, "toolbar", block ?? undefined, block?.filePath);
       return;
     }
-    await this.runActiveBlockById(blockId);
+    await this.runActiveBlockById(blockId, options);
+  }
+
+  async visualizeActiveBlockById(blockId: string): Promise<void> {
+    const block = this.findActiveBlockById(blockId);
+    const file = this.getActiveMarkdownFile();
+    if (!block || !file) {
+      return;
+    }
+    await this.visualizeBlock(file, block);
   }
 
   async cancelBlockRun(blockId: string, source: string, block?: lotusCodeBlock, filePath?: string): Promise<void> {
@@ -2079,7 +2118,7 @@ export default class lotusPlugin extends Plugin {
     });
   }
 
-  async runBlock(file: TFile, block: lotusCodeBlock): Promise<void> {
+  async runBlock(file: TFile, block: lotusCodeBlock, options: lotusRunBlockOptions = {}): Promise<void> {
     this.lastMarkdownFilePath = file.path;
     if (this.running.has(block.id)) {
       new Notice("This Lotus block is already running.");
@@ -2196,6 +2235,7 @@ export default class lotusPlugin extends Plugin {
         const contextNotice = this.formatExecutionContextNotice(executionContext);
         result.warning = result.warning ? `${contextNotice}\n${result.warning}` : contextNotice;
       }
+      await this.prepareDisplayOutputs(block, result, executionContext, controller.signal, options);
       await this.writeOutputFileIfRequested(file, block, result);
 
       this.outputs.set(block.id, {
@@ -2266,6 +2306,215 @@ export default class lotusPlugin extends Plugin {
       this.notifyOutputChanged(block.id);
       this.updateStatusBar();
     }
+  }
+
+  async visualizeBlock(file: TFile, block: lotusCodeBlock): Promise<void> {
+    if (!isCompileFeatureAllowed("rich-displays")) {
+      new Notice("Lotus rich displays are not included in this build.");
+      return;
+    }
+
+    this.lastMarkdownFilePath = file.path;
+    if (this.running.has(block.id)) {
+      new Notice("This Lotus block is already running.");
+      return;
+    }
+
+    if (this.settings.graphvizExecutable.trim() && !(await this.ensureExecutionEnabled())) {
+      showExecutionDisabledNotice();
+      return;
+    }
+
+    const executionContext = this.resolveExecutionContext(file, block);
+    const controller = new AbortController();
+    const started = Date.now();
+    const startedAt = new Date().toISOString();
+    const result: lotusStoredOutput["result"] = {
+      runnerId: "visualization:source",
+      runnerName: "Code visualization",
+      startedAt,
+      finishedAt: startedAt,
+      durationMs: 0,
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+      success: true,
+      timedOut: false,
+      cancelled: false,
+      displays: [createSourceVisualizationDisplay(block)],
+    };
+
+    this.running.set(block.id, controller);
+    this.notifyOutputChanged(block.id);
+    this.updateStatusBar();
+
+    try {
+      result.displays = await Promise.all(
+        (result.displays ?? []).map((display) => this.enrichGraphvizDisplay(display, executionContext, controller.signal, result)),
+      );
+      result.finishedAt = new Date().toISOString();
+      result.durationMs = Date.now() - started;
+      this.outputs.set(block.id, {
+        blockId: block.id,
+        block,
+        result,
+        collapsed: false,
+        visible: true,
+      });
+      await this.logger.logRunFinished(file.path, block, result.runnerName, result, {
+        visualization: "source",
+        language: block.language,
+      }, {
+          runnerId: result.runnerId,
+          runnerName: result.runnerName,
+          containerGroup: executionContext.containerGroup,
+          workingDirectory: executionContext.workingDirectory,
+          timeoutMs: executionContext.timeoutMs,
+          source: executionContext.source,
+      }, await this.readCurrentNoteHash(file.path));
+      new Notice(`lotus visualized ${block.language} block.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.success = false;
+      result.exitCode = -1;
+      result.stderr = message;
+      result.finishedAt = new Date().toISOString();
+      result.durationMs = Date.now() - started;
+      this.outputs.set(block.id, {
+        blockId: block.id,
+        block,
+        result,
+        collapsed: false,
+        visible: true,
+      });
+      new Notice(`lotus visualization failed: ${message}`);
+    } finally {
+      this.running.delete(block.id);
+      this.notifyOutputChanged(block.id);
+      this.updateStatusBar();
+    }
+  }
+
+  private async prepareDisplayOutputs(
+    block: lotusCodeBlock,
+    result: lotusStoredOutput["result"],
+    executionContext: lotusResolvedExecutionContext,
+    signal: AbortSignal,
+    options: lotusRunBlockOptions,
+  ): Promise<void> {
+    if (!isCompileFeatureAllowed("rich-displays")) {
+      delete result.displays;
+      return;
+    }
+
+    const displays = [...(result.displays ?? [])];
+    const requestedMode = this.readVisualizationMode(block, options.visualize);
+
+    if (requestedMode && !displays.length) {
+      const synthesized = this.createDisplayFromStdout(result.stdout, requestedMode)
+        ?? (requestedMode === "graphviz" ? createSourceVisualizationDisplay(block) : null);
+      if (synthesized) {
+        displays.push(synthesized);
+      }
+    }
+
+    const enriched: lotusDisplayOutput[] = [];
+    for (const display of displays) {
+      enriched.push(await this.enrichGraphvizDisplay(display, executionContext, signal, result));
+    }
+
+    if (enriched.length) {
+      result.displays = enriched;
+    } else {
+      delete result.displays;
+    }
+  }
+
+  private readVisualizationMode(block: lotusCodeBlock, explicitVisualize: boolean | undefined): lotusVisualizationMode | null {
+    const raw = block.attributes["lotus-visualize"]
+      ?? block.attributes.visualize
+      ?? block.attributes["lotus-display"]
+      ?? block.attributes.display
+      ?? block.attributes["lotus-visualizer"]
+      ?? block.attributes.visualizer;
+    const normalized = raw?.trim().toLowerCase();
+
+    if (normalized) {
+      if (["graphviz", "dot", "gv", "cfg"].includes(normalized)) {
+        return "graphviz";
+      }
+      if (normalized === "svg" || normalized === "image/svg+xml") {
+        return "svg";
+      }
+      if (["0", "false", "no", "off", "none"].includes(normalized)) {
+        return null;
+      }
+    }
+
+    return explicitVisualize ? "graphviz" : null;
+  }
+
+  private createDisplayFromStdout(stdout: string, mode: lotusVisualizationMode): lotusDisplayOutput | null {
+    return createStdoutVisualizationDisplay(stdout, mode);
+  }
+
+  private async enrichGraphvizDisplay(
+    display: lotusDisplayOutput,
+    executionContext: lotusResolvedExecutionContext,
+    signal: AbortSignal,
+    result: lotusStoredOutput["result"],
+  ): Promise<lotusDisplayOutput> {
+    if (display.data["image/svg+xml"] != null) {
+      return display;
+    }
+
+    const dot = typeof display.data["text/vnd.graphviz"] === "string" ? display.data["text/vnd.graphviz"] : "";
+    const executable = this.settings.graphvizExecutable?.trim();
+    if (!dot.trim() || !executable) {
+      return display;
+    }
+
+    try {
+      const svg = await this.renderGraphvizSvg(dot, executable, executionContext, signal);
+      return {
+        ...display,
+        data: {
+          ...display.data,
+          "image/svg+xml": svg,
+        },
+      };
+    } catch (error) {
+      result.warning = appendWarning(result.warning, `Graphviz display render failed: ${formatErrorMessage(error)}`);
+      return display;
+    }
+  }
+
+  private async renderGraphvizSvg(
+    dot: string,
+    executable: string,
+    executionContext: lotusResolvedExecutionContext,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const result = await runProcess({
+      runnerId: "display:graphviz",
+      runnerName: "Graphviz",
+      executable,
+      args: ["-Tsvg"],
+      workingDirectory: executionContext.workingDirectory,
+      timeoutMs: executionContext.timeoutMs,
+      signal,
+      stdin: dot,
+    });
+
+    if (!result.success) {
+      throw new Error(result.stderr || result.stdout || `Graphviz exited with ${result.exitCode ?? "unknown status"}`);
+    }
+
+    const svg = result.stdout.trim();
+    if (!svg) {
+      throw new Error("Graphviz produced no SVG output.");
+    }
+    return svg;
   }
 
   private async writeCodeBlockHashesIfEnabled(file: TFile): Promise<void> {
@@ -2551,6 +2800,9 @@ export default class lotusPlugin extends Plugin {
       }
 
       usedBlockIds.add(block.id);
+      if (block.language === "llvm-ir") {
+        highlightLlvmElement(code, block.content);
+      }
       pre.dataset.lotusDecorated = "true";
       ctx.addChild(new lotusToolbarRenderChild(pre, this, block, pre));
     }
@@ -2706,6 +2958,9 @@ export default class lotusPlugin extends Plugin {
       this.settings.defaultContainerGroup = "";
     }
     this.settings.workingDirectory = normalizeStringSetting(this.settings.workingDirectory, DEFAULT_SETTINGS.workingDirectory);
+    this.settings.graphvizExecutable = isCompileFeatureAllowed("rich-displays")
+      ? normalizeStringSetting(this.settings.graphvizExecutable, DEFAULT_SETTINGS.graphvizExecutable)
+      : "";
   }
 
   private getActiveMarkdownFile(): TFile | null {
@@ -3113,10 +3368,13 @@ export default class lotusPlugin extends Plugin {
       .map((stream) => stream.trim().toLowerCase())
       .filter(Boolean);
     const expanded = parsed.includes("all")
-      ? ["metadata", "stdout", "warning", "stderr"]
+      ? ["metadata", "stdout", "warning", "stderr", ...(isCompileFeatureAllowed("rich-displays") ? ["displays"] : [])]
       : parsed;
     const streams = expanded.map((stream) => {
-      if (stream === "stdout" || stream === "stderr" || stream === "warning" || stream === "metadata") {
+      if (stream === "displays" && !isCompileFeatureAllowed("rich-displays")) {
+        throw new Error("lotus-output-file-streams=displays requires a build with the rich-displays feature.");
+      }
+      if (stream === "stdout" || stream === "stderr" || stream === "warning" || stream === "metadata" || stream === "displays") {
         return stream;
       }
       throw new Error(`Unsupported lotus-output-file-streams entry: ${stream}.`);
@@ -3176,6 +3434,8 @@ export default class lotusPlugin extends Plugin {
           return result.warning ? [result.warning] : [];
         case "stderr":
           return result.stderr ? [result.stderr] : [];
+        case "displays":
+          return result.displays?.length ? [JSON.stringify(result.displays, null, 2)] : [];
       }
     });
     return `${sections.join("\n\n").replace(/\s*$/, "")}\n`;
@@ -3196,6 +3456,7 @@ export default class lotusPlugin extends Plugin {
         ...(target.streams.includes("stdout") ? { stdout: result.stdout } : {}),
         ...(target.streams.includes("warning") ? { warning: result.warning ?? "" } : {}),
         ...(target.streams.includes("stderr") ? { stderr: result.stderr } : {}),
+        ...(target.streams.includes("displays") ? { displays: result.displays ?? [] } : {}),
       },
     };
     return `${JSON.stringify(payload, null, 2)}\n`;
@@ -3227,6 +3488,7 @@ export default class lotusPlugin extends Plugin {
       result.stdout ? `stdout:\n${result.stdout}` : "",
       result.warning ? `warning:\n${result.warning}` : "",
       result.stderr ? `stderr:\n${result.stderr}` : "",
+      result.displays?.length ? `displays:\n${JSON.stringify(result.displays, null, 2)}` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -4104,6 +4366,10 @@ function formatSignatureScheme(scheme: string): string {
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function appendWarning(existing: string | undefined, line: string): string {
+  return existing ? `${existing}\n${line}` : line;
 }
 
 function stableStringify(value: unknown): string {

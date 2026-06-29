@@ -129,6 +129,8 @@ export class lotusLogger {
         stdoutBytes: result.stdout.length,
         stderrBytes: result.stderr.length,
         warningBytes: result.warning?.length ?? 0,
+        displayCount: result.displays?.length ?? 0,
+        displayMimeTypes: [...new Set(result.displays?.flatMap((display) => Object.keys(display.data)) ?? [])],
       },
       stdout: result.stdout,
       stderr: result.stderr,

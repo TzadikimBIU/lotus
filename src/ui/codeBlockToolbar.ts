@@ -7,10 +7,12 @@ export interface lotusToolbarHandlers {
   onRemove: () => void;
   onToggleInput: () => void;
   onToggleOutput: () => void;
+  onVisualize: () => void;
 }
 
 export interface lotusToolbarOptions {
   inputButtonLabel?: string;
+  showVisualize?: boolean;
 }
 
 export function createCodeBlockToolbar(
@@ -24,6 +26,9 @@ export function createCodeBlockToolbar(
   toolbar.dataset.lotusBlockId = blockId;
 
   toolbar.appendChild(createButton(isRunning ? "Cancel block" : "Run block", isRunning ? "square" : "play", handlers.onRun, false));
+  if (options.showVisualize ?? true) {
+    toolbar.appendChild(createButton("Visualize code", "git-fork", handlers.onVisualize, false));
+  }
   toolbar.appendChild(createButton("Edit block", "pencil", handlers.onEdit, false));
   toolbar.appendChild(createButton(options.inputButtonLabel ?? "Toggle stdin input", "text-cursor-input", handlers.onToggleInput, false));
   toolbar.appendChild(createButton("Copy code", "copy", handlers.onCopy, false));

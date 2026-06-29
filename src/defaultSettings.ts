@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: lotusPluginSettings = {
   haskellExecutable: "runghc",
   javaCompilerExecutable: "",
   javaExecutable: "java",
+  graphvizExecutable: "dot",
   llvmInterpreterExecutable: "lli",
   ebpfClangExecutable: "clang",
   ebpfBpftoolExecutable: "bpftool",

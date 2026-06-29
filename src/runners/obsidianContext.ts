@@ -1,5 +1,5 @@
 import { Notice, type App, type TFile } from "obsidian";
-import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
+import type { lotusCodeBlock, lotusDisplayOutput, lotusDisplayRole, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 import { formatTimeoutMs } from "../utils/timeout";
 import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
 
@@ -24,6 +24,25 @@ interface ObsidianContextNoteHelper {
   setFrontmatter(key: string, value: unknown): Promise<void>;
 }
 
+interface ObsidianContextDisplayOptions {
+  title?: string;
+  role?: lotusDisplayRole;
+  alt?: string;
+  width?: number;
+  height?: number;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ObsidianContextDisplayHelper {
+  mime(data: Record<string, unknown>, options?: ObsidianContextDisplayOptions): void;
+  svg(svg: string, options?: ObsidianContextDisplayOptions): void;
+  graphviz(dot: string, options?: ObsidianContextDisplayOptions): void;
+  png(data: string, options?: ObsidianContextDisplayOptions): void;
+  jpeg(data: string, options?: ObsidianContextDisplayOptions): void;
+  image(data: string, options?: ObsidianContextDisplayOptions): void;
+}
+
 export class ObsidianContextRunner implements lotusRunner {
   id = "obsidian-js";
   displayName = "Obsidian JavaScript";
@@ -39,6 +58,7 @@ export class ObsidianContextRunner implements lotusRunner {
     const startedAt = new Date();
     const stdout: string[] = [];
     const stderr: string[] = [];
+    const displays: lotusDisplayOutput[] = [];
     let exitCode: number | null = 0;
     let timedOut = false;
     let cancelled = false;
@@ -55,10 +75,12 @@ export class ObsidianContextRunner implements lotusRunner {
         "console",
         "note",
         "input",
+        "display",
         `"use strict";\n${block.content}`,
       );
       const capturedConsole = createCapturedConsole(stdout, stderr);
       const note = createNoteHelper(this.host.app, context.file);
+      const display = createDisplayHelper(displays);
       const execution = Promise.resolve(userFunction.call(
         this.host.plugin,
         this.host.app,
@@ -69,6 +91,7 @@ export class ObsidianContextRunner implements lotusRunner {
         capturedConsole,
         note,
         context.stdin ?? "",
+        display,
       ));
 
       const timeoutMs = context.timeoutMs;
@@ -125,6 +148,7 @@ export class ObsidianContextRunner implements lotusRunner {
       timedOut,
       cancelled,
       warning: _settings.showObsidianContextWarning ? OBSIDIAN_CONTEXT_WARNING : undefined,
+      ...(displays.length ? { displays } : {}),
     };
   }
 }
@@ -203,6 +227,64 @@ function createCapturedConsole(stdout: string[], stderr: string[]): Pick<Console
     log: (...values: unknown[]) => stdout.push(formatConsoleLine(values)),
     warn: (...values: unknown[]) => stderr.push(formatConsoleLine(values)),
   };
+}
+
+function createDisplayHelper(displays: lotusDisplayOutput[]): ObsidianContextDisplayHelper {
+  const add = (data: Record<string, unknown>, options: ObsidianContextDisplayOptions = {}) => {
+    const metadata = normalizeDisplayMetadata(options);
+    displays.push({
+      ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+      role: options.role ?? "result",
+      data,
+      ...(Object.keys(metadata).length ? { metadata } : {}),
+    });
+  };
+
+  return {
+    mime: (data, options = {}) => add(data, options),
+    svg: (svg, options = {}) => add({
+      "image/svg+xml": svg,
+      "text/plain": options.alt ?? options.title ?? "SVG output",
+    }, { ...options, role: options.role ?? "visualization" }),
+    graphviz: (dot, options = {}) => add({
+      "text/vnd.graphviz": dot,
+      "text/plain": options.alt ?? options.title ?? "Graphviz DOT output",
+    }, { ...options, role: options.role ?? "visualization" }),
+    png: (data, options = {}) => add({
+      "image/png": data,
+      "text/plain": options.alt ?? options.title ?? "PNG output",
+    }, { ...options, role: options.role ?? "visualization" }),
+    jpeg: (data, options = {}) => add({
+      "image/jpeg": data,
+      "text/plain": options.alt ?? options.title ?? "JPEG output",
+    }, { ...options, role: options.role ?? "visualization" }),
+    image: (data, options = {}) => {
+      const mimeType = options.mimeType ?? mimeTypeFromDataUri(data) ?? "image/png";
+      add({
+        [mimeType]: stripDataUriPrefix(data),
+        "text/plain": options.alt ?? options.title ?? "Image output",
+      }, { ...options, role: options.role ?? "visualization" });
+    },
+  };
+}
+
+function normalizeDisplayMetadata(options: ObsidianContextDisplayOptions): Record<string, unknown> {
+  return {
+    ...(options.metadata ?? {}),
+    ...(options.alt ? { alt: options.alt } : {}),
+    ...(Number.isFinite(options.width) ? { width: options.width } : {}),
+    ...(Number.isFinite(options.height) ? { height: options.height } : {}),
+  };
+}
+
+function mimeTypeFromDataUri(value: string): string | null {
+  const match = value.match(/^data:([^;,]+)[;,]/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function stripDataUriPrefix(value: string): string {
+  const commaIndex = value.indexOf(",");
+  return value.startsWith("data:") && commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
 }
 
 function formatConsoleLine(values: unknown[]): string {

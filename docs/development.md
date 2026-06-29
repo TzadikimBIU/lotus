@@ -2,6 +2,8 @@
 
 This document covers developer-facing integrations, the runner API contract, and the smoke testing suite.
 
+For rich output producers, see [Rich Display Contract](display-contract.md).
+
 ---
 
 ## Runner Contract
@@ -193,6 +195,12 @@ When building the `light` profile, configuration options can be passed via comma
 | **Mode** | `--compile-mode=light` | `LOTUS_COMPILE_MODE=light` | Set compile profile (`strict` or `light`). |
 | **Languages** | `--languages=python,shell` | `LOTUS_LIGHT_LANGUAGES` | Comma-separated list of allowed languages. |
 | **Language Packs** | `--language-packs=interpreted` | `LOTUS_LIGHT_LANGUAGE_PACKS` | Comma-separated list of allowed language packs. |
-| **Features** | `--features=container-groups` | `LOTUS_LIGHT_FEATURES` | Allowed features: `custom-languages`, `external-language-packs`, `container-groups`, `output-filters`, `signing`. |
+| **Features** | `--features=container-groups` | `LOTUS_LIGHT_FEATURES` | Allowed features: `custom-languages`, `external-language-packs`, `container-groups`, `output-filters`, `rich-displays`, `signing`. |
 | **Container Groups**| `--container-groups=py-sandbox` | `LOTUS_LIGHT_CONTAINER_GROUPS` | Specific permitted container groups. |
 | **Runtimes** | `--container-runtimes=docker,wsl` | `LOTUS_LIGHT_CONTAINER_RUNTIMES` | Permitted container runtimes (`docker`, `podman`, `qemu`, `wsl`, `ssh`, `custom`). |
+
+If `--features` is provided for a light build, omitted features are hidden or disabled. For example, this build keeps execution groups and signing but removes image/plot/source-visualization surfaces:
+
+```bash
+npm run build:light -- --features=container-groups,signing
+```

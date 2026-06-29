@@ -1,12 +1,14 @@
-import { mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn } from "child_process";
-import type { lotusRunResult, lotusStdinSession } from "../types";
+import type { lotusDisplayOutput, lotusDisplayRole, lotusRunResult, lotusStdinSession } from "../types";
 import { formatTimeoutMs, type lotusTimeoutMs } from "../utils/timeout";
 import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
 
 const FORCE_KILL_GRACE_MS = 1_500;
+const MAX_DISPLAY_JSONL_BYTES = 10 * 1024 * 1024;
+const DISPLAY_ROLES = new Set<lotusDisplayRole>(["result", "visualization", "diagnostic", "artifact"]);
 
 export interface lotusProcessSpec {
   runnerId: string;
@@ -97,8 +99,10 @@ function sharedWhitespacePrefix(left: string, right: string): string {
 
 export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult> {
   const startedAt = new Date();
+  const displayEnv = await createProcessDisplayEnvironment();
   let stdout = "";
   let stderr = "";
+  let displayWarning: string | undefined;
   let exitCode: number | null = null;
   let exitSignal: NodeJS.Signals | null = null;
   let timedOut = false;
@@ -132,6 +136,8 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
+          LOTUS_DISPLAY_JSONL: displayEnv.jsonlPath,
+          LOTUS_ARTIFACT_DIR: displayEnv.artifactDir,
           ...spec.env,
         },
       });
@@ -248,6 +254,15 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
 
   const finishedAt = new Date();
   const durationMs = finishedAt.getTime() - startedAt.getTime();
+  let displays: lotusDisplayOutput[] = [];
+  try {
+    displays = await readProcessDisplayOutputs(displayEnv.jsonlPath);
+  } catch (error) {
+    displayWarning = `Failed to read Lotus display output: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    await rm(displayEnv.tempDir, { recursive: true, force: true });
+  }
+
   if (!stderr.trim()) {
     if (timedOut) {
       stderr = `Process timed out after ${formatTimeoutMs(spec.timeoutMs)}.`;
@@ -260,6 +275,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
     }
   }
   const success = !timedOut && !cancelled && exitCode === 0;
+  const warning = displayWarning;
 
   return {
     runnerId: spec.runnerId,
@@ -273,6 +289,8 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
     success,
     timedOut,
     cancelled,
+    ...(warning ? { warning } : {}),
+    ...(displays.length ? { displays } : {}),
   };
 }
 
@@ -290,6 +308,71 @@ function combineStdinPrefix(prefix: string | Buffer, stdin: string): string | Bu
   }
 
   return `${prefix}${stdin}`;
+}
+
+async function createProcessDisplayEnvironment(): Promise<{ tempDir: string; artifactDir: string; jsonlPath: string }> {
+  const tempDir = await mkdtemp(join(tmpdir(), "lotus-display-"));
+  const artifactDir = join(tempDir, "artifacts");
+  const jsonlPath = join(tempDir, "display.jsonl");
+  await mkdir(artifactDir, { recursive: true });
+  await writeFile(jsonlPath, "", "utf8");
+  return { tempDir, artifactDir, jsonlPath };
+}
+
+async function readProcessDisplayOutputs(jsonlPath: string): Promise<lotusDisplayOutput[]> {
+  let raw: Buffer;
+  try {
+    raw = await readFile(jsonlPath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  if (!raw.length) {
+    return [];
+  }
+  if (raw.length > MAX_DISPLAY_JSONL_BYTES) {
+    throw new Error(`display JSONL exceeded ${MAX_DISPLAY_JSONL_BYTES} bytes`);
+  }
+
+  const displays: lotusDisplayOutput[] = [];
+  const lines = raw.toString("utf8").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) {
+      continue;
+    }
+    const parsed: unknown = JSON.parse(line);
+    const display = normalizeDisplayOutput(parsed);
+    if (!display) {
+      throw new Error(`invalid display record on line ${index + 1}`);
+    }
+    displays.push(display);
+  }
+  return displays;
+}
+
+function normalizeDisplayOutput(value: unknown): lotusDisplayOutput | null {
+  if (!isRecord(value) || !isRecord(value.data)) {
+    return null;
+  }
+  const role = typeof value.role === "string" && DISPLAY_ROLES.has(value.role as lotusDisplayRole)
+    ? value.role as lotusDisplayRole
+    : undefined;
+  const metadata = isRecord(value.metadata) ? value.metadata : undefined;
+  return {
+    ...(typeof value.id === "string" && value.id.trim() ? { id: value.id.trim() } : {}),
+    ...(typeof value.title === "string" && value.title.trim() ? { title: value.title.trim() } : {}),
+    ...(role ? { role } : {}),
+    data: value.data,
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lotusRunResult> {

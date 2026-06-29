@@ -146,3 +146,5 @@ npm run build:light -- --features=custom-languages,container-groups
 ```
 
 When `signing` is omitted from a light build feature list, Lotus keeps hashing and logging but hides cryptographic signing controls.
+
+The same feature gate applies to rich display surfaces. Omitting `rich-displays` from `--features` removes image/plot/source-visualization UI from light builds.

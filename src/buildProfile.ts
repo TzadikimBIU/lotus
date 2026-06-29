@@ -8,7 +8,7 @@ declare const __LOTUS_FORCE_LOGGING__: boolean;
 declare const __LOTUS_MACHINE_HASH_SCOPE__: string;
 
 export type lotusCompileMode = "strict" | "light";
-export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters" | "signing";
+export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters" | "rich-displays" | "signing";
 export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 export type lotusCompileMachineHashScope = "install" | "vault" | "install-vault";
 

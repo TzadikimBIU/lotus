@@ -82,6 +82,17 @@ export interface lotusRunResult {
   timedOut: boolean;
   cancelled: boolean;
   warning?: string;
+  displays?: lotusDisplayOutput[];
+}
+
+export type lotusDisplayRole = "result" | "visualization" | "diagnostic" | "artifact";
+
+export interface lotusDisplayOutput {
+  id?: string;
+  title?: string;
+  role?: lotusDisplayRole;
+  data: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface lotusRunner {
@@ -151,6 +162,7 @@ export interface lotusPluginSettings {
   haskellExecutable: string;
   javaCompilerExecutable: string;
   javaExecutable: string;
+  graphvizExecutable: string;
   llvmInterpreterExecutable: string;
   ebpfClangExecutable: string;
   ebpfBpftoolExecutable: string;

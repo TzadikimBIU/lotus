@@ -151,6 +151,11 @@
   gap: 0.35rem;
 }
 
+.lotus-output-display {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .lotus-output-stream-label {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
@@ -174,6 +179,146 @@
 .lotus-output-pre.is-scroll-limited {
   max-height: calc((var(--lotus-output-visible-lines) * 1.45em) + 1.5rem);
   overflow: auto;
+}
+
+.lotus-output-image-frame {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lotus-output-image-frame.is-fullscreen {
+  min-height: 0;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.lotus-output-image-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.lotus-output-image-zoom-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lotus-output-image-zoom-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.lotus-output-image-zoom-slider {
+  width: min(14rem, 38vw);
+  min-width: 6rem;
+}
+
+.lotus-output-image-zoom-value {
+  min-width: 3.25rem;
+  font-family: var(--font-monospace);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.lotus-output-image-viewport {
+  max-width: 100%;
+  max-height: 78vh;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+  cursor: grab;
+  overscroll-behavior: contain;
+  touch-action: none;
+  user-select: none;
+}
+
+.lotus-output-image-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.lotus-output-image-viewport.is-panning {
+  cursor: grabbing;
+}
+
+.lotus-output-image-frame.is-fullscreen .lotus-output-image-viewport {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 8px;
+}
+
+.lotus-output-image {
+  display: block;
+  max-width: none;
+  max-height: none;
+  height: auto;
+  padding: 0.65rem;
+  box-sizing: border-box;
+  object-fit: contain;
+  object-position: left top;
+  background: #ffffff;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.lotus-output-image-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 1000);
+  display: grid;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.lotus-output-image-fullscreen-shell {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  background: var(--background-primary);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.35);
+}
+
+.lotus-output-image-fullscreen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.lotus-output-image-fullscreen-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.lotus-output-image-fullscreen-close {
+  flex: 0 0 auto;
 }
 
 .lotus-output-empty {

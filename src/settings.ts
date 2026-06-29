@@ -626,6 +626,9 @@ export class lotusSettingTab extends PluginSettingTab {
     this.addRuntimeTextSetting(containerEl, ["lean"], "Lean executable", "Command or path for checking Lean blocks.", "leanExecutable");
     this.addRuntimeTextSetting(containerEl, ["coq"], "Coq executable", "Command or path for checking Coq blocks with coqc.", "coqExecutable");
     this.addRuntimeTextSetting(containerEl, ["smtlib"], "SMT solver", "Command or path for SMT-LIB blocks. Defaults to z3.", "smtExecutable");
+    if (isCompileFeatureAllowed("rich-displays")) {
+      this.addTextSetting(containerEl, "Graphviz executable", "Command or path for dot. Lotus uses this to turn Graphviz DOT display outputs into SVG.", "graphvizExecutable");
+    }
   }
 
   private addRuntimeTextSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, languageIds: string[], name: string, description: string, key: K): void {

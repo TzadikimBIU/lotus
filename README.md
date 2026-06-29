@@ -111,10 +111,40 @@ Output panels can be capped to a visible line window while keeping the full outp
 ### Redirection to Files
 Blocks can materialise output into vault files with `lotus-output-file="path/to/file.txt"`. Relative paths resolve from the note folder, leading slash paths resolve from the vault root, and lotus creates missing parent folders. By default, the file receives stdout and is overwritten on each run.
 
-Use `lotus-output-file-mode=append`, `lotus-output-file-streams=metadata,stdout,stderr,warning`, or `lotus-output-file-format=json` when a block needs a different artifact shape.
+Use `lotus-output-file-mode=append`, `lotus-output-file-streams=metadata,stdout,stderr,warning,displays`, or `lotus-output-file-format=json` when a block needs a different artifact shape.
 
 ### Standard Input (Stdin)
 Blocks can receive standard input through the toolbar input control or through attributes. Click the stdin toolbar button to open a per-block input buffer. For reproducible notes, use `lotus-stdin="line one\nline two"` or `lotus-stdin-file="inputs/payload.txt"`. The attribute `lotus-input=true` keeps the input field visible whenever the note renders.
+
+## Rich Displays
+
+Lotus can render rich display outputs in addition to stdout and stderr. Display outputs use MIME bundles inspired by Jupyter outputs. Supported render targets include `image/svg+xml`, `image/png`, `image/jpeg`, `image/gif`, `text/vnd.graphviz`, `application/json`, and `text/plain`. The full producer contract is documented in [Rich Display Contract](docs/display-contract.md).
+
+Obsidian JavaScript blocks receive a `display` helper:
+
+````markdown
+```obsidian-js
+display.svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 60">
+  <rect x="10" y="10" width="140" height="40" fill="white" stroke="black"/>
+  <text x="80" y="36" text-anchor="middle">lotus</text>
+</svg>`, { title: "Inline SVG" });
+
+```
+````
+
+External processes can append JSON records to the path in `LOTUS_DISPLAY_JSONL`:
+
+```json
+{"title":"CFG","role":"visualization","data":{"text/vnd.graphviz":"digraph g { a -> b }","text/plain":"CFG graph"}}
+```
+
+When a display contains `text/vnd.graphviz`, Lotus runs the configured Graphviz executable (`dot` by default) to add an SVG representation. Use the toolbar visualize button or command palette action to run a block and treat stdout as Graphviz DOT. Blocks can request this persistently with `lotus-visualize=graphviz`, or treat stdout as SVG with `lotus-visualize=svg`.
+
+Rich displays are controlled by the `rich-displays` compile feature. Light builds can omit that feature to remove image/plot/source-visualization surfaces:
+
+```bash
+npm run build:light -- --features=container-groups,signing
+```
 
 ## Observability
 
@@ -127,6 +157,7 @@ Use `lotus: Open Log Viewer` to inspect the configured JSONL log inside Obsidian
 For more specialized setups, refer to the guides in the [docs/](docs/) directory:
 
 - [Custom Languages](docs/custom-languages.md): Configure local interpreters, staged preprocessors, JSON request/response schema extractors, and C transpilation strategies.
+- [Rich Display Contract](docs/display-contract.md): Emit SVG, raster images, Graphviz DOT, JSON, and text display records from runners and external processes.
 - [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.
 - [eBPF Execution](docs/ebpf.md): Compile BPF programs, inspect ELF objects, and load probes safely.

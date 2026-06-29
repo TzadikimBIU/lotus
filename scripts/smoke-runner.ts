@@ -28,6 +28,7 @@ import { lotusRunnerRegistry } from "../src/runners/registry";
 import { lotusContainerRunner } from "../src/execution/containerRunner";
 import { runProcess } from "../src/execution/processRunner";
 import { parseTimeoutMs } from "../src/utils/timeout";
+import { createSourceVisualizationDisplay, createStdoutVisualizationDisplay } from "../src/visualization/codeGraph";
 import type { lotusCodeBlock, lotusPluginSettings, lotusResolvedExecutionContext, lotusRunResult, lotusSourcePreview } from "../src/types";
 
 type SmokeProfile = "minimal" | "systems" | "proofs" | "ebpf" | "full";
@@ -316,8 +317,79 @@ async function runTransportSmoke(): Promise<SmokeBlockResult[]> {
         throw new Error(result.stderr || `stdin prefix smoke failed: ${result.stdout || `exit ${result.exitCode}`}`);
       }
     }),
+    await runSyntheticSmoke("transport-display-jsonl", async () => {
+      const controller = new AbortController();
+      const svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 20\"><text x=\"4\" y=\"14\">ok</text></svg>";
+      const result = await runProcess({
+        runnerId: "synthetic:transport:display-jsonl",
+        runnerName: "Synthetic display JSONL",
+        executable: process.execPath,
+        args: [
+          "-e",
+          [
+            "const fs = require('fs');",
+            `const record = ${JSON.stringify({ title: "Synthetic SVG", role: "visualization", data: { "image/svg+xml": svg, "text/plain": "synthetic svg" } })};`,
+            "fs.appendFileSync(process.env.LOTUS_DISPLAY_JSONL, JSON.stringify(record) + '\\n', 'utf8');",
+            "fs.writeSync(1, 'display-ok');",
+          ].join("\n"),
+        ],
+        workingDirectory: vaultDir,
+        timeoutMs: 5000,
+        signal: controller.signal,
+      });
+      const display = result.displays?.[0];
+      if (!result.success || result.stdout.trim() !== "display-ok" || display?.data["image/svg+xml"] !== svg) {
+        throw new Error(result.stderr || `display JSONL smoke failed: stdout=${JSON.stringify(result.stdout)} displays=${JSON.stringify(result.displays ?? [])}`);
+      }
+    }),
+    await runSyntheticSmoke("source-visualization-llvm-cfg", async () => {
+      const block = createSyntheticBlock("llvm-ir", [
+        "@ok = private unnamed_addr constant [9 x i8] c\"llvm ok\\0A\\00\"",
+        "declare i32 @puts(ptr)",
+        "define i32 @main() {",
+        "entry:",
+        "  %x = add i32 20, 22",
+        "  %is_answer = icmp eq i32 %x, 42",
+        "  br i1 %is_answer, label %ok_block, label %bad_block",
+        "ok_block:",
+        "  ret i32 0",
+        "bad_block:",
+        "  ret i32 1",
+        "}",
+      ].join("\n"));
+      const display = createSourceVisualizationDisplay(block);
+      const dot = display.data["text/vnd.graphviz"];
+      if (typeof dot !== "string" || !dot.includes("ok_block") || !dot.includes("bad_block") || !dot.includes("then") || !dot.includes("else")) {
+        throw new Error(`LLVM CFG visualization smoke failed: ${JSON.stringify(display.data)}`);
+      }
+      if (createStdoutVisualizationDisplay("llvm ok", "graphviz")) {
+        throw new Error("plain stdout was incorrectly accepted as Graphviz DOT");
+      }
+      if (!createStdoutVisualizationDisplay("digraph g { a -> b; }", "graphviz")) {
+        throw new Error("Graphviz stdout was not accepted");
+      }
+    }),
   ];
 }
+
+function createSyntheticBlock(language: string, content: string): lotusCodeBlock {
+  return {
+    id: `synthetic:${language}`,
+    ordinal: 0,
+    filePath: "(synthetic)",
+    language,
+    languageAlias: language,
+    sourceLanguage: language,
+    content,
+    attributes: {},
+    executionContext: {},
+    startLine: 0,
+    endLine: content.split(/\r?\n/).length + 1,
+    fenceStart: 0,
+    fenceEnd: 3,
+  };
+}
+
 
 async function runSyntheticSmoke(
   name: string,
