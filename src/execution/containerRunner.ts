@@ -342,7 +342,7 @@ export class lotusContainerRunner {
     const containerFile = posixPath.join(workspacePath, tempFileName);
     const workingDirectory = normalizeFsPath(context.workingDirectory || groupPath);
     const useContextWorkingDirectory = workingDirectory !== normalizeFsPath(groupPath);
-    const command = splitCommandLine(language.command!.replaceAll("{file}", containerFile));
+    const command = splitCommandLine(normalizeOciLanguageCommand(language.command!).replaceAll("{file}", containerFile));
     if (!command.length) {
       throw new Error("Container command is empty.");
     }
@@ -443,7 +443,7 @@ export class lotusContainerRunner {
     context: lotusRunContext,
   ): Promise<lotusRunResult> {
     const remoteFile = posixPath.join(remote.workspace, tempFileName);
-    const remoteCommand = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", shellQuote(remoteFile)));
+    const remoteCommand = this.applyCommandPrefix(config, normalizeShellLanguageCommand(language.command!).replaceAll("{file}", shellQuote(remoteFile)));
     if (!remoteCommand.trim()) {
       throw new Error(`${runnerName} command is empty.`);
     }
@@ -583,7 +583,7 @@ export class lotusContainerRunner {
     tempFilePath: string,
     context: lotusRunContext,
   ): Promise<lotusRunResult> {
-    const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
+    const command = this.applyCommandPrefix(config, normalizeShellLanguageCommand(language.command!).replaceAll("{file}", tempFileName));
     const result = await this.runCustomWrapper(
       groupName,
       groupPath,
@@ -633,7 +633,7 @@ export class lotusContainerRunner {
     context: lotusRunContext,
   ): Promise<lotusRunResult> {
     const wslGroupPath = this.translateToWslPath(groupPath);
-    const command = this.applyCommandPrefix(config, language.command!.replaceAll("{file}", tempFileName));
+    const command = this.applyCommandPrefix(config, normalizeShellLanguageCommand(language.command!).replaceAll("{file}", tempFileName));
     if (!command.trim()) {
       throw new Error("WSL command is empty.");
     }
@@ -1759,6 +1759,122 @@ export class lotusContainerRunner {
 
 function shellCommand(command: string): string {
   return `sh -lc ${quoteCommandArg(command)} sh {file}`;
+}
+
+function normalizeOciLanguageCommand(command: string): string {
+  const trimmed = command.trim();
+  if (!trimmed || isShellInvocation(trimmed) || !needsShellInvocation(trimmed)) {
+    return command;
+  }
+
+  const script = trimmed.includes("{file}") ? trimmed.replaceAll("{file}", "\"$1\"") : trimmed;
+  return shellCommand(script);
+}
+
+function normalizeShellLanguageCommand(command: string): string {
+  const trimmed = command.trim();
+  if (!trimmed || trimmed.includes("{file}") || isShellInvocation(trimmed) || !referencesShellPositionalFileArg(trimmed)) {
+    return command;
+  }
+
+  return shellCommand(trimmed);
+}
+
+function isShellInvocation(command: string): boolean {
+  const [executable, firstArg] = splitCommandLine(command);
+  const shellName = executable?.split(/[\\/]/).pop();
+  return Boolean(shellName && ["sh", "bash", "dash", "zsh", "ksh"].includes(shellName) && firstArg?.includes("c"));
+}
+
+function needsShellInvocation(command: string): boolean {
+  let quote: "'" | "\"" | null = null;
+  let escaping = false;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    const next = command[index + 1] ?? "";
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\" && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+
+    if ((char === "'" || char === "\"") && !quote) {
+      quote = char;
+      continue;
+    }
+
+    if (char === quote) {
+      quote = null;
+      continue;
+    }
+
+    if (quote !== "'") {
+      if (char === "$" && (isShellPositionalFileArg(next) || next === "(" || next === "{" || /[A-Za-z_]/.test(next))) {
+        return true;
+      }
+      if (char === "`") {
+        return true;
+      }
+    }
+
+    if (!quote && (
+      char === ";" ||
+      char === "<" ||
+      char === ">" ||
+      char === "|" ||
+      (char === "&" && next === "&")
+    )) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function referencesShellPositionalFileArg(command: string): boolean {
+  let quote: "'" | "\"" | null = null;
+  let escaping = false;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    const next = command[index + 1] ?? "";
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\" && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+
+    if ((char === "'" || char === "\"") && !quote) {
+      quote = char;
+      continue;
+    }
+
+    if (char === quote) {
+      quote = null;
+      continue;
+    }
+
+    if (quote !== "'" && char === "$" && isShellPositionalFileArg(next)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isShellPositionalFileArg(char: string): boolean {
+  return char === "1" || char === "@" || char === "*";
 }
 
 function normalizeExtension(extension: string): string {
