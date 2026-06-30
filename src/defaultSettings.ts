@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: lotusPluginSettings = {
   writeOutputToNote: false,
   outputVisibleLines: 0,
   autoRunOnFileOpen: false,
+  showCodeVisualizationButton: true,
   hashCodeBlocks: false,
   signingMode: "ssh",
   signingSignerId: "",

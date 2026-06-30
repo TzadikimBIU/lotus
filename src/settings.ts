@@ -233,6 +233,18 @@ export class lotusSettingTab extends PluginSettingTab {
         }),
       );
 
+    if (isCompileFeatureAllowed("rich-displays")) {
+      new Setting(containerEl)
+        .setName("Show code graph button")
+        .setDesc("Show the toolbar button that visualizes a block's source as a graph. Disable this if you only want the normal run button.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.lotusPlugin.settings.showCodeVisualizationButton ?? true).onChange(async (value) => {
+            this.lotusPlugin.settings.showCodeVisualizationButton = value;
+            await this.lotusPlugin.saveSettings();
+          }),
+        );
+    }
+
     new Setting(containerEl)
       .setName("Show Obsidian context warning")
       .setDesc('Show "no but seriously, you are risking your life" when Obsidian-js blocks run.')

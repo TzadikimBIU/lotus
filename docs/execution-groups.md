@@ -130,6 +130,27 @@ Docker and Podman groups can keep one container alive and run each block with `d
 
 Persistent containers always run snippets in `/workspace`, the mounted execution group directory. Per-block `lotus-cwd` values cannot add new bind mounts to an already-created container, so Lotus warns and keeps exec runs in `/workspace`.
 
+### Graphviz Displays in Execution Groups
+
+Graphviz display enrichment follows the same resolved execution context as the code block. If a note or block uses an execution group, Lotus runs `text/vnd.graphviz` rendering inside that group instead of requiring Graphviz on the host machine.
+
+Declare a `graphviz` language when the group needs a custom command:
+
+```json
+{
+  "runtime": "docker",
+  "image": "graphviz:latest",
+  "languages": {
+    "graphviz": {
+      "command": "dot -Tsvg {file}",
+      "extension": ".dot"
+    }
+  }
+}
+```
+
+If the group does not declare `graphviz`, Lotus falls back to `dot -Tsvg {file}`. The container, VM, WSL distro, or SSH target must still provide `dot`.
+
 ### SSH Runtime Configuration
 Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). By default, Lotus creates the remote workspace, writes the temp source file, runs the configured command, and removes the remote temp file through one `ssh` session. That avoids repeated password prompts and keeps stdin available for interactive programs.
 

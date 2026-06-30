@@ -496,6 +496,7 @@ class lotusToolbarRenderChild extends MarkdownRenderChild {
 
 class lotusToolbarWidget extends WidgetType {
   private readonly isRunning: boolean;
+  private readonly showVisualize: boolean;
 
   constructor(
     private readonly plugin: lotusPlugin,
@@ -503,10 +504,13 @@ class lotusToolbarWidget extends WidgetType {
   ) {
     super();
     this.isRunning = plugin.isBlockRunning(block.id);
+    this.showVisualize = plugin.shouldShowCodeVisualizationButton();
   }
 
   eq(other: lotusToolbarWidget): boolean {
-    return other.block.id === this.block.id && other.isRunning === this.isRunning;
+    return other.block.id === this.block.id
+      && other.isRunning === this.isRunning
+      && other.showVisualize === this.showVisualize;
   }
 
   toDOM(): HTMLElement {
@@ -1176,8 +1180,12 @@ export default class lotusPlugin extends Plugin {
       },
     }, {
       inputButtonLabel: isFunctionInput ? "Toggle function input" : "Toggle stdin input",
-      showVisualize: isCompileFeatureAllowed("rich-displays"),
+      showVisualize: this.shouldShowCodeVisualizationButton(),
     });
+  }
+
+  shouldShowCodeVisualizationButton(): boolean {
+    return isCompileFeatureAllowed("rich-displays") && (this.settings.showCodeVisualizationButton ?? true);
   }
 
   async editBlockById(blockId: string): Promise<void> {
@@ -2264,7 +2272,7 @@ export default class lotusPlugin extends Plugin {
         const contextNotice = this.formatExecutionContextNotice(executionContext);
         result.warning = result.warning ? `${contextNotice}\n${result.warning}` : contextNotice;
       }
-      await this.prepareDisplayOutputs(block, result, executionContext, controller.signal, options);
+      await this.prepareDisplayOutputs(file, block, result, executionContext, controller.signal, options);
       await this.writeOutputFileIfRequested(file, block, result);
 
       this.outputs.set(block.id, {
@@ -2349,12 +2357,12 @@ export default class lotusPlugin extends Plugin {
       return;
     }
 
-    if (this.settings.graphvizExecutable.trim() && !(await this.ensureExecutionEnabled())) {
+    const executionContext = this.resolveExecutionContext(file, block);
+    if ((executionContext.containerGroup || this.settings.graphvizExecutable.trim()) && !(await this.ensureExecutionEnabled())) {
       showExecutionDisabledNotice();
       return;
     }
 
-    const executionContext = this.resolveExecutionContext(file, block);
     const controller = new AbortController();
     const started = Date.now();
     const startedAt = new Date().toISOString();
@@ -2379,7 +2387,7 @@ export default class lotusPlugin extends Plugin {
 
     try {
       result.displays = await Promise.all(
-        (result.displays ?? []).map((display) => this.enrichGraphvizDisplay(display, executionContext, controller.signal, result)),
+        (result.displays ?? []).map((display) => this.enrichGraphvizDisplay(display, file, block, executionContext, controller.signal, result)),
       );
       result.finishedAt = new Date().toISOString();
       result.durationMs = Date.now() - started;
@@ -2425,6 +2433,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   private async prepareDisplayOutputs(
+    file: TFile,
     block: lotusCodeBlock,
     result: lotusStoredOutput["result"],
     executionContext: lotusResolvedExecutionContext,
@@ -2449,7 +2458,7 @@ export default class lotusPlugin extends Plugin {
 
     const enriched: lotusDisplayOutput[] = [];
     for (const display of displays) {
-      enriched.push(await this.enrichGraphvizDisplay(display, executionContext, signal, result));
+      enriched.push(await this.enrichGraphvizDisplay(display, file, block, executionContext, signal, result));
     }
 
     if (enriched.length) {
@@ -2489,6 +2498,8 @@ export default class lotusPlugin extends Plugin {
 
   private async enrichGraphvizDisplay(
     display: lotusDisplayOutput,
+    file: TFile,
+    block: lotusCodeBlock,
     executionContext: lotusResolvedExecutionContext,
     signal: AbortSignal,
     result: lotusStoredOutput["result"],
@@ -2499,12 +2510,12 @@ export default class lotusPlugin extends Plugin {
 
     const dot = typeof display.data["text/vnd.graphviz"] === "string" ? display.data["text/vnd.graphviz"] : "";
     const executable = this.settings.graphvizExecutable?.trim();
-    if (!dot.trim() || !executable) {
+    if (!dot.trim() || (!executionContext.containerGroup && !executable)) {
       return display;
     }
 
     try {
-      const svg = await this.renderGraphvizSvg(dot, executable, executionContext, signal);
+      const svg = await this.renderGraphvizSvg(dot, executable || "dot", file, block, executionContext, signal);
       return {
         ...display,
         data: {
@@ -2521,9 +2532,29 @@ export default class lotusPlugin extends Plugin {
   private async renderGraphvizSvg(
     dot: string,
     executable: string,
+    file: TFile,
+    block: lotusCodeBlock,
     executionContext: lotusResolvedExecutionContext,
     signal: AbortSignal,
   ): Promise<string> {
+    const containerGroup = executionContext.containerGroup;
+    if (containerGroup) {
+      const containerResult = await this.containerRunner.run(this.createGraphvizBlock(block, dot), {
+        file,
+        workingDirectory: executionContext.workingDirectory,
+        timeoutMs: executionContext.timeoutMs,
+        signal,
+      }, this.settings, containerGroup);
+      if (!containerResult.success) {
+        throw new Error(containerResult.stderr || containerResult.stdout || `Graphviz exited with ${containerResult.exitCode ?? "unknown status"}`);
+      }
+      const containerSvg = containerResult.stdout.trim();
+      if (!containerSvg) {
+        throw new Error("Graphviz produced no SVG output.");
+      }
+      return containerSvg;
+    }
+
     const result = await runProcess({
       runnerId: "display:graphviz",
       runnerName: "Graphviz",
@@ -2544,6 +2575,19 @@ export default class lotusPlugin extends Plugin {
       throw new Error("Graphviz produced no SVG output.");
     }
     return svg;
+  }
+
+  private createGraphvizBlock(block: lotusCodeBlock, dot: string): lotusCodeBlock {
+    return {
+      ...block,
+      id: `${block.id}:graphviz`,
+      language: "graphviz",
+      languageAlias: "graphviz",
+      sourceLanguage: "graphviz",
+      content: dot,
+      attributes: {},
+      executionContext: {},
+    };
   }
 
   private async writeCodeBlockHashesIfEnabled(file: TFile): Promise<void> {
@@ -3003,6 +3047,9 @@ export default class lotusPlugin extends Plugin {
     this.settings.graphvizExecutable = isCompileFeatureAllowed("rich-displays")
       ? normalizeStringSetting(this.settings.graphvizExecutable, DEFAULT_SETTINGS.graphvizExecutable)
       : "";
+    this.settings.showCodeVisualizationButton = isCompileFeatureAllowed("rich-displays")
+      ? normalizeBooleanSetting(this.settings.showCodeVisualizationButton, DEFAULT_SETTINGS.showCodeVisualizationButton)
+      : false;
   }
 
   private getActiveMarkdownFile(): TFile | null {
@@ -4035,6 +4082,10 @@ function normalizeNonNegativeInteger(value: unknown, fallback: number, max: numb
 
 function normalizeStringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function normalizeBooleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function normalizeMachineId(value: unknown): string {

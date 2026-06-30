@@ -1814,6 +1814,13 @@ export class lotusContainerRunner {
           command: `${settings.shellExecutable.trim() || "bash"} {file}`,
           extension: ".sh",
         };
+      case "graphviz":
+      case "dot":
+      case "gv":
+        return {
+          command: "dot -Tsvg {file}",
+          extension: ".dot",
+        };
       case "ruby":
       case "rb":
         return {

@@ -71,7 +71,7 @@ display.mime({ "application/json": { ok: true } }, { title: "Data" });
 display.mime({ "application/vnd.my-tool.image+json": { path: "diagram.bin" } }, { title: "Custom image" });
 ```
 
-Graphviz displays use `text/vnd.graphviz`. When Graphviz is configured, Lotus runs `dot -Tsvg` and adds an `image/svg+xml` representation.
+Graphviz displays use `text/vnd.graphviz`. When Graphviz is configured, Lotus runs `dot -Tsvg` and adds an `image/svg+xml` representation. If the block resolves to an execution group, Lotus runs Graphviz inside that group with the synthetic `graphviz` language instead of requiring `dot` on the host.
 
 ## Custom MIME Renderers
 
@@ -127,7 +127,7 @@ lotus-visualize=graphviz
 lotus-visualize=svg
 ```
 
-`graphviz`, `dot`, `gv`, and `cfg` are accepted Graphviz aliases. `svg` and `image/svg+xml` are accepted SVG aliases. `false`, `off`, `none`, and similar values disable synthesis.
+`graphviz`, `dot`, `gv`, and `cfg` are accepted Graphviz aliases. `svg` and `image/svg+xml` are accepted SVG aliases. `false`, `off`, `none`, and similar values disable synthesis. The toolbar source graph button is enabled by default and can be hidden with the **Show code graph button** setting.
 
 ## UI Behavior
 
