@@ -539,7 +539,7 @@ function getLanguagePatterns(language: string): Array<{ kind: string; regex: Reg
     return [
       { kind: "class", regex: /^(?:public|private|protected|abstract|final|\s)*class\s+([A-Za-z_][\w]*)/ },
       { kind: "interface", regex: /^(?:public|private|protected|\s)*interface\s+([A-Za-z_][\w]*)/ },
-      { kind: "method", regex: /^(?:public|private|protected|static|final|synchronized|abstract|\s)+[\w<>\[\],.?]+\s+([A-Za-z_][\w]*\s*\([^)]*\))\s*(?:throws\b.*?)?\{/ },
+      { kind: "method", regex: /^(?:public|private|protected|static|final|synchronized|abstract|\s)+[\w<>[\],.?]+\s+([A-Za-z_][\w]*\s*\([^)]*\))\s*(?:throws\b.*?)?\{/ },
       { kind: "if", regex: /^if\s*\((.+)\)\s*\{/ },
       { kind: "for", regex: /^for\s*\((.+)\)\s*\{/ },
       { kind: "while", regex: /^while\s*\((.+)\)\s*\{/ },
@@ -720,13 +720,6 @@ function findLabelBreakIndex(value: string): number {
   ].filter((index) => index >= Math.floor(WRAP_LABEL_LINE_LENGTH * 0.45));
   const best = Math.max(...candidates);
   return best > 0 ? best + (window[best] === "," ? 1 : 0) : WRAP_LABEL_LINE_LENGTH;
-}
-
-function escapeDotLabel(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, "\\\"")
-    .replace(/\n/g, "\\n");
 }
 
 function escapeHtmlLabel(value: string): string {

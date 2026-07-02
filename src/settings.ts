@@ -123,6 +123,7 @@ export class lotusSettingTab extends PluginSettingTab {
     containerEl.createEl("p", { text: "Run supported code fences directly from notes while preserving native syntax highlighting." });
 
     this.renderGeneralSettings(this.createSection(containerEl, "General", true));
+    this.renderApiSettings(this.createSection(containerEl, "Local API"));
     this.renderHashingAndObservabilitySettings(this.createSection(containerEl, "Hashing and observability"));
     this.renderLoggingSettings(this.createSection(containerEl, "Logging"));
     this.renderLanguagePackages(this.createSection(containerEl, "Language packages"));
@@ -368,6 +369,48 @@ export class lotusSettingTab extends PluginSettingTab {
           });
         });
     }
+  }
+
+  private renderApiSettings(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Enable local API")
+      .setDesc("Expose a signed local HTTP API for trusted tools such as lotus-tui. Keep this bound to localhost unless you fully control the network.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.lotusPlugin.settings.apiEnabled).onChange(async (value) => {
+          this.lotusPlugin.settings.apiEnabled = value;
+          await this.lotusPlugin.saveSettings();
+        }),
+      );
+
+    this.addTextSetting(containerEl, "API host", "Bind address. Use 127.0.0.1 for local-only access.", "apiHost");
+
+    new Setting(containerEl)
+      .setName("API port")
+      .setDesc("Local API port used by lotus-tui.")
+      .addText((text) =>
+        text.setPlaceholder("27188").setValue(String(this.lotusPlugin.settings.apiPort)).onChange(async (value) => {
+          const parsed = Number.parseInt(value.trim(), 10);
+          if (!Number.isNaN(parsed) && parsed > 0 && parsed <= 65535) {
+            this.lotusPlugin.settings.apiPort = parsed;
+            await this.lotusPlugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("API keys")
+      .setDesc("One key per line as key-id:secret, or a JSON array of {\"id\":\"...\",\"secret\":\"...\"}. Requests must include HMAC signature headers.")
+      .addTextArea((text) => {
+        text.setValue(this.lotusPlugin.settings.apiKeys).onChange(async (value) => {
+          this.lotusPlugin.settings.apiKeys = value;
+          await this.lotusPlugin.saveSettings();
+        });
+        text.inputEl.rows = 5;
+        text.inputEl.setCssStyles({
+          fontFamily: "monospace",
+          width: "100%",
+        });
+      });
   }
 
   private renderLoggingSettings(containerEl: HTMLElement): void {

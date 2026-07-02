@@ -284,17 +284,15 @@ function createImageViewer(container: HTMLElement, image: LotusImageDisplayData,
 
   function updateImageZoom(center = readViewportCenter(viewport)): void {
     const scaledWidth = Math.round(baseWidth * zoom);
-    img.style.width = `${scaledWidth}px`;
-    img.style.maxWidth = "none";
-    if (baseHeight) {
-      img.style.height = `${Math.round(baseHeight * zoom)}px`;
-    } else {
-      img.style.height = "auto";
-    }
+    img.setCssStyles({
+      width: `${scaledWidth}px`,
+      maxWidth: "none",
+      height: baseHeight ? `${Math.round(baseHeight * zoom)}px` : "auto",
+    });
     const percent = Math.round(zoom * 100);
     slider.value = String(percent);
     valueEl.setText(`${percent}%`);
-    requestAnimationFrame(() => restoreViewportCenter(viewport, center));
+    window.requestAnimationFrame(() => restoreViewportCenter(viewport, center));
   }
 
   return {
@@ -535,7 +533,7 @@ function installDisplayCleanup(section: HTMLElement, cleanup: void | lotusDispla
   });
 
   observer.observe(activeDocument.body, { childList: true, subtree: true });
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     if (!section.isConnected) {
       runCleanup();
     }

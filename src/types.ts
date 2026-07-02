@@ -195,6 +195,10 @@ export interface lotusPluginSettings {
   writeOutputToNote: boolean;
   outputVisibleLines: number;
   autoRunOnFileOpen: boolean;
+  apiEnabled: boolean;
+  apiHost: string;
+  apiPort: number;
+  apiKeys: string;
   showCodeVisualizationButton: boolean;
   hashCodeBlocks: boolean;
   signingMode: "passphrase" | "rsa" | "ssh";
