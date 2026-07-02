@@ -52,6 +52,7 @@ import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
+import { apiBlockFromCodeBlock, apiRunFromStoredOutput, lotusApiServer, readApiLogEvents, type lotusApiBlock, type lotusApiLogEvent, type lotusApiNote, type lotusApiRun, type lotusApiRunner } from "./apiServer";
 import type {
   lotusCodeBlock,
   lotusCustomPreprocessor,
@@ -166,6 +167,7 @@ interface lotusLiveRunState {
 
 interface lotusRunBlockOptions {
   visualize?: boolean;
+  writePolicy?: string;
 }
 
 interface lotusOutputFileTarget {
@@ -564,6 +566,7 @@ export default class lotusPlugin extends Plugin {
   private readonly stdinPanels = new Set<string>();
   private readonly running = new Map<string, AbortController>();
   private readonly outputListeners = new Map<string, Set<() => void>>();
+  private readonly apiServer = new lotusApiServer(this);
   private statusBarItemEl!: HTMLElement;
   private editorViews = new Set<EditorView>();
   private lastMarkdownFilePath: string | null = null;
@@ -949,12 +952,14 @@ export default class lotusPlugin extends Plugin {
         }
       }),
     );
+    void this.apiServer.configure();
   }
 
   onunload(): void {
     for (const controller of this.running.values()) {
       controller.abort();
     }
+    void this.apiServer.stop();
     this.logger.close();
   }
 
@@ -1076,6 +1081,7 @@ export default class lotusPlugin extends Plugin {
     });
     this.registerCodeBlockProcessors();
     this.notifyAllOutputsChanged();
+    await this.apiServer.configure();
   }
 
   isBlockRunning(blockId: string): boolean {
@@ -1459,6 +1465,210 @@ export default class lotusPlugin extends Plugin {
       },
     });
     new Notice("Lotus outputs cleared.");
+  }
+
+  async listApiNotes(query?: string): Promise<lotusApiNote[]> {
+    const normalizedQuery = query?.trim().toLowerCase() ?? "";
+    const notes: lotusApiNote[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (normalizedQuery && !file.path.toLowerCase().includes(normalizedQuery) && !file.basename.toLowerCase().includes(normalizedQuery)) {
+        continue;
+      }
+      const source = await this.app.vault.cachedRead(file);
+      const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings)
+        .filter((block) => this.isApiRunnableBlock(file, block));
+      if (!blocks.length) {
+        continue;
+      }
+      notes.push({
+        path: file.path,
+        title: file.basename,
+        block_count: blocks.length,
+        updated_at: new Date(file.stat.mtime).toISOString(),
+      });
+    }
+    return notes.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  async listApiBlocks(notePath: string): Promise<lotusApiBlock[]> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      throw new Error(`Note not found: ${notePath}`);
+    }
+    const source = await this.app.vault.cachedRead(file);
+    return parseMarkdownCodeBlocks(file.path, source, this.settings)
+      .filter((block) => this.isApiRunnableBlock(file, block))
+      .map((block) => apiBlockFromCodeBlock(block, this.getApiBlockStatus(block.id)));
+  }
+
+  async getApiBlock(blockId: string): Promise<lotusApiBlock | null> {
+    const target = await this.findApiBlockById(blockId);
+    if (!target) {
+      return null;
+    }
+    return apiBlockFromCodeBlock(target.block, this.getApiBlockStatus(target.block.id), { includeContent: true });
+  }
+
+  async updateApiBlockContent(blockId: string, content: string): Promise<lotusApiBlock | null> {
+    const target = await this.findApiBlockById(blockId);
+    if (!target) {
+      return null;
+    }
+
+    const source = await this.app.vault.cachedRead(target.file);
+    const lines = source.split(/\r?\n/);
+    const replacement = content.split(/\r?\n/);
+    lines.splice(
+      target.block.startLine + 1,
+      Math.max(0, target.block.endLine - target.block.startLine - 1),
+      ...replacement,
+    );
+    const nextSource = lines.join("\n");
+    await this.app.vault.modify(target.file, nextSource);
+    this.outputs.delete(target.block.id);
+    this.notifyOutputChanged(target.block.id);
+    await this.writeCodeBlockHashesIfEnabled(target.file);
+
+    const updatedSource = await this.app.vault.cachedRead(target.file);
+    const updatedBlock = parseMarkdownCodeBlocks(target.file.path, updatedSource, this.settings)
+      .filter((block) => this.isApiRunnableBlock(target.file, block))
+      .find((block) => block.ordinal === target.block.ordinal);
+    return updatedBlock
+      ? apiBlockFromCodeBlock(updatedBlock, this.getApiBlockStatus(updatedBlock.id), { includeContent: true })
+      : null;
+  }
+
+  async listApiRunners(): Promise<lotusApiRunner[]> {
+    const builtIn = this.registry.getSupportedLanguages()
+      .sort((a, b) => a.localeCompare(b))
+      .map((language) => ({
+        id: `obsidian:${language}`,
+        name: `Lotus Obsidian ${language}`,
+        language,
+        source: "obsidian-plugin",
+        command: null,
+        executable: null,
+        available: true,
+        message: "Available through the Obsidian plugin",
+      }));
+    const custom = this.settings.customLanguages
+      .map((language) => ({
+        id: `obsidian:custom:${language.name}`,
+        name: language.name,
+        language: language.name,
+        source: "obsidian-custom-language",
+        command: [language.executable, language.args].filter(Boolean).join(" ") || null,
+        executable: language.executable || null,
+        available: true,
+        message: "Configured custom Lotus language",
+      }));
+    return [...builtIn, ...custom];
+  }
+
+  async runApiBlock(blockId: string, options: lotusRunBlockOptions = {}): Promise<lotusApiRun> {
+    const target = await this.findApiBlockById(blockId);
+    if (!target) {
+      throw new Error(`Block not found: ${blockId}`);
+    }
+    const output = await this.runBlock(target.file, target.block, options);
+    if (output) {
+      return apiRunFromStoredOutput(output);
+    }
+    const run = await this.getApiRun(blockId);
+    if (!run) {
+      throw new Error(`Run did not produce output: ${blockId}`);
+    }
+    return run;
+  }
+
+  async cancelApiRun(runId: string): Promise<lotusApiRun | null> {
+    const block = await this.findApiBlockById(runId);
+    if (this.running.has(runId)) {
+      await this.cancelBlockRun(runId, "api", block?.block, block?.file.path);
+    }
+    return this.getApiRun(runId);
+  }
+
+  async listApiRuns(): Promise<lotusApiRun[]> {
+    const liveRuns = [...this.liveRuns.entries()].map(([blockId, run]) => ({
+      id: blockId,
+      block_id: blockId,
+      note_path: run.notePath,
+      status: "running" as const,
+      runner_id: run.target.runnerId ?? "pending",
+      runner_name: run.runnerName,
+      started_at: run.startedAt,
+      finished_at: null,
+      exit_code: null,
+      duration_ms: null,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      warning: null,
+    }));
+    const storedRuns = [...this.outputs.values()].map(apiRunFromStoredOutput);
+    const seen = new Set(liveRuns.map((run) => run.id));
+    return [
+      ...liveRuns,
+      ...storedRuns.filter((run) => !seen.has(run.id)),
+    ];
+  }
+
+  async getApiRun(runId: string): Promise<lotusApiRun | null> {
+    const liveRun = this.liveRuns.get(runId);
+    if (liveRun) {
+      return {
+        id: runId,
+        block_id: runId,
+        note_path: liveRun.notePath,
+        status: "running",
+        runner_id: liveRun.target.runnerId ?? "pending",
+        runner_name: liveRun.runnerName,
+        started_at: liveRun.startedAt,
+        finished_at: null,
+        exit_code: null,
+        duration_ms: null,
+        stdout: liveRun.stdout,
+        stderr: liveRun.stderr,
+        warning: null,
+      };
+    }
+    const output = this.outputs.get(runId);
+    return output ? apiRunFromStoredOutput(output) : null;
+  }
+
+  async listApiLogs(limit: number): Promise<lotusApiLogEvent[]> {
+    return readApiLogEvents(this, limit);
+  }
+
+  private isApiRunnableBlock(file: TFile, block: lotusCodeBlock): boolean {
+    const executionContext = this.resolveExecutionContext(file, block);
+    return Boolean(executionContext.containerGroup || this.registry.getRunnerForBlock(block, this.settings));
+  }
+
+  private getApiBlockStatus(blockId: string): lotusApiBlock["status"] {
+    if (this.running.has(blockId)) {
+      return "running";
+    }
+    const output = this.outputs.get(blockId);
+    if (!output) {
+      return "idle";
+    }
+    if (output.result.cancelled) {
+      return "cancelled";
+    }
+    return output.result.success ? "succeeded" : "failed";
+  }
+
+  private async findApiBlockById(blockId: string): Promise<{ file: TFile; block: lotusCodeBlock } | null> {
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const source = await this.app.vault.cachedRead(file);
+      const block = parseMarkdownCodeBlocks(file.path, source, this.settings)
+        .find((candidate) => candidate.id === blockId);
+      if (block) {
+        return { file, block };
+      }
+    }
+    return null;
   }
 
   async saveReproducibilitySnapshot(file: TFile): Promise<void> {
@@ -2155,16 +2365,16 @@ export default class lotusPlugin extends Plugin {
     });
   }
 
-  async runBlock(file: TFile, block: lotusCodeBlock, options: lotusRunBlockOptions = {}): Promise<void> {
+  async runBlock(file: TFile, block: lotusCodeBlock, options: lotusRunBlockOptions = {}): Promise<lotusStoredOutput | null> {
     this.lastMarkdownFilePath = file.path;
     if (this.running.has(block.id)) {
       new Notice("This Lotus block is already running.");
-      return;
+      return this.outputs.get(block.id) ?? null;
     }
 
     if (!(await this.ensureExecutionEnabled())) {
       showExecutionDisabledNotice();
-      return;
+      return null;
     }
 
     const executionContext = this.resolveExecutionContext(file, block);
@@ -2212,6 +2422,7 @@ export default class lotusPlugin extends Plugin {
     this.notifyOutputChanged(block.id);
     this.updateStatusBar();
 
+    let storedOutput: lotusStoredOutput | null = null;
     try {
       const resolvedBlock = await this.resolveExecutableBlock(file, block, controller.signal);
       const runner = containerGroup ? null : this.registry.getRunnerForBlock(resolvedBlock.block, this.settings);
@@ -2275,17 +2486,19 @@ export default class lotusPlugin extends Plugin {
       await this.prepareDisplayOutputs(file, block, result, executionContext, controller.signal, options);
       await this.writeOutputFileIfRequested(file, block, result);
 
-      this.outputs.set(block.id, {
+      storedOutput = {
         blockId: block.id,
         block,
         result,
         sourcePreview: resolvedBlock.sourcePreview,
         collapsed: false,
         visible: true,
-      });
+      };
+      this.outputs.set(block.id, storedOutput);
 
-      if (this.settings.writeOutputToNote) {
-        await this.writeManagedOutputBlock(file, block, result);
+      const requestedWrite = options.writePolicy === "write-replace" || options.writePolicy === "write-append";
+      if (this.settings.writeOutputToNote || requestedWrite) {
+        await this.writeManagedOutputBlock(file, block, result, options.writePolicy === "write-append" ? "append" : "replace");
       }
 
       await this.logger.logRunFinished(file.path, block, runnerName, result, {
@@ -2299,7 +2512,7 @@ export default class lotusPlugin extends Plugin {
       new Notice(result.success ? `lotus ran ${runnerName} block.` : `lotus run failed for ${runnerName}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.outputs.set(block.id, {
+      storedOutput = {
         blockId: block.id,
         block,
         collapsed: false,
@@ -2317,7 +2530,8 @@ export default class lotusPlugin extends Plugin {
           timedOut: false,
           cancelled: false,
         },
-      });
+      };
+      this.outputs.set(block.id, storedOutput);
       await this.logEvent({
         type: "lotus.run.failed",
         message: "Code block failed before result",
@@ -2343,6 +2557,7 @@ export default class lotusPlugin extends Plugin {
       this.notifyOutputChanged(block.id);
       this.updateStatusBar();
     }
+    return storedOutput;
   }
 
   async visualizeBlock(file: TFile, block: lotusCodeBlock): Promise<void> {
@@ -3037,6 +3252,10 @@ export default class lotusPlugin extends Plugin {
       this.settings.loggingMachineHashScope = DEFAULT_SETTINGS.loggingMachineHashScope;
     }
     this.settings.loggingMaxEventBytes = normalizePositiveInteger(this.settings.loggingMaxEventBytes, DEFAULT_SETTINGS.loggingMaxEventBytes);
+    this.settings.apiEnabled = Boolean(this.settings.apiEnabled);
+    this.settings.apiHost = normalizeApiHost(this.settings.apiHost, DEFAULT_SETTINGS.apiHost);
+    this.settings.apiPort = normalizePort(this.settings.apiPort, DEFAULT_SETTINGS.apiPort);
+    this.settings.apiKeys = typeof this.settings.apiKeys === "string" ? this.settings.apiKeys : DEFAULT_SETTINGS.apiKeys;
     this.settings.defaultContainerGroup = isCompileFeatureAllowed("container-groups")
       ? normalizeStringSetting(this.settings.defaultContainerGroup, DEFAULT_SETTINGS.defaultContainerGroup)
       : "";
@@ -3325,7 +3544,7 @@ export default class lotusPlugin extends Plugin {
     return join(root, ".lotus", "preprocess", sanitizeArtifactSegment(file.path), `block-${block.ordinal}-${sanitizeArtifactSegment(block.sourceLanguage || block.language)}`);
   }
 
-  private async writeManagedOutputBlock(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"]): Promise<void> {
+  private async writeManagedOutputBlock(file: TFile, block: lotusCodeBlock, result: lotusStoredOutput["result"], mode: "replace" | "append" = "replace"): Promise<void> {
     await this.app.vault.process(file, (content) => {
       const lines = content.split(/\r?\n/);
       const blocks = parseMarkdownCodeBlocks(file.path, content, this.settings);
@@ -3333,7 +3552,7 @@ export default class lotusPlugin extends Plugin {
       const rendered = this.renderManagedOutputMarkdown(block.id, result);
       const existingRange = this.findManagedOutputRange(lines, block.id);
 
-      if (existingRange) {
+      if (existingRange && mode === "replace") {
         lines.splice(existingRange.start, existingRange.end - existingRange.start + 1, ...rendered);
         return lines.join("\n");
       }
@@ -4078,6 +4297,19 @@ function normalizeNonNegativeInteger(value: unknown, fallback: number, max: numb
     return fallback;
   }
   return Math.min(Math.floor(value), max);
+}
+
+function normalizePort(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 65535 ? Math.floor(parsed) : fallback;
+}
+
+function normalizeApiHost(value: unknown, fallback: string): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  return /^(127\.0\.0\.1|localhost|::1)$/.test(trimmed) ? trimmed : fallback;
 }
 
 function normalizeStringSetting(value: unknown, fallback: string): string {
