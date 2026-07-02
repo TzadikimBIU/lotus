@@ -1774,16 +1774,6 @@ export class lotusContainerRunner {
     if (!langId) return null;
     const normalized = langId.toLowerCase().trim();
 
-    // Check command-backed languages first, including external language packs.
-    const custom = findEnabledCommandLanguage(settings, normalized);
-    if (custom) {
-      return {
-        command: `${custom.executable} ${custom.args}`.trim(),
-        extension: custom.extension || ".txt",
-      };
-    }
-
-    // Standard built-ins
     switch (normalized) {
       case "python":
       case "py":
@@ -1935,6 +1925,15 @@ export class lotusContainerRunner {
           extension: ".smt2",
         };
     }
+
+    const custom = findEnabledCommandLanguage(settings, normalized);
+    if (custom) {
+      return {
+        command: `${custom.executable} ${custom.args}`.trim(),
+        extension: custom.extension || ".txt",
+      };
+    }
+
     return null;
   }
 }

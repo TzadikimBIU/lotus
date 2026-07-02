@@ -116,7 +116,7 @@
 
 .lotus-output-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.65rem;
   padding: 0.7rem 0.9rem;
@@ -140,6 +140,12 @@
   color: var(--text-muted);
 }
 
+.lotus-output-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .lotus-output-body {
   padding: 0.8rem 0.9rem 0.95rem;
   display: grid;
@@ -156,11 +162,39 @@
   gap: 0.35rem;
 }
 
+.lotus-output-stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .lotus-output-stream-label {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.lotus-output-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lotus-output-copy-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 .lotus-output-pre {

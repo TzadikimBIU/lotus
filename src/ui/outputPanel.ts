@@ -1,4 +1,4 @@
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import type {
   lotusDisplayOutput,
   lotusDisplayRenderer,
@@ -52,6 +52,11 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
 
   const meta = header.createDiv({ cls: "lotus-output-meta" });
   meta.setText(`${output.result.durationMs} ms · ${new Date(output.result.finishedAt).toLocaleTimeString()}`);
+  const copyableOutput = formatCopyableOutput(output);
+  if (copyableOutput) {
+    const actions = header.createDiv({ cls: "lotus-output-actions" });
+    createCopyButton(actions, "Copy output", copyableOutput);
+  }
 
   const body = panel.createDiv({ cls: "lotus-output-body" });
   if (output.result.stdout.trim()) {
@@ -86,11 +91,57 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
 function createStream(container: HTMLElement, label: string, content: string, visibleLines: number): void {
   const section = container.createDiv({ cls: "lotus-output-stream" });
   const lineCount = countLines(content);
-  section.createDiv({ cls: "lotus-output-stream-label", text: formatStreamLabel(label, lineCount, visibleLines) });
+  const header = section.createDiv({ cls: "lotus-output-stream-header" });
+  header.createDiv({ cls: "lotus-output-stream-label", text: formatStreamLabel(label, lineCount, visibleLines) });
+  createCopyButton(header, `Copy ${label.toLowerCase()}`, content);
   const pre = section.createEl("pre", { cls: "lotus-output-pre", text: content });
   if (visibleLines > 0 && lineCount > visibleLines) {
     pre.addClass("is-scroll-limited");
     pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
+  }
+}
+
+function createCopyButton(container: HTMLElement, label: string, content: string): HTMLButtonElement {
+  const button = container.createEl("button", { cls: "lotus-output-copy-button" });
+  button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  setIcon(button, "copy");
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await writeClipboardText(content);
+      new Notice(`${label} copied.`);
+    } catch (error) {
+      new Notice(`Failed to copy output: ${formatUnknownError(error)}`);
+    }
+  });
+  return button;
+}
+
+async function writeClipboardText(content: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(content);
+    return;
+  }
+
+  const textarea = activeDocument.createElement("textarea");
+  textarea.value = content;
+  textarea.setCssStyles({
+    position: "fixed",
+    left: "-9999px",
+    top: "0",
+  });
+  activeDocument.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    if (!activeDocument.execCommand("copy")) {
+      throw new Error("clipboard command failed");
+    }
+  } finally {
+    textarea.remove();
   }
 }
 
@@ -553,6 +604,34 @@ function formatUnknownError(error: unknown): string {
 function formatDisplayLabel(display: lotusDisplayOutput, mime: string | undefined): string {
   const title = display.title?.trim() || display.role || "Display";
   return mime ? `${title} · ${mime}` : title;
+}
+
+function formatCopyableOutput(output: lotusStoredOutput): string {
+  const parts: { label: string; content: string }[] = [];
+  addCopyPart(parts, "Stdout", output.result.stdout);
+  addCopyPart(parts, "Warning", output.result.warning ?? "");
+  addCopyPart(parts, "Stderr", output.result.stderr);
+
+  for (const display of output.result.displays ?? []) {
+    const selected = selectDisplayMime(display);
+    const content = selected ? stringifyCopyableDisplayValue(selected.value) : "";
+    addCopyPart(parts, formatDisplayLabel(display, selected?.mime), content);
+  }
+
+  if (parts.length === 1) {
+    return parts[0].content;
+  }
+  return parts.map((part) => `${part.label}\n${part.content}`).join("\n\n");
+}
+
+function addCopyPart(parts: { label: string; content: string }[], label: string, content: string): void {
+  if (content.trim()) {
+    parts.push({ label, content });
+  }
+}
+
+function stringifyCopyableDisplayValue(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
 function imageDataUrl(mime: string, value: string): string {

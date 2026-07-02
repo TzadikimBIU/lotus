@@ -243,11 +243,42 @@ export function getEnabledCommandLanguages(settings: lotusPluginSettings): lotus
 export function findEnabledCommandLanguage(settings: lotusPluginSettings, normalizedLanguage: string, sourceAlias?: string): lotusCustomLanguage | undefined {
   const normalized = normalizedLanguage.trim().toLowerCase();
   const alias = sourceAlias?.trim().toLowerCase();
-  return getEnabledCommandLanguages(settings).find((language) => {
+  const commandLanguages = getEnabledCommandLanguages(settings);
+  const enabledAliases = getEnabledLanguageAliasMap(settings);
+  const builtInLanguageIds = getEnabledBuiltInLanguageIds(settings);
+  const resolvedLanguage = enabledAliases[normalized];
+  if (resolvedLanguage) {
+    return builtInLanguageIds.has(resolvedLanguage)
+      ? undefined
+      : commandLanguages.find((language) => language.name.trim().toLowerCase() === resolvedLanguage);
+  }
+  if (alias) {
+    const resolvedAlias = enabledAliases[alias];
+    if (resolvedAlias) {
+      return builtInLanguageIds.has(resolvedAlias)
+        ? undefined
+        : commandLanguages.find((language) => language.name.trim().toLowerCase() === resolvedAlias);
+    }
+  }
+
+  return commandLanguages.find((language) => {
     const name = language.name.trim().toLowerCase();
     const aliases = parseAliasList(language.aliases);
     return name === normalized || aliases.includes(normalized) || Boolean(alias && (name === alias || aliases.includes(alias)));
   });
+}
+
+function getEnabledBuiltInLanguageIds(settings: lotusPluginSettings): Set<string> {
+  normalizeLanguageConfiguration(settings);
+  const enabledPacks = new Set(settings.enabledLanguagePacks);
+  const enabledLanguages = new Set(settings.enabledLanguages);
+  return new Set(
+    getCompileAllowedBuiltInLanguagePackages()
+      .filter((pack) => enabledPacks.has(pack.id))
+      .flatMap((pack) => pack.languages)
+      .filter((language) => enabledLanguages.has(language.id))
+      .map((language) => language.id),
+  );
 }
 
 function parseAliasList(value?: string): string[] {

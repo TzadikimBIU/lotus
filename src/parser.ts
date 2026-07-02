@@ -14,13 +14,14 @@ export function normalizeLanguage(rawLanguage: string, settings?: lotusPluginSet
     return null;
   }
 
-  const commandLanguage = findEnabledCommandLanguage(settings, normalized);
-  if (commandLanguage) {
-    return commandLanguage.name.trim();
+  const aliases = getEnabledLanguageAliasMap(settings);
+  const builtInLanguage = aliases[normalized];
+  if (builtInLanguage) {
+    return builtInLanguage;
   }
 
-  const aliases = getEnabledLanguageAliasMap(settings);
-  return aliases[normalized] ?? null;
+  const commandLanguage = findEnabledCommandLanguage(settings, normalized);
+  return commandLanguage?.name.trim() || null;
 }
 
 export function getSupportedLanguageAliases(settings?: lotusPluginSettings): string[] {
