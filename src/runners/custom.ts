@@ -18,6 +18,7 @@ export class CustomLanguageRunner implements lotusRunner {
       throw new Error(`Unsupported custom language: ${block.language}`);
     }
 
+    const readsGeneratedFile = language.outputMode === "file";
     return runTempFileProcess({
       runnerId: `${this.id}:${language.name}`,
       runnerName: language.name,
@@ -25,6 +26,8 @@ export class CustomLanguageRunner implements lotusRunner {
       args: splitCommandLine(language.args || "{file}"),
       fileExtension: normalizeExtension(language.extension, language.name),
       source: block.content,
+      readOutputFile: readsGeneratedFile,
+      outputExtension: readsGeneratedFile ? normalizeExtension(language.outputExtension, "out") : undefined,
       workingDirectory: context.workingDirectory,
       timeoutMs: context.timeoutMs,
       signal: context.signal,
@@ -40,8 +43,8 @@ export class CustomLanguageRunner implements lotusRunner {
   }
 }
 
-function normalizeExtension(extension: string, name: string): string {
-  const trimmed = extension.trim();
+function normalizeExtension(extension: string | undefined, name: string): string {
+  const trimmed = extension?.trim() ?? "";
   if (!trimmed) {
     return `.${name}`;
   }

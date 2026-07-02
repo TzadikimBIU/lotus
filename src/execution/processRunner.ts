@@ -29,11 +29,14 @@ export interface lotusProcessSpec {
 export interface lotusTempSourceSpec extends lotusProcessSpec {
   fileExtension: string;
   source: string;
+  readOutputFile?: boolean;
+  outputExtension?: string;
 }
 
 export interface lotusTempSourceHandle {
   tempDir: string;
   tempFile: string;
+  outputFile?: string;
 }
 
 export async function withNamedTempSourceFile<T>(
@@ -376,12 +379,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lotusRunResult> {
-  return withTempSourceFile(spec.fileExtension, spec.source, async ({ tempFile, tempDir }) =>
-    runProcess({
+  return withTempSourceFile(spec.fileExtension, spec.source, async ({ tempFile, tempDir }) => {
+    const outputFile = spec.readOutputFile || spec.outputExtension
+      ? join(tempDir, `output${normalizeTempOutputExtension(spec.outputExtension)}`)
+      : undefined;
+    const result = await runProcess({
       runnerId: spec.runnerId,
       runnerName: spec.runnerName,
       executable: spec.executable,
-      args: spec.args.map((value) => value.replaceAll("{file}", tempFile).replaceAll("{tempDir}", tempDir)),
+      args: spec.args.map((value) => expandTempPathTemplates(value, tempFile, tempDir, outputFile)),
       workingDirectory: spec.workingDirectory,
       timeoutMs: spec.timeoutMs,
       signal: spec.signal,
@@ -389,12 +395,40 @@ export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lot
       stdinSession: spec.stdinSession,
       onStdout: spec.onStdout,
       onStderr: spec.onStderr,
-      env: expandTemplatedEnv(spec.env, tempFile, tempDir),
-    }),
-  );
+      env: expandTemplatedEnv(spec.env, tempFile, tempDir, outputFile),
+    });
+
+    if (!spec.readOutputFile || !outputFile) {
+      return result;
+    }
+    return readGeneratedOutputFile(result, outputFile, spec.onStdout);
+  });
 }
 
-function expandTemplatedEnv(env: NodeJS.ProcessEnv | undefined, tempFile: string, tempDir: string): NodeJS.ProcessEnv | undefined {
+async function readGeneratedOutputFile(
+  result: lotusRunResult,
+  outputFile: string,
+  onStdout: ((chunk: string) => void) | undefined,
+): Promise<lotusRunResult> {
+  try {
+    const generatedOutput = await readFile(outputFile, "utf8");
+    if (generatedOutput.length) {
+      onStdout?.(generatedOutput);
+    }
+    return {
+      ...result,
+      stdout: appendText(result.stdout, generatedOutput),
+    };
+  } catch (error) {
+    return {
+      ...result,
+      stderr: appendText(result.stderr, formatOutputFileError(error, outputFile)),
+      success: false,
+    };
+  }
+}
+
+function expandTemplatedEnv(env: NodeJS.ProcessEnv | undefined, tempFile: string, tempDir: string, outputFile: string | undefined): NodeJS.ProcessEnv | undefined {
   if (!env) {
     return undefined;
   }
@@ -402,7 +436,39 @@ function expandTemplatedEnv(env: NodeJS.ProcessEnv | undefined, tempFile: string
   return Object.fromEntries(
     Object.entries(env).map(([key, value]) => [
       key,
-      typeof value === "string" ? value.replaceAll("{file}", tempFile).replaceAll("{tempDir}", tempDir) : value,
+      typeof value === "string" ? expandTempPathTemplates(value, tempFile, tempDir, outputFile) : value,
     ]),
   );
+}
+
+function expandTempPathTemplates(value: string, tempFile: string, tempDir: string, outputFile: string | undefined): string {
+  return value
+    .replaceAll("{file}", tempFile)
+    .replaceAll("{tempDir}", tempDir)
+    .replaceAll("{output}", outputFile ?? "");
+}
+
+function normalizeTempOutputExtension(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return ".out";
+  }
+  return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
+}
+
+function appendText(left: string, right: string): string {
+  if (!right) {
+    return left;
+  }
+  if (!left) {
+    return right;
+  }
+  return `${left}${left.endsWith("\n") ? "" : "\n"}${right}`;
+}
+
+function formatOutputFileError(error: unknown, outputFile: string): string {
+  if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    return `Expected output file was not produced: ${outputFile}`;
+  }
+  return `Failed to read output file ${outputFile}: ${error instanceof Error ? error.message : String(error)}`;
 }

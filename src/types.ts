@@ -256,6 +256,8 @@ export interface lotusCustomLanguage {
   executable: string;
   args: string;
   extension: string;
+  outputMode?: "streams" | "file";
+  outputExtension?: string;
   preprocessors?: lotusCustomPreprocessor[];
   preprocessorExecutable?: string;
   preprocessorArgs?: string;

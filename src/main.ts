@@ -4197,6 +4197,8 @@ function parseExternalLanguage(value: unknown, filePath: string): lotusExternalL
     executable,
     args: readString(value.args) || "{file}",
     extension: normalizeExtension(readString(value.extension), name),
+    outputMode: readString(value.outputMode) === "file" ? "file" : "streams",
+    outputExtension: normalizeExtension(readString(value.outputExtension), "out"),
     preprocessors: readPreprocessorList(value.preprocessors, filePath),
     preprocessorExecutable: readString(value.preprocessorExecutable),
     preprocessorArgs: readString(value.preprocessorArgs) || "{request}",
