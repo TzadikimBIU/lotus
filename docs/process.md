@@ -76,9 +76,9 @@ Open a PR from `release/vX.Y.Z` to `main`
 
 Merge only after the required checks pass
 
-Tag the reviewed merge commit on `main`
+The `Tag manifest version` workflow creates the release tag from `manifest.json` after the merge reaches `main`
 
-Push the tag
+If that tag already exists on another commit, bump `manifest.json` and rerun the PR instead of reusing the tag
 
 Verify the `Production Release` workflow created a GitHub release containing `main.js` `manifest.json` and `styles.css`
 

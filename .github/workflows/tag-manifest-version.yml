@@ -1,0 +1,57 @@
+name: Tag manifest version
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - manifest.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tag-manifest-version-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag-manifest-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Read manifest version
+        id: manifest
+        shell: bash
+        run: |
+          version="$(node -e 'const fs = require("fs"); const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8")); if (typeof manifest.version !== "string" || !manifest.version.trim()) process.exit(1); process.stdout.write(manifest.version.trim());')"
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::manifest.json version must be X.Y.Z to match release tags, got '${version}'"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create version tag
+        shell: bash
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          git fetch --force --tags origin
+
+          if git show-ref --tags --verify --quiet "refs/tags/${VERSION}"; then
+            tagged_commit="$(git rev-list -n 1 "${VERSION}")"
+            if [ "${tagged_commit}" = "${GITHUB_SHA}" ]; then
+              echo "Tag ${VERSION} already points to ${GITHUB_SHA}; nothing to do."
+              exit 0
+            fi
+            echo "::error::Tag ${VERSION} already points to ${tagged_commit}; bump manifest.json before release."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${VERSION}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${VERSION}"

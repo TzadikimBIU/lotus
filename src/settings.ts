@@ -378,7 +378,7 @@ export class lotusSettingTab extends PluginSettingTab {
   private renderApiSettings(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Enable local API")
-      .setDesc("Expose a signed local HTTP API for trusted tools such as lotus-tui. Keep this bound to localhost unless you fully control the network.")
+      .setDesc("Expose a signed local API for trusted command-line tools. Keep this bound to localhost unless you fully control the network.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.apiEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.apiEnabled = value;
@@ -390,7 +390,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("API port")
-      .setDesc("Local API port used by lotus-tui.")
+      .setDesc("Port for the local API.")
       .addText((text) =>
         text.setPlaceholder("27188").setValue(String(this.lotusPlugin.settings.apiPort)).onChange(async (value) => {
           const parsed = Number.parseInt(value.trim(), 10);
@@ -1458,6 +1458,7 @@ class EditContainerGroupModal extends Modal {
           .setDesc("Command used as the persistent container's main process.")
           .addText((text) => {
             text
+              // eslint-disable-next-line obsidianmd/ui/sentence-case -- This placeholder is a shell command.
               .setPlaceholder("sleep infinity")
               .setValue(persistent.keepAliveCommand || "")
               .onChange((val) => {

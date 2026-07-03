@@ -1,4 +1,4 @@
-import { Notice, normalizePath, type TFile } from "obsidian";
+import { Notice, normalizePath } from "obsidian";
 import { createHmac, createHash, timingSafeEqual } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunResult, lotusStoredOutput } from "./types";
