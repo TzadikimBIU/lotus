@@ -2,6 +2,7 @@ import { setIcon } from "obsidian";
 
 export interface lotusToolbarHandlers {
   onRun: () => void;
+  onTranspile: () => void;
   onEdit: () => void;
   onCopy: () => void;
   onRemove: () => void;
@@ -12,6 +13,7 @@ export interface lotusToolbarHandlers {
 
 export interface lotusToolbarOptions {
   inputButtonLabel?: string;
+  showTranspile?: boolean;
   showVisualize?: boolean;
 }
 
@@ -26,6 +28,9 @@ export function createCodeBlockToolbar(
   toolbar.dataset.lotusBlockId = blockId;
 
   toolbar.appendChild(createButton(isRunning ? "Cancel block" : "Run block", isRunning ? "square" : "play", handlers.onRun, false));
+  if (!isRunning && options.showTranspile) {
+    toolbar.appendChild(createButton("Transpile block", "redo-2", handlers.onTranspile, false));
+  }
   if (options.showVisualize ?? true) {
     toolbar.appendChild(createButton("Visualize code", "git-fork", handlers.onVisualize, false));
   }

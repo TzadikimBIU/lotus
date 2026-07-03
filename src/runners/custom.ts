@@ -1,6 +1,7 @@
 import { runTempFileProcess } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
+import { resolveHighlightLanguageReference } from "../languageHighlight";
 import type { lotusCodeBlock, lotusCustomLanguage, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 export class CustomLanguageRunner implements lotusRunner {
@@ -12,16 +13,17 @@ export class CustomLanguageRunner implements lotusRunner {
     return Boolean(this.getCustomLanguage(block, settings)?.executable.trim());
   }
 
-  run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
+  async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const language = this.getCustomLanguage(block, settings);
     if (!language) {
       throw new Error(`Unsupported custom language: ${block.language}`);
     }
 
+    const mode = language.mode === "transpile" ? "transpile" : "execute";
     const readsGeneratedFile = language.outputMode === "file";
-    return runTempFileProcess({
+    const result = await runTempFileProcess({
       runnerId: `${this.id}:${language.name}`,
-      runnerName: language.name,
+      runnerName: mode === "transpile" ? `${language.name} transpiler` : language.name,
       executable: language.executable.trim(),
       args: splitCommandLine(language.args || "{file}"),
       fileExtension: normalizeExtension(language.extension, language.name),
@@ -36,11 +38,23 @@ export class CustomLanguageRunner implements lotusRunner {
       onStdout: context.onStdout,
       onStderr: context.onStderr,
     });
+    if (mode === "transpile") {
+      const outputLanguage = resolveConfiguredLanguage(language.targetLanguage || language.highlightLanguage, settings);
+      result.stdoutRole = "transpiled-source";
+      if (outputLanguage) {
+        result.stdoutLanguage = outputLanguage;
+      }
+    }
+    return result;
   }
 
   private getCustomLanguage(block: lotusCodeBlock, settings: lotusPluginSettings): lotusCustomLanguage | undefined {
     return findEnabledCommandLanguage(settings, block.language, block.languageAlias);
   }
+}
+
+function resolveConfiguredLanguage(language: string | undefined, settings: lotusPluginSettings): string | undefined {
+  return resolveHighlightLanguageReference(settings, language) ?? undefined;
 }
 
 function normalizeExtension(extension: string | undefined, name: string): string {

@@ -1,4 +1,5 @@
 import { Notice, setIcon } from "obsidian";
+import { addSyntaxLanguageClass, highlightCodeElement, normalizeSyntaxLanguage } from "../syntaxHighlight";
 import type {
   lotusDisplayOutput,
   lotusDisplayRenderer,
@@ -60,7 +61,7 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
 
   const body = panel.createDiv({ cls: "lotus-output-body" });
   if (output.result.stdout.trim()) {
-    createStream(body, "Stdout", output.result.stdout, visibleLines);
+    createStream(body, "Stdout", output.result.stdout, visibleLines, output.result.stdoutLanguage, output.result.stdoutRole);
   }
   if (output.result.warning?.trim()) {
     createStream(body, "Warning", output.result.warning, visibleLines);
@@ -88,13 +89,23 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
   }
 }
 
-function createStream(container: HTMLElement, label: string, content: string, visibleLines: number): void {
+function createStream(
+  container: HTMLElement,
+  label: string,
+  content: string,
+  visibleLines: number,
+  language?: string,
+  role?: "output" | "transpiled-source",
+): void {
   const section = container.createDiv({ cls: "lotus-output-stream" });
   const lineCount = countLines(content);
   const header = section.createDiv({ cls: "lotus-output-stream-header" });
-  header.createDiv({ cls: "lotus-output-stream-label", text: formatStreamLabel(label, lineCount, visibleLines) });
+  header.createDiv({
+    cls: "lotus-output-stream-label",
+    text: formatStreamLabel(formatStreamKind(label, language, role), lineCount, visibleLines),
+  });
   createCopyButton(header, `Copy ${label.toLowerCase()}`, content);
-  const pre = section.createEl("pre", { cls: "lotus-output-pre", text: content });
+  const pre = createCodePre(section, content, language, "lotus-output-pre");
   if (visibleLines > 0 && lineCount > visibleLines) {
     pre.addClass("is-scroll-limited");
     pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
@@ -489,7 +500,7 @@ function createImageToolbarButton(container: HTMLElement, label: string, iconNam
 
 function createTextDisplay(container: HTMLElement, content: string, visibleLines: number): void {
   const lineCount = countLines(content);
-  const pre = container.createEl("pre", { cls: "lotus-output-pre", text: content });
+  const pre = createCodePre(container, content, null, "lotus-output-pre");
   if (visibleLines > 0 && lineCount > visibleLines) {
     pre.addClass("is-scroll-limited");
     pre.style.setProperty("--lotus-output-visible-lines", String(visibleLines));
@@ -675,11 +686,23 @@ function createSourcePreview(container: HTMLElement, preview: NonNullable<lotusS
       const stageSummary = stageDetails.createEl("summary", { cls: "lotus-source-preview-summary" });
       stageSummary.createSpan({ text: stage.label });
       stageSummary.createSpan({ cls: "lotus-source-preview-meta", text: formatSourceStageMeta(stage) });
-      stageDetails.createEl("pre", { cls: "lotus-output-pre lotus-source-preview-pre", text: stage.content });
+      createCodePre(stageDetails, stage.content, stage.language, "lotus-output-pre lotus-source-preview-pre");
     }
     return;
   }
-  details.createEl("pre", { cls: "lotus-output-pre lotus-source-preview-pre", text: preview.content });
+  createCodePre(details, preview.content, preview.language, "lotus-output-pre lotus-source-preview-pre");
+}
+
+function createCodePre(container: HTMLElement, content: string, language: string | null | undefined, className: string): HTMLPreElement {
+  const pre = container.createEl("pre", { cls: className });
+  const code = pre.createEl("code");
+  code.setText(content);
+  const normalized = normalizeSyntaxLanguage(language);
+  if (normalized) {
+    addSyntaxLanguageClass(pre, normalized);
+    highlightCodeElement(code, content, normalized);
+  }
+  return pre;
 }
 
 function formatSourcePreviewMeta(preview: NonNullable<lotusStoredOutput["sourcePreview"]>): string {
@@ -729,6 +752,12 @@ function formatStreamLabel(label: string, lineCount: number, visibleLines: numbe
     return `${label} · ${lineCount} lines · showing ${visibleLines}`;
   }
   return label;
+}
+
+function formatStreamKind(label: string, language: string | undefined, role: "output" | "transpiled-source" | undefined): string {
+  const kind = role === "transpiled-source" ? "Transpiled source" : label;
+  const normalized = normalizeSyntaxLanguage(language);
+  return normalized ? `${kind} · ${normalized}` : kind;
 }
 
 export function createRunningPanel(options: lotusRunningPanelOptions = {}): HTMLDivElement {

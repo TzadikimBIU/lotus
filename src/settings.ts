@@ -19,7 +19,7 @@ import type { lotusCustomLanguage, lotusCustomPreprocessor, lotusPluginSettings 
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
-type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "outputMode" | "preprocessors">;
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "mode" | "outputMode" | "preprocessors">;
 type lotusCustomPreprocessorTextKey = keyof lotusCustomPreprocessor;
 type lotusContainerEditorRuntime = lotusCompileContainerRuntime;
 type lotusRemoteUploadMode = "inline" | "scp";
@@ -378,7 +378,7 @@ export class lotusSettingTab extends PluginSettingTab {
   private renderApiSettings(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Enable local API")
-      .setDesc("Expose a signed local HTTP API for trusted tools such as lotus-tui. Keep this bound to localhost unless you fully control the network.")
+      .setDesc("Expose a signed local API for trusted command-line tools. Keep this bound to localhost unless you fully control the network.")
       .addToggle((toggle) =>
         toggle.setValue(this.lotusPlugin.settings.apiEnabled).onChange(async (value) => {
           this.lotusPlugin.settings.apiEnabled = value;
@@ -390,7 +390,7 @@ export class lotusSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("API port")
-      .setDesc("Local API port used by lotus-tui.")
+      .setDesc("Port for the local API.")
       .addText((text) =>
         text.setPlaceholder("27188").setValue(String(this.lotusPlugin.settings.apiPort)).onChange(async (value) => {
           const parsed = Number.parseInt(value.trim(), 10);
@@ -853,6 +853,9 @@ export class lotusSettingTab extends PluginSettingTab {
           this.lotusPlugin.settings.customLanguages.push({
             name: "custom-language",
             aliases: "",
+            mode: "execute",
+            highlightLanguage: "",
+            targetLanguage: "",
             executable: "",
             args: "{file}",
             extension: ".txt",
@@ -890,6 +893,24 @@ export class lotusSettingTab extends PluginSettingTab {
 
       this.addCustomLanguageTextSetting(body, language, "Name", "Normalized language id used by lotus.", "name");
       this.addCustomLanguageTextSetting(body, language, "Aliases", "Comma-separated fence aliases.", "aliases");
+      new Setting(body)
+        .setName("Run mode")
+        .setDesc("Execute runs the source as a normal block. Transpile runs the command once and treats stdout or the generated output file as source text.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("execute", "Execute")
+            .addOption("transpile", "Transpile")
+            .setValue(language.mode === "transpile" ? "transpile" : "execute")
+            .onChange(async (value) => {
+              language.mode = value as "execute" | "transpile";
+              await this.lotusPlugin.saveSettings();
+              this.renderSettings();
+            }),
+        );
+      this.addCustomLanguageTextSetting(body, language, "Highlight as", "Optional language id used to highlight this custom fence's source, for example c, cpp, shell, or llvm-ir.", "highlightLanguage");
+      if (language.mode === "transpile") {
+        this.addCustomLanguageTextSetting(body, language, "Target language", "Language id for the generated source shown in stdout, for example c, x86, arm32, or llvm-ir.", "targetLanguage");
+      }
       this.addCustomLanguageTextSetting(body, language, "Executable", "Local command or absolute executable path.", "executable");
       this.addCustomLanguageTextSetting(body, language, "Arguments", "Space-separated arguments. Use {file}, {output}, and {tempDir} for temp paths.", "args");
       this.addCustomLanguageTextSetting(body, language, "Extension", "Temp source file extension, for example .py.", "extension");
@@ -1437,6 +1458,7 @@ class EditContainerGroupModal extends Modal {
           .setDesc("Command used as the persistent container's main process.")
           .addText((text) => {
             text
+              // eslint-disable-next-line obsidianmd/ui/sentence-case -- This placeholder is a shell command.
               .setPlaceholder("sleep infinity")
               .setValue(persistent.keepAliveCommand || "")
               .onChange((val) => {

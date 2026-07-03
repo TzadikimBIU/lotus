@@ -5,6 +5,9 @@ Lotus includes built-in runners for common interpreted, compiled, systems, and p
 A custom language configuration defines:
 - **Name**
 - **Aliases** (comma-separated)
+- **Run mode** (`execute` or `transpile`)
+- **Highlight as** (optional source highlighting language)
+- **Target language** (used to label and highlight transpiled output)
 - **Executable**
 - **Arguments** (e.g., `{file}`)
 - **Source file extension**
@@ -20,6 +23,8 @@ aliases: shx
 executable: /bin/sh
 args: {file}
 extension: .sh
+mode: execute
+highlightLanguage: shell
 ```
 
 With this configured, a normal fenced block can run using that alias:
@@ -29,6 +34,91 @@ With this configured, a normal fenced block can run using that alias:
 echo hello
 ```
 ````
+
+---
+
+## Highlight Inheritance
+
+Use `highlightLanguage` when a custom fence is syntactically close to a language Obsidian already highlights. Lotus keeps the custom language id for execution, but rendered source blocks and output previews receive the configured language class.
+
+`highlightLanguage` can point at a built-in language, an external language-pack language, or another custom language. If that target language has its own `highlightLanguage`, Lotus follows the chain until it reaches the concrete highlighter. If the target has its own highlighter registered under its language id, leave its `highlightLanguage` empty and point other languages at that id.
+
+```text
+name: checked-c
+aliases: cc-checked
+mode: execute
+highlightLanguage: c
+executable: /usr/bin/clang
+args: {file} -o {tempDir}/a.out
+extension: .c
+```
+
+With that configuration, a `cc-checked` block still runs through the custom command while its source is highlighted as C.
+
+For a language-pack language with its own highlighter, a related language can inherit from it:
+
+```json
+[
+  {
+    "id": "toy",
+    "displayName": "Toy",
+    "aliases": ["toy"],
+    "executable": "toy-run",
+    "args": "{file}",
+    "extension": ".toy"
+  },
+  {
+    "id": "toy-macro",
+    "displayName": "Toy Macro",
+    "aliases": ["toym"],
+    "highlightLanguage": "toy",
+    "executable": "toy-macro-run",
+    "args": "{file}",
+    "extension": ".toym"
+  }
+]
+```
+
+---
+
+## Transpile Mode
+
+Use `mode: transpile` when the command should generate source text but Lotus should not execute that generated source. The generated source is read from stdout by default. If `outputMode` is `file`, the command should write to `{output}` and Lotus reads that file after the process exits.
+
+`targetLanguage` tells Lotus how to label and highlight the generated stdout pane.
+
+Blocks whose custom language is configured with `mode: transpile` show a curved-arrow transpile button in the code block toolbar. The normal run button still works; the transpile button is an explicit affordance for generated-source workflows.
+
+```text
+name: c-to-llvm-ir
+aliases: c2llvm
+mode: transpile
+highlightLanguage: c
+targetLanguage: llvm-ir
+executable: /usr/bin/clang
+args: -S -emit-llvm {file} -o {output}
+extension: .c
+outputMode: file
+outputExtension: .ll
+```
+
+For imported language-pack manifests the same fields are available:
+
+```json
+{
+  "id": "c-to-llvm-ir",
+  "displayName": "C to LLVM IR",
+  "aliases": ["c2llvm"],
+  "mode": "transpile",
+  "highlightLanguage": "c",
+  "targetLanguage": "llvm-ir",
+  "executable": "/usr/bin/clang",
+  "args": "-S -emit-llvm {file} -o {output}",
+  "extension": ".c",
+  "outputMode": "file",
+  "outputExtension": ".ll"
+}
+```
 
 ---
 
@@ -175,7 +265,9 @@ Or it can return structured parts:
 }
 ```
 
-### Transpile to C Strategy
+### Partial-Extraction Transpile to C Strategy
+
+This strategy is separate from custom-language `mode: transpile`. It is only used when Lotus needs runnable partial source from a custom language.
 
 The transpile to C strategy returns generated C or C++ and a symbol map:
 

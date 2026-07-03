@@ -2,6 +2,17 @@ import { Notice, type App, type TFile } from "obsidian";
 import type { lotusCodeBlock, lotusDisplayOutput, lotusDisplayRole, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 import { formatTimeoutMs } from "../utils/timeout";
 import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
+import {
+  CYTOSCAPE_MIME,
+  ELK_MIME,
+  LOTUS_CYTOSCAPE_MIME,
+  LOTUS_D3_MIME,
+  LOTUS_ELK_MIME,
+  LOTUS_HWSCHEMATIC_MIME,
+  LOTUS_JSXGRAPH_MIME,
+  LOTUS_PLOTLY_MIME,
+  PLOTLY_MIME,
+} from "../visualization/javascriptGraphs";
 
 const OBSIDIAN_CONTEXT_WARNING = "No but seriously, you are risking your life";
 
@@ -41,6 +52,12 @@ interface ObsidianContextDisplayHelper {
   png(data: string, options?: ObsidianContextDisplayOptions): void;
   jpeg(data: string, options?: ObsidianContextDisplayOptions): void;
   image(data: string, options?: ObsidianContextDisplayOptions): void;
+  d3(spec: unknown, options?: ObsidianContextDisplayOptions): void;
+  plotly(figure: unknown, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): void;
+  jsxgraph(spec: unknown, options?: ObsidianContextDisplayOptions): void;
+  elk(graph: unknown, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): void;
+  hwschematic(graph: unknown, options?: ObsidianContextDisplayOptions): void;
+  cytoscape(spec: unknown, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): void;
 }
 
 export class ObsidianContextRunner implements lotusRunner {
@@ -265,6 +282,30 @@ function createDisplayHelper(displays: lotusDisplayOutput[]): ObsidianContextDis
         "text/plain": options.alt ?? options.title ?? "Image output",
       }, { ...options, role: options.role ?? "visualization" });
     },
+    d3: (spec, options = {}) => add({
+      [LOTUS_D3_MIME]: spec,
+      "text/plain": options.alt ?? options.title ?? "D3 display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    plotly: (figure, options = {}) => add({
+      [options.standardMime ? PLOTLY_MIME : LOTUS_PLOTLY_MIME]: figure,
+      "text/plain": options.alt ?? options.title ?? "Plotly display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    jsxgraph: (spec, options = {}) => add({
+      [LOTUS_JSXGRAPH_MIME]: spec,
+      "text/plain": options.alt ?? options.title ?? "JSXGraph display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    elk: (graph, options = {}) => add({
+      [options.standardMime ? ELK_MIME : LOTUS_ELK_MIME]: graph,
+      "text/plain": options.alt ?? options.title ?? "ELK display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    hwschematic: (graph, options = {}) => add({
+      [LOTUS_HWSCHEMATIC_MIME]: graph,
+      "text/plain": options.alt ?? options.title ?? "Hardware schematic display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    cytoscape: (spec, options = {}) => add({
+      [options.standardMime ? CYTOSCAPE_MIME : LOTUS_CYTOSCAPE_MIME]: spec,
+      "text/plain": options.alt ?? options.title ?? "Cytoscape.js display",
+    }, { ...options, role: options.role ?? "visualization" }),
   };
 }
 
