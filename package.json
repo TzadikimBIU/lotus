@@ -6,14 +6,16 @@
   "license": "MIT",
   "main": "main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs",
-    "build:strict": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=strict",
-    "build:light": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=light",
+    "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --production",
+    "build:strict": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=strict --production",
+    "build:light": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=light --production",
+    "build:dev": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --sourcemap",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint --quiet src scripts esbuild.config.mjs manifest.json LICENSE",
     "smoke": "node scripts/smoke.mjs",
     "smoke:matrix": "npm run smoke -- --profile minimal && npm run smoke -- --profile systems && npm run smoke -- --profile proofs && npm run smoke -- --profile ebpf && npm run smoke -- --profile full",
-    "smoke:pdf": "node scripts/smoke.mjs --require-pdf"
+    "smoke:pdf": "node scripts/smoke.mjs --require-pdf",
+    "verify:signatures": "node scripts/verify-signatures.mjs"
   },
   "devDependencies": {
     "@codemirror/language": "^6.10.8",
@@ -35,7 +37,6 @@
     "d3": "^7.9.0",
     "elkjs": "^0.10.2",
     "jsxgraph": "^1.12.2",
-    "jszip": "^3.10.1",
-    "plotly.js-dist-min": "^2.35.3"
+    "jszip": "^3.10.1"
   }
 }

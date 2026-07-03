@@ -135,6 +135,14 @@ You can also set **Allowed signers file** to a vault-relative or absolute `allow
 - `lotus: Sign All Notes` - Signs every Markdown note in the vault.
 - `lotus: Verify All Note Signatures` - Verifies signatures across the vault.
 
+For CI or shared-vault workflows, run the same verification outside Obsidian:
+
+```bash
+npm run verify:signatures -- --vault /path/to/vault
+```
+
+Passphrase signatures require `--passphrase` or `LOTUS_SIGNATURE_PASSPHRASE`. RSA and OpenSSH verification read the Lotus plugin settings when available, or can be supplied with `--public-key-file` and `--allowed-signers-file`. The script fails on missing signatures by default; use `--allow-missing` only for partial-vault audits.
+
 ---
 
 ## Light Builds

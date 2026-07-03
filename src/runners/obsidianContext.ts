@@ -1,4 +1,5 @@
-import { Notice, type App, type TFile } from "obsidian";
+import { dirname } from "path";
+import { Notice, normalizePath, type App, type TFile } from "obsidian";
 import type { lotusCodeBlock, lotusDisplayOutput, lotusDisplayRole, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 import { formatTimeoutMs } from "../utils/timeout";
 import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
@@ -58,6 +59,13 @@ interface ObsidianContextDisplayHelper {
   elk(graph: unknown, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): void;
   hwschematic(graph: unknown, options?: ObsidianContextDisplayOptions): void;
   cytoscape(spec: unknown, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): void;
+  jsonFile(path: string): Promise<unknown>;
+  d3File(path: string, options?: ObsidianContextDisplayOptions): Promise<void>;
+  plotlyFile(path: string, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): Promise<void>;
+  jsxgraphFile(path: string, options?: ObsidianContextDisplayOptions): Promise<void>;
+  elkFile(path: string, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): Promise<void>;
+  hwschematicFile(path: string, options?: ObsidianContextDisplayOptions): Promise<void>;
+  cytoscapeFile(path: string, options?: ObsidianContextDisplayOptions & { standardMime?: boolean }): Promise<void>;
 }
 
 export class ObsidianContextRunner implements lotusRunner {
@@ -97,7 +105,7 @@ export class ObsidianContextRunner implements lotusRunner {
       );
       const capturedConsole = createCapturedConsole(stdout, stderr);
       const note = createNoteHelper(this.host.app, context.file);
-      const display = createDisplayHelper(displays);
+      const display = createDisplayHelper(this.host.app, context.file, displays);
       const execution = Promise.resolve(userFunction.call(
         this.host.plugin,
         this.host.app,
@@ -246,7 +254,7 @@ function createCapturedConsole(stdout: string[], stderr: string[]): Pick<Console
   };
 }
 
-function createDisplayHelper(displays: lotusDisplayOutput[]): ObsidianContextDisplayHelper {
+function createDisplayHelper(app: App, file: TFile, displays: lotusDisplayOutput[]): ObsidianContextDisplayHelper {
   const add = (data: Record<string, unknown>, options: ObsidianContextDisplayOptions = {}) => {
     const metadata = normalizeDisplayMetadata(options);
     displays.push({
@@ -306,7 +314,52 @@ function createDisplayHelper(displays: lotusDisplayOutput[]): ObsidianContextDis
       [options.standardMime ? CYTOSCAPE_MIME : LOTUS_CYTOSCAPE_MIME]: spec,
       "text/plain": options.alt ?? options.title ?? "Cytoscape.js display",
     }, { ...options, role: options.role ?? "visualization" }),
+    jsonFile: (path) => readDisplayJsonFile(app, file, path),
+    d3File: async (path, options = {}) => add({
+      [LOTUS_D3_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "D3 display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    plotlyFile: async (path, options = {}) => add({
+      [options.standardMime ? PLOTLY_MIME : LOTUS_PLOTLY_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "Plotly display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    jsxgraphFile: async (path, options = {}) => add({
+      [LOTUS_JSXGRAPH_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "JSXGraph display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    elkFile: async (path, options = {}) => add({
+      [options.standardMime ? ELK_MIME : LOTUS_ELK_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "ELK display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    hwschematicFile: async (path, options = {}) => add({
+      [LOTUS_HWSCHEMATIC_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "Hardware schematic display",
+    }, { ...options, role: options.role ?? "visualization" }),
+    cytoscapeFile: async (path, options = {}) => add({
+      [options.standardMime ? CYTOSCAPE_MIME : LOTUS_CYTOSCAPE_MIME]: await readDisplayJsonFile(app, file, path),
+      "text/plain": options.alt ?? options.title ?? "Cytoscape.js display",
+    }, { ...options, role: options.role ?? "visualization" }),
   };
+}
+
+async function readDisplayJsonFile(app: App, file: TFile, rawPath: string): Promise<unknown> {
+  const path = resolveDisplayJsonPath(file, rawPath);
+  if (!(await app.vault.adapter.exists(path))) {
+    throw new Error(`Display JSON file not found: ${path}`);
+  }
+  return JSON.parse(await app.vault.adapter.read(path)) as unknown;
+}
+
+function resolveDisplayJsonPath(file: TFile, rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    throw new Error("Display JSON file path is empty.");
+  }
+  if (trimmed.startsWith("/")) {
+    return normalizePath(trimmed.slice(1));
+  }
+  const baseDir = dirname(file.path);
+  return normalizePath(baseDir === "." ? trimmed : `${baseDir}/${trimmed}`);
 }
 
 function normalizeDisplayMetadata(options: ObsidianContextDisplayOptions): Record<string, unknown> {

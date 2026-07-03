@@ -1,7 +1,6 @@
 import * as d3 from "d3";
 import ELK from "elkjs";
 import type JXG from "jsxgraph";
-import type Plotly from "plotly.js-dist-min";
 import type cytoscape from "cytoscape";
 import type { lotusDisplayRenderer, lotusDisplayRendererContext, lotusDisplayRendererCleanup } from "../types";
 
@@ -21,11 +20,9 @@ const GRAPH_WHITE = "#ffffff";
 const GRAPH_BORDER = "#111111";
 const GRAPH_GRID = "#e5e5e5";
 let graphIdCounter = 0;
-let plotlyLoad: Promise<PlotlyModule> | undefined;
 let jsxGraphLoad: Promise<JsxGraphModule> | undefined;
 let cytoscapeLoad: Promise<CytoscapeModule> | undefined;
 
-type PlotlyModule = typeof Plotly;
 type JsxGraphModule = typeof JXG;
 type CytoscapeModule = typeof cytoscape;
 
@@ -153,14 +150,10 @@ async function renderD3Display(container: HTMLElement, context: lotusDisplayRend
 
 async function renderPlotlyDisplay(container: HTMLElement, context: lotusDisplayRendererContext): Promise<lotusDisplayRendererCleanup> {
   const { surface } = createGraphSurface(container, context, 760, 420);
-  const figure = readPlotlyFigure(context.value, context);
-  const plotly = await loadPlotly();
-  await plotly.newPlot(surface, figure);
-  plotly.Plots?.resize?.(surface);
-  return () => {
-    plotly.purge?.(surface);
-    surface.empty();
-  };
+  const dimensions = readDimensions(context, 760, 420);
+  renderNativeChart(surface, readPlotlyChartSpec(context.value), dimensions);
+  addSvgPrintSnapshot(surface, readDisplayAlt(context, "Plotly figure"));
+  return () => surface.empty();
 }
 
 async function renderJsxGraphDisplay(container: HTMLElement, context: lotusDisplayRendererContext): Promise<lotusDisplayRendererCleanup> {
@@ -195,6 +188,9 @@ async function renderJsxGraphDisplay(container: HTMLElement, context: lotusDispl
     };
     board.create(type, args, attributes);
   }
+  window.requestAnimationFrame(() => {
+    addSvgPrintSnapshot(surface, readDisplayAlt(context, "JSXGraph board"));
+  });
 
   return () => {
     jxg.JSXGraph.freeBoard(board);
@@ -250,7 +246,10 @@ async function renderCytoscapeDisplay(container: HTMLElement, context: lotusDisp
       style: options.style ?? defaultCytoscapeStyle(),
       layout: options.layout ?? { name: "cose" },
     });
-    window.requestAnimationFrame(() => cy.fit());
+    window.requestAnimationFrame(() => {
+      cy.fit();
+      addDataUrlPrintSnapshot(surface, cy.png({ output: "base64uri", full: true, scale: 2 }), readDisplayAlt(context, "Cytoscape.js graph"));
+    });
     return () => {
       cy.destroy();
       surface.empty();
@@ -285,6 +284,13 @@ function readDimensions(context: lotusDisplayRendererContext, defaultWidth: numb
     width: readPositiveNumber(context.metadata.width) ?? readPositiveNumber(payload?.width) ?? defaultWidth,
     height: readPositiveNumber(context.metadata.height) ?? readPositiveNumber(payload?.height) ?? defaultHeight,
   };
+}
+
+function readDisplayAlt(context: lotusDisplayRendererContext, fallback: string): string {
+  return readString(context.metadata.alt)
+    ?? context.display.title
+    ?? readString(context.display.data["text/plain"])
+    ?? fallback;
 }
 
 function readD3ChartSpec(value: unknown): D3ChartSpec {
@@ -448,62 +454,31 @@ function renderNativeChart(surface: HTMLElement, spec: D3ChartSpec, dimensions: 
   }
 }
 
-function readPlotlyFigure(value: unknown, context: lotusDisplayRendererContext): Record<string, unknown> {
+function readPlotlyChartSpec(value: unknown): D3ChartSpec {
   const payload = Array.isArray(value) ? { data: value } : readRecordPayload(value);
-  const sourceLayout = readRecord(payload.layout) ?? {};
-  const sourceXAxis = readRecord(sourceLayout.xaxis) ?? {};
-  const sourceYAxis = readRecord(sourceLayout.yaxis) ?? {};
-  const layout = {
-    paper_bgcolor: GRAPH_WHITE,
-    plot_bgcolor: GRAPH_WHITE,
-    colorway: [GRAPH_BLACK],
-    ...sourceLayout,
-    xaxis: {
-      gridcolor: GRAPH_GRID,
-      linecolor: GRAPH_BLACK,
-      tickcolor: GRAPH_BLACK,
-      zerolinecolor: GRAPH_GRID,
-      color: GRAPH_BLACK,
-      ...sourceXAxis,
-    },
-    yaxis: {
-      gridcolor: GRAPH_GRID,
-      linecolor: GRAPH_BLACK,
-      tickcolor: GRAPH_BLACK,
-      zerolinecolor: GRAPH_GRID,
-      color: GRAPH_BLACK,
-      ...sourceYAxis,
-    },
-    font: {
-      color: GRAPH_BLACK,
-      ...(readRecord(sourceLayout.font) ?? {}),
-    },
-    ...(readPositiveNumber(context.metadata.width) ? { width: context.metadata.width } : {}),
-    ...(readPositiveNumber(context.metadata.height) ? { height: context.metadata.height } : {}),
-  };
-  return {
-    data: readArray(payload.data).map(normalizePlotlyTrace),
-    layout,
-    config: readRecord(payload.config) ?? { responsive: true, displaylogo: false },
-    frames: readArray(payload.frames),
-  };
-}
+  const trace = readRecord(readArray(payload.data)[0]) ?? {};
+  const type = readString(trace.type)?.toLowerCase();
+  const mode = readString(trace.mode)?.toLowerCase() ?? "";
+  const xValues = readArray(trace.x);
+  const yValues = readArray(trace.y);
+  const textValues = readArray(trace.text);
+  const labels = xValues.length ? xValues : textValues;
+  const dataLength = Math.max(xValues.length, yValues.length, labels.length);
+  const data = Array.from({ length: dataLength }, (_, index) => ({
+    x: readNumber(xValues[index]) ?? index,
+    y: readNumber(yValues[index]) ?? 0,
+    label: readString(labels[index]) ?? readString(textValues[index]) ?? String(index + 1),
+    value: readNumber(yValues[index]) ?? 0,
+  }));
 
-function normalizePlotlyTrace(value: unknown): unknown {
-  const trace = readRecord(value);
-  if (!trace) {
-    return value;
-  }
   return {
-    ...trace,
-    marker: {
-      color: GRAPH_BLACK,
-      ...(readRecord(trace.marker) ?? {}),
-    },
-    line: {
-      color: GRAPH_BLACK,
-      ...(readRecord(trace.line) ?? {}),
-    },
+    kind: type === "bar" ? "bar" : mode.includes("lines") ? "line" : "scatter",
+    data,
+    xKey: "x",
+    yKey: "y",
+    labelKey: "label",
+    valueKey: "value",
+    color: GRAPH_BLACK,
   };
 }
 
@@ -967,11 +942,6 @@ function createGraphNotice(container: HTMLElement, message: string): void {
   container.createDiv({ cls: "lotus-js-graph-notice", text: message });
 }
 
-async function loadPlotly(): Promise<PlotlyModule> {
-  plotlyLoad ??= import("plotly.js-dist-min").then((module) => module.default);
-  return plotlyLoad;
-}
-
 async function loadJsxGraph(): Promise<JsxGraphModule> {
   jsxGraphLoad ??= import("jsxgraph").then((module) => module.default ?? module);
   return jsxGraphLoad;
@@ -980,6 +950,26 @@ async function loadJsxGraph(): Promise<JsxGraphModule> {
 async function loadCytoscape(): Promise<CytoscapeModule> {
   cytoscapeLoad ??= import("cytoscape").then((module) => module.default ?? module);
   return cytoscapeLoad;
+}
+
+function addSvgPrintSnapshot(surface: HTMLElement, alt: string): void {
+  const svg = surface.querySelector("svg");
+  if (!svg) {
+    return;
+  }
+  const serialized = new XMLSerializer().serializeToString(svg);
+  addDataUrlPrintSnapshot(surface, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`, alt);
+}
+
+function addDataUrlPrintSnapshot(surface: HTMLElement, src: string, alt: string): void {
+  if (!src || surface.querySelector(".lotus-js-graph-print-snapshot")) {
+    return;
+  }
+  const image = activeDocument.createElement("img");
+  image.className = "lotus-js-graph-print-snapshot";
+  image.src = src;
+  image.alt = alt;
+  surface.appendChild(image);
 }
 
 function readRecordPayload(value: unknown): Record<string, unknown> {

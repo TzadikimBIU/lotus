@@ -1,0 +1,1 @@
+when writing casual user-facing text for this repo, especially pr descriptions, status blurbs, or short explanations, use lowercase by default. keep it natural and a little informal, use contractions and shorthand like `bc` and `w/` when it fits, and do not make everything too polished. some filler is fine, and punctuation can be a little loose, but keep the meaning clear.
