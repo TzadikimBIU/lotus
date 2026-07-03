@@ -49,6 +49,7 @@ await esbuild.build({
     "@codemirror/language",
   ],
   alias: {
+    "elkjs": "./node_modules/elkjs/lib/elk.bundled.js",
     "lie": "./stubs/lie.js",
     "setimmediate": "./stubs/setimmediate.js",
   },
