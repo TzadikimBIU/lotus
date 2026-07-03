@@ -67,11 +67,85 @@ display.graphviz("digraph g { a -> b }", { title: "CFG" });
 display.png(base64Png, { title: "PNG" });
 display.jpeg(base64Jpeg, { title: "JPEG" });
 display.image(base64Image, { mimeType: "image/gif", title: "GIF" });
+display.d3({ kind: "bar", data: [{ label: "A", value: 4 }] }, { title: "D3" });
+display.plotly({ data: [{ x: [1, 2], y: [2, 5], type: "scatter" }] }, { title: "Plotly" });
+display.jsxgraph({ boundingbox: [-5, 5, 5, -5], objects: [{ type: "point", args: [1, 2] }] }, { title: "JSXGraph" });
+display.elk({ id: "root", children: [{ id: "a" }, { id: "b" }], edges: [{ id: "ab", sources: ["a"], targets: ["b"] }] }, { title: "ELK" });
+display.hwschematic({ graph: elkHardwareGraph }, { title: "Hardware schematic" });
+display.cytoscape({ elements: [{ data: { id: "a" } }, { data: { id: "b" } }, { data: { source: "a", target: "b" } }] }, { title: "Cytoscape.js" });
 display.mime({ "application/json": { ok: true } }, { title: "Data" });
 display.mime({ "application/vnd.my-tool.image+json": { path: "diagram.bin" } }, { title: "Custom image" });
 ```
 
 Graphviz displays use `text/vnd.graphviz`. When Graphviz is configured, Lotus runs `dot -Tsvg` and adds an `image/svg+xml` representation. If the block resolves to an execution group, Lotus runs Graphviz inside that group with the synthetic `graphviz` language instead of requiring `dot` on the host.
+
+## JavaScript Graph Display Adapters
+
+Lotus includes trusted first-party renderers for common JavaScript graphing libraries. Display records remain declarative JSON; Lotus does not execute JavaScript from display output.
+
+Supported MIME types:
+
+```text
+application/vnd.lotus.d3+json
+application/vnd.lotus.plotly+json
+application/vnd.plotly.v1+json
+application/vnd.lotus.jsxgraph+json
+application/vnd.lotus.elk+json
+application/vnd.elk+json
+application/vnd.lotus.hwschematic+json
+application/vnd.lotus.cytoscape+json
+application/vnd.cytoscapejs+json
+```
+
+The adapters are loaded on demand from fixed library URLs when their MIME type is rendered, so Lotus does not add Plotly, D3, JSXGraph, elkjs, d3-hwschematic, or Cytoscape.js as baseline bundle dependencies.
+
+Payload shapes:
+
+```javascript
+display.d3({
+  kind: "bar", // bar, line, scatter
+  data: [{ label: "parse", value: 8 }, { label: "run", value: 13 }]
+});
+
+display.plotly({
+  data: [{ x: [1, 2, 3], y: [2, 5, 4], type: "scatter" }],
+  layout: { margin: { t: 24 } },
+  config: { responsive: true }
+});
+
+display.jsxgraph({
+  boundingbox: [-5, 5, 5, -5],
+  axis: true,
+  objects: [
+    { type: "point", args: [1, 2], attributes: { name: "A" } },
+    { type: "circle", args: [[0, 0], 2] }
+  ]
+});
+
+display.elk({
+  graph: {
+    id: "root",
+    children: [{ id: "a", width: 80, height: 40 }, { id: "b", width: 80, height: 40 }],
+    edges: [{ id: "ab", sources: ["a"], targets: ["b"] }]
+  },
+  layoutOptions: { "elk.algorithm": "layered" }
+});
+
+display.hwschematic({
+  graph: elkHardwareGraph,
+  format: "elk", // elk or yosys
+  root: "/optional/submodule/path"
+});
+
+display.cytoscape({
+  elements: [
+    { data: { id: "a", label: "A" } },
+    { data: { id: "b", label: "B" } },
+    { data: { id: "ab", source: "a", target: "b" } }
+  ],
+  layout: { name: "grid" }
+});
+```
 
 ## Custom MIME Renderers
 
@@ -135,4 +209,4 @@ Image displays render on a white viewport with zoom controls. Zoom preserves the
 
 ## Current Non-Goals
 
-Lotus does not render arbitrary interactive HTML in this contract. Plotly or other interactive plotting libraries should be added as trusted custom renderers rather than as baseline display dependencies.
+Lotus does not render arbitrary interactive HTML in this contract. JavaScript graph displays must use trusted renderers and declarative MIME payloads rather than embedding executable HTML or script output.

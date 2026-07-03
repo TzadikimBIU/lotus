@@ -116,7 +116,7 @@
 
 .lotus-output-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.65rem;
   padding: 0.7rem 0.9rem;
@@ -140,6 +140,12 @@
   color: var(--text-muted);
 }
 
+.lotus-output-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .lotus-output-body {
   padding: 0.8rem 0.9rem 0.95rem;
   display: grid;
@@ -156,11 +162,39 @@
   gap: 0.35rem;
 }
 
+.lotus-output-stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .lotus-output-stream-label {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.lotus-output-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lotus-output-copy-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 .lotus-output-pre {
@@ -174,6 +208,15 @@
   font-family: var(--font-monospace);
   font-size: 0.87rem;
   line-height: 1.45;
+}
+
+.lotus-output-pre > code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
 }
 
 .lotus-output-pre.is-scroll-limited {
@@ -274,6 +317,63 @@
   background: #ffffff;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.lotus-js-graph-frame {
+  width: 100%;
+  min-height: var(--lotus-js-graph-height, 22rem);
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 86%, #111111);
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.04);
+}
+
+.lotus-js-graph-surface {
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  color: #111111;
+  background: #ffffff;
+}
+
+.lotus-js-graph-svg {
+  display: block;
+  max-width: 100%;
+  background: #ffffff;
+}
+
+.lotus-js-graph-notice {
+  margin: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, #111111);
+  background: #f8f8f8;
+  color: #111111;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.lotus-js-graph-node-label,
+.lotus-js-graph-axis-text,
+.lotus-js-graph-bar-value {
+  fill: #111111;
+  font-family: var(--font-interface);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+.lotus-js-graph-bar-value {
+  fill: #ffffff;
+  font-weight: 600;
+}
+
+.lotus-js-graph-axis-text {
+  fill: #111111;
+}
+
+.lotus-hwschematic-surface svg {
+  background: #ffffff;
 }
 
 .lotus-output-image-fullscreen {

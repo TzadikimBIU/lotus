@@ -117,7 +117,7 @@ lotus-language-pack-julia/
     basics.md
 ```
 
-External languages use the same execution contract as custom languages. They can define `preprocessors` for stable staged source transforms before execution, and `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` if they need partial source extraction. The manifest acts as registry data (not copied to plugin settings), and the vault's enabled choices are persisted normally.
+External languages use the same execution contract as custom languages. They can define `mode: "execute"` or `mode: "transpile"`, `highlightLanguage` for inherited source highlighting, `targetLanguage` for generated-source output, `preprocessors` for stable staged source transforms before execution, and `extractorMode`, `extractorExecutable`, `extractorArgs`, `transpileExecutable`, and `transpileArgs` if they need partial source extraction. The manifest acts as registry data (not copied to plugin settings), and the vault's enabled choices are persisted normally.
 
 ---
 

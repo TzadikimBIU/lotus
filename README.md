@@ -81,7 +81,7 @@ Languages are grouped into vault-level packages. You can enable only the packs y
 | **Proofs** | Lean, Coq, SMT LIB | formal methods, solver work |
 | **LLVM** | LLVM IR | compiler and PL research |
 | **eBPF** | eBPF C, bpftrace | kernel tracing, observability, verifier experiments |
-| **Custom languages** | User-defined command-backed languages | toy languages, local DSLs, project-specific tools |
+| **Custom languages** | User-defined command-backed languages, inherited highlighting, transpile mode | toy languages, local DSLs, compiler experiments |
 
 By default, every built-in package is enabled. Use **Language Packages** in settings to customize your active languages.
 
@@ -140,6 +140,8 @@ External processes can append JSON records to the path in `LOTUS_DISPLAY_JSONL`:
 
 When a display contains `text/vnd.graphviz`, Lotus runs the configured Graphviz executable (`dot` by default) to add an SVG representation. If the block resolves to an execution group, Graphviz runs inside that group with the synthetic `graphviz` language. Use the toolbar visualize button or command palette action to run a block and treat stdout as Graphviz DOT. The toolbar button is enabled by default and can be hidden in settings. Blocks can request visualization persistently with `lotus-visualize=graphviz`, or treat stdout as SVG with `lotus-visualize=svg`.
 
+Lotus also ships first-party JavaScript graph display adapters for declarative D3 charts, Plotly figures, JSXGraph boards, ELK JSON graphs, d3-hwschematic hardware schematics, and Cytoscape.js graphs. Use `display.d3(...)`, `display.plotly(...)`, `display.jsxgraph(...)`, `display.elk(...)`, `display.hwschematic(...)`, or `display.cytoscape(...)` from `obsidian-js`, or emit the corresponding MIME payloads from any runner.
+
 Rich displays are controlled by the `rich-displays` compile feature. Light builds can omit that feature to remove image/plot/source-visualization surfaces:
 
 ```bash
@@ -156,7 +158,7 @@ Use `lotus: Open Log Viewer` to inspect the configured JSONL log inside Obsidian
 
 For more specialized setups, refer to the guides in the [docs/](docs/) directory:
 
-- [Custom Languages](docs/custom-languages.md): Configure local interpreters, staged preprocessors, JSON request/response schema extractors, and C transpilation strategies.
+- [Custom Languages](docs/custom-languages.md): Configure local interpreters, highlighting inheritance, transpile-only outputs, staged preprocessors, JSON request/response schema extractors, and C partial-extraction strategies.
 - [Rich Display Contract](docs/display-contract.md): Emit SVG, raster images, Graphviz DOT, JSON, and text display records from runners and external processes.
 - [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.

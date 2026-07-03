@@ -83,6 +83,8 @@ export interface lotusRunResult {
   cancelled: boolean;
   warning?: string;
   displays?: lotusDisplayOutput[];
+  stdoutLanguage?: lotusNormalizedLanguage;
+  stdoutRole?: "output" | "transpiled-source";
 }
 
 export type lotusDisplayRole = "result" | "visualization" | "diagnostic" | "artifact";
@@ -253,9 +255,14 @@ export interface lotusRunState {
 export interface lotusCustomLanguage {
   name: string;
   aliases: string;
+  mode?: "execute" | "transpile";
+  highlightLanguage?: string;
+  targetLanguage?: string;
   executable: string;
   args: string;
   extension: string;
+  outputMode?: "streams" | "file";
+  outputExtension?: string;
   preprocessors?: lotusCustomPreprocessor[];
   preprocessorExecutable?: string;
   preprocessorArgs?: string;

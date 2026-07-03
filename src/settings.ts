@@ -19,7 +19,7 @@ import type { lotusCustomLanguage, lotusCustomPreprocessor, lotusPluginSettings 
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
-type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "preprocessors">;
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "mode" | "outputMode" | "preprocessors">;
 type lotusCustomPreprocessorTextKey = keyof lotusCustomPreprocessor;
 type lotusContainerEditorRuntime = lotusCompileContainerRuntime;
 type lotusRemoteUploadMode = "inline" | "scp";
@@ -108,6 +108,7 @@ interface lotusContainerEditorConfig {
 
 export class lotusSettingTab extends PluginSettingTab {
   private readonly languagePackageOpenState = new Map<string, boolean>();
+  private readonly settingsSectionOpenState = new Map<string, boolean>();
 
   constructor(private readonly lotusPlugin: lotusPlugin) {
     super(lotusPlugin.app, lotusPlugin);
@@ -138,7 +139,10 @@ export class lotusSettingTab extends PluginSettingTab {
 
   private createSection(containerEl: HTMLElement, title: string, open = false): HTMLElement {
     const details = containerEl.createEl("details", { cls: "lotus-settings-section" });
-    details.open = open;
+    details.open = this.settingsSectionOpenState.get(title) ?? open;
+    details.addEventListener("toggle", () => {
+      this.settingsSectionOpenState.set(title, details.open);
+    });
     details.createEl("summary", { text: title, cls: "lotus-settings-summary" });
     return details.createDiv({ cls: "lotus-settings-section-body" });
   }
@@ -849,9 +853,14 @@ export class lotusSettingTab extends PluginSettingTab {
           this.lotusPlugin.settings.customLanguages.push({
             name: "custom-language",
             aliases: "",
+            mode: "execute",
+            highlightLanguage: "",
+            targetLanguage: "",
             executable: "",
             args: "{file}",
             extension: ".txt",
+            outputMode: "streams",
+            outputExtension: ".out",
             preprocessors: [],
             extractorMode: "command",
             extractorExecutable: "",
@@ -884,9 +893,44 @@ export class lotusSettingTab extends PluginSettingTab {
 
       this.addCustomLanguageTextSetting(body, language, "Name", "Normalized language id used by lotus.", "name");
       this.addCustomLanguageTextSetting(body, language, "Aliases", "Comma-separated fence aliases.", "aliases");
+      new Setting(body)
+        .setName("Run mode")
+        .setDesc("Execute runs the source as a normal block. Transpile runs the command once and treats stdout or the generated output file as source text.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("execute", "Execute")
+            .addOption("transpile", "Transpile")
+            .setValue(language.mode === "transpile" ? "transpile" : "execute")
+            .onChange(async (value) => {
+              language.mode = value as "execute" | "transpile";
+              await this.lotusPlugin.saveSettings();
+              this.renderSettings();
+            }),
+        );
+      this.addCustomLanguageTextSetting(body, language, "Highlight as", "Optional language id used to highlight this custom fence's source, for example c, cpp, shell, or llvm-ir.", "highlightLanguage");
+      if (language.mode === "transpile") {
+        this.addCustomLanguageTextSetting(body, language, "Target language", "Language id for the generated source shown in stdout, for example c, x86, arm32, or llvm-ir.", "targetLanguage");
+      }
       this.addCustomLanguageTextSetting(body, language, "Executable", "Local command or absolute executable path.", "executable");
-      this.addCustomLanguageTextSetting(body, language, "Arguments", "Space-separated arguments. Use {file} for the temp source file.", "args");
+      this.addCustomLanguageTextSetting(body, language, "Arguments", "Space-separated arguments. Use {file}, {output}, and {tempDir} for temp paths.", "args");
       this.addCustomLanguageTextSetting(body, language, "Extension", "Temp source file extension, for example .py.", "extension");
+      new Setting(body)
+        .setName("Output mode")
+        .setDesc("Capture stdout/stderr, or read a generated temp file after the command exits.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("streams", "Captured streams")
+            .addOption("file", "Generated file")
+            .setValue(language.outputMode === "file" ? "file" : "streams")
+            .onChange(async (value) => {
+              language.outputMode = value as "streams" | "file";
+              await this.lotusPlugin.saveSettings();
+              this.renderSettings();
+            }),
+        );
+      if (language.outputMode === "file") {
+        this.addCustomLanguageTextSetting(body, language, "Output extension", "Temp output file extension used for the {output} path.", "outputExtension");
+      }
       this.renderCustomPreprocessorList(body, language);
 
       new Setting(body)

@@ -48,6 +48,8 @@ import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { createSourceVisualizationDisplay, createStdoutVisualizationDisplay } from "./visualization/codeGraph";
+import { createJavaScriptGraphDisplayRenderers } from "./visualization/javascriptGraphs";
+import { addSyntaxLanguageClass, highlightCodeElement, normalizeSyntaxLanguage } from "./syntaxHighlight";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
@@ -577,6 +579,7 @@ export default class lotusPlugin extends Plugin {
     this.addSettingTab(new lotusSettingTab(this));
     this.statusBarItemEl = this.addStatusBarItem();
     this.updateStatusBar();
+    this.registerBuiltInDisplayRenderers();
     this.registerView(LOTUS_LOG_VIEW_TYPE, (leaf) => new lotusLogView(leaf, this));
     this.addRibbonIcon("list-filter", "Open Lotus logs", () => {
       void this.openLogView();
@@ -1109,6 +1112,16 @@ export default class lotusPlugin extends Plugin {
       this.displayRenderers.delete(renderer);
       this.notifyAllOutputsChanged();
     };
+  }
+
+  private registerBuiltInDisplayRenderers(): void {
+    if (!isCompileFeatureAllowed("rich-displays")) {
+      return;
+    }
+    for (const renderer of createJavaScriptGraphDisplayRenderers()) {
+      this.validateDisplayRenderer(renderer);
+      this.displayRenderers.add(renderer);
+    }
   }
 
   async openLogView(): Promise<void> {
@@ -3088,7 +3101,10 @@ export default class lotusPlugin extends Plugin {
       }
 
       usedBlockIds.add(block.id);
-      if (block.language === "llvm-ir") {
+      const inheritedHighlightLanguage = this.getCustomHighlightLanguage(block);
+      if (inheritedHighlightLanguage) {
+        this.applyRenderedCodeHighlightInheritance(code, block.content, inheritedHighlightLanguage);
+      } else if (block.language === "llvm-ir") {
         highlightLlvmElement(code, block.content);
       }
       pre.dataset.lotusDecorated = "true";
@@ -3147,6 +3163,27 @@ export default class lotusPlugin extends Plugin {
       || renderedLanguage === block.languageAlias
       || renderedLanguage === block.language
       || normalizedRenderedLanguage === block.language;
+  }
+
+  private getCustomHighlightLanguage(block: lotusCodeBlock): string | null {
+    const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
+    const configured = language?.highlightLanguage?.trim();
+    if (!configured) {
+      return null;
+    }
+    return normalizeLanguage(configured, this.settings) ?? normalizeSyntaxLanguage(configured);
+  }
+
+  private applyRenderedCodeHighlightInheritance(code: HTMLElement, source: string, language: string): void {
+    const normalized = normalizeSyntaxLanguage(language);
+    if (!normalized) {
+      return;
+    }
+    addSyntaxLanguageClass(code, normalized);
+    if (code.parentElement instanceof HTMLElement) {
+      addSyntaxLanguageClass(code.parentElement, normalized);
+    }
+    highlightCodeElement(code, source, normalized);
   }
 
   private updateStatusBar(): void {
@@ -3765,7 +3802,11 @@ export default class lotusPlugin extends Plugin {
       startedAt: result.startedAt,
       finishedAt: result.finishedAt,
       streams: {
-        ...(target.streams.includes("stdout") ? { stdout: result.stdout } : {}),
+        ...(target.streams.includes("stdout") ? {
+          stdout: result.stdout,
+          stdoutLanguage: result.stdoutLanguage ?? null,
+          stdoutRole: result.stdoutRole ?? null,
+        } : {}),
         ...(target.streams.includes("warning") ? { warning: result.warning ?? "" } : {}),
         ...(target.streams.includes("stderr") ? { stderr: result.stderr } : {}),
         ...(target.streams.includes("displays") ? { displays: result.displays ?? [] } : {}),
@@ -4194,9 +4235,21 @@ function parseExternalLanguage(value: unknown, filePath: string): lotusExternalL
     displayName: readString(value.displayName) || rawName,
     description: readString(value.description),
     aliases: readAliasList(value.aliases, name).join(", "),
+    mode: readString(value.mode) === "transpile" ? "transpile" : "execute",
+    highlightLanguage: normalizeManifestLanguageReference(
+      readString(value.highlightLanguage)
+      || readString(value.highlight)
+      || readString(value.highlighting),
+    ),
+    targetLanguage: normalizeManifestLanguageReference(
+      readString(value.targetLanguage)
+      || readString(value.target),
+    ),
     executable,
     args: readString(value.args) || "{file}",
     extension: normalizeExtension(readString(value.extension), name),
+    outputMode: readString(value.outputMode) === "file" ? "file" : "streams",
+    outputExtension: normalizeExtension(readString(value.outputExtension), "out"),
     preprocessors: readPreprocessorList(value.preprocessors, filePath),
     preprocessorExecutable: readString(value.preprocessorExecutable),
     preprocessorArgs: readString(value.preprocessorArgs) || "{request}",
@@ -4269,6 +4322,10 @@ function normalizeManifestId(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_.-]/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function normalizeManifestLanguageReference(value: string): string {
+  return normalizeSyntaxLanguage(value) ?? "";
 }
 
 function normalizeExtension(value: string, name: string): string {
