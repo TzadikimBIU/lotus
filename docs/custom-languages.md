@@ -41,6 +41,8 @@ echo hello
 
 Use `highlightLanguage` when a custom fence is syntactically close to a language Obsidian already highlights. Lotus keeps the custom language id for execution, but rendered source blocks and output previews receive the configured language class.
 
+`highlightLanguage` can point at a built-in language, an external language-pack language, or another custom language. If that target language has its own `highlightLanguage`, Lotus follows the chain until it reaches the concrete highlighter. If the target has its own highlighter registered under its language id, leave its `highlightLanguage` empty and point other languages at that id.
+
 ```text
 name: checked-c
 aliases: cc-checked
@@ -52,6 +54,30 @@ extension: .c
 ```
 
 With that configuration, a `cc-checked` block still runs through the custom command while its source is highlighted as C.
+
+For a language-pack language with its own highlighter, a related language can inherit from it:
+
+```json
+[
+  {
+    "id": "toy",
+    "displayName": "Toy",
+    "aliases": ["toy"],
+    "executable": "toy-run",
+    "args": "{file}",
+    "extension": ".toy"
+  },
+  {
+    "id": "toy-macro",
+    "displayName": "Toy Macro",
+    "aliases": ["toym"],
+    "highlightLanguage": "toy",
+    "executable": "toy-macro-run",
+    "args": "{file}",
+    "extension": ".toym"
+  }
+]
+```
 
 ---
 

@@ -1,8 +1,7 @@
 import { runTempFileProcess } from "../execution/processRunner";
 import { splitCommandLine } from "../utils/command";
 import { findEnabledCommandLanguage } from "../languagePackages";
-import { normalizeLanguage } from "../parser";
-import { normalizeSyntaxLanguage } from "../syntaxHighlight";
+import { resolveHighlightLanguageReference } from "../languageHighlight";
 import type { lotusCodeBlock, lotusCustomLanguage, lotusPluginSettings, lotusRunContext, lotusRunResult, lotusRunner } from "../types";
 
 export class CustomLanguageRunner implements lotusRunner {
@@ -55,11 +54,7 @@ export class CustomLanguageRunner implements lotusRunner {
 }
 
 function resolveConfiguredLanguage(language: string | undefined, settings: lotusPluginSettings): string | undefined {
-  const trimmed = language?.trim() ?? "";
-  if (!trimmed) {
-    return undefined;
-  }
-  return normalizeLanguage(trimmed, settings) ?? normalizeSyntaxLanguage(trimmed) ?? undefined;
+  return resolveHighlightLanguageReference(settings, language) ?? undefined;
 }
 
 function normalizeExtension(extension: string | undefined, name: string): string {

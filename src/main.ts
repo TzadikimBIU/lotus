@@ -24,6 +24,7 @@ import { getCompileMachineHashScopeOverride, isCompileContainerGroupAllowed, isC
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
 import { addLlvmDecorations, highlightLlvmElement } from "./llvmHighlight";
 import { lotusLogger, type lotusLogInput, type lotusLogTarget } from "./logging";
+import { resolveBlockHighlightLanguage } from "./languageHighlight";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
 import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
@@ -3185,12 +3186,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   private getCustomHighlightLanguage(block: lotusCodeBlock): string | null {
-    const language = findEnabledCommandLanguage(this.settings, block.language, block.languageAlias);
-    const configured = language?.highlightLanguage?.trim();
-    if (!configured) {
-      return null;
-    }
-    return normalizeLanguage(configured, this.settings) ?? normalizeSyntaxLanguage(configured);
+    return resolveBlockHighlightLanguage(this.settings, block);
   }
 
   private applyRenderedCodeHighlightInheritance(code: HTMLElement, source: string, language: string): void {
