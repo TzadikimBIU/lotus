@@ -139,34 +139,24 @@ jobs:
           name: lotus-smoke-${{ matrix.profile }}-${{ matrix.container }}
           path: .lotus/artifacts/smoke/${{ matrix.profile }}
 
-  required-smoke-statuses:
-    name: Publish required smoke statuses
+  required-smoke:
+    name: smoke
     runs-on: ubuntu-latest
     needs: smoke-matrix
     if: ${{ always() }}
     steps:
-      - name: Publish required status contexts
+      - name: Require smoke matrix success
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           RESULT: ${{ needs.smoke-matrix.result }}
-        run: |
-          state="failure"
-          description="Smoke matrix failed"
-          if [ "${RESULT}" = "success" ]; then
-            state="success"
-            description="Smoke matrix passed"
-          fi
+        run: test "${RESULT}" = "success"
 
-          for context in "smoke" "smoke (full)"; do
-            payload="$(node -e 'process.stdout.write(JSON.stringify({state: process.argv[1], context: process.argv[2], description: process.argv[3]}))' "${state}" "${context}" "${description}")"
-            curl -fsS \
-              -X POST \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-              -d "${payload}"
-          done
-
-          test "${state}" = "success"
+  required-smoke-full:
+    name: smoke (full)
+    runs-on: ubuntu-latest
+    needs: smoke-matrix
+    if: ${{ always() }}
+    steps:
+      - name: Require smoke matrix success
+        env:
+          RESULT: ${{ needs.smoke-matrix.result }}
+        run: test "${RESULT}" = "success"
