@@ -61,6 +61,8 @@ Use `mode: transpile` when the command should generate source text but Lotus sho
 
 `targetLanguage` tells Lotus how to label and highlight the generated stdout pane.
 
+Blocks whose custom language is configured with `mode: transpile` show a curved-arrow transpile button in the code block toolbar. The normal run button still works; the transpile button is an explicit affordance for generated-source workflows.
+
 ```text
 name: c-to-llvm-ir
 aliases: c2llvm

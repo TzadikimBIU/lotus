@@ -168,6 +168,7 @@ interface lotusLiveRunState {
 }
 
 interface lotusRunBlockOptions {
+  intent?: "run" | "transpile";
   visualize?: boolean;
   writePolicy?: string;
 }
@@ -500,6 +501,7 @@ class lotusToolbarRenderChild extends MarkdownRenderChild {
 
 class lotusToolbarWidget extends WidgetType {
   private readonly isRunning: boolean;
+  private readonly showTranspile: boolean;
   private readonly showVisualize: boolean;
 
   constructor(
@@ -508,12 +510,14 @@ class lotusToolbarWidget extends WidgetType {
   ) {
     super();
     this.isRunning = plugin.isBlockRunning(block.id);
+    this.showTranspile = plugin.shouldShowTranspileButton(block);
     this.showVisualize = plugin.shouldShowCodeVisualizationButton();
   }
 
   eq(other: lotusToolbarWidget): boolean {
     return other.block.id === this.block.id
       && other.isRunning === this.isRunning
+      && other.showTranspile === this.showTranspile
       && other.showVisualize === this.showVisualize;
   }
 
@@ -1171,6 +1175,7 @@ export default class lotusPlugin extends Plugin {
     const isFunctionInput = this.isFunctionInputBlock(block);
     return createCodeBlockToolbar(block.id, this.isBlockRunning(block.id), {
       onRun: () => void this.runOrCancelBlockById(block.id),
+      onTranspile: () => void this.runOrCancelBlockById(block.id, { intent: "transpile" }),
       onVisualize: () => void this.visualizeActiveBlockById(block.id),
       onEdit: () => void this.editBlock(block),
       onCopy: () => {
@@ -1199,8 +1204,13 @@ export default class lotusPlugin extends Plugin {
       },
     }, {
       inputButtonLabel: isFunctionInput ? "Toggle function input" : "Toggle stdin input",
+      showTranspile: this.shouldShowTranspileButton(block),
       showVisualize: this.shouldShowCodeVisualizationButton(),
     });
+  }
+
+  shouldShowTranspileButton(block: lotusCodeBlock): boolean {
+    return findEnabledCommandLanguage(this.settings, block.language, block.languageAlias)?.mode === "transpile";
   }
 
   shouldShowCodeVisualizationButton(): boolean {
@@ -2389,6 +2399,10 @@ export default class lotusPlugin extends Plugin {
       showExecutionDisabledNotice();
       return null;
     }
+    if (options.intent === "transpile" && !this.shouldShowTranspileButton(block)) {
+      new Notice("This block is not configured for transpile mode.");
+      return null;
+    }
 
     const executionContext = this.resolveExecutionContext(file, block);
     const containerGroup = executionContext.containerGroup;
@@ -2467,6 +2481,7 @@ export default class lotusPlugin extends Plugin {
           workingDirectory: executionContext.workingDirectory,
           timeoutMs: executionContext.timeoutMs,
           stdinBytes: stdin?.length ?? 0,
+          intent: options.intent ?? "run",
           noteHash,
           sourceLanguage: block.language,
           executionLanguage: resolvedBlock.block.language,
@@ -2520,9 +2535,13 @@ export default class lotusPlugin extends Plugin {
         timeoutMs: executionContext.timeoutMs,
         sourceReference: Boolean(block.sourceReference),
         executionLanguage: resolvedBlock.block.language,
+        intent: options.intent ?? "run",
         noteHash,
       }, logTarget, await this.readCurrentNoteHash(file.path));
-      new Notice(result.success ? `lotus ran ${runnerName} block.` : `lotus run failed for ${runnerName}.`);
+      const transpiled = options.intent === "transpile" || result.stdoutRole === "transpiled-source";
+      new Notice(result.success
+        ? transpiled ? `lotus transpiled ${block.language} block.` : `lotus ran ${runnerName} block.`
+        : transpiled ? `lotus transpile failed for ${block.language}.` : `lotus run failed for ${runnerName}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       storedOutput = {

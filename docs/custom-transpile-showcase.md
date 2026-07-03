@@ -52,6 +52,8 @@ int main(void) {
 
 This fence is also highlighted as C, but running it does not execute the generated LLVM IR. Lotus labels stdout as `Transpiled source · llvm-ir` and applies LLVM IR highlighting to the output pane.
 
+After `c-to-llvm-ir` is configured, this block shows the curved-arrow transpile button in the toolbar.
+
 ```c-to-llvm-ir
 int main(void) {
   return 42;
