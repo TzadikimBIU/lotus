@@ -118,17 +118,21 @@ function createCopyButton(container: HTMLElement, label: string, content: string
   button.title = label;
   button.setAttribute("aria-label", label);
   setIcon(button, "copy");
-  button.addEventListener("click", async (event) => {
+  button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    try {
-      await writeClipboardText(content);
-      new Notice(`${label} copied.`);
-    } catch (error) {
-      new Notice(`Failed to copy output: ${formatUnknownError(error)}`);
-    }
+    void copyButtonContent(label, content);
   });
   return button;
+}
+
+async function copyButtonContent(label: string, content: string): Promise<void> {
+  try {
+    await writeClipboardText(content);
+    new Notice(`${label} copied.`);
+  } catch (error) {
+    new Notice(`Failed to copy output: ${formatUnknownError(error)}`);
+  }
 }
 
 async function writeClipboardText(content: string): Promise<void> {

@@ -376,6 +376,102 @@
   background: #ffffff;
 }
 
+.jxgbox {
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid #111111;
+  background: #ffffff;
+  touch-action: none;
+}
+
+.jxgbox svg text,
+.JXGtext {
+  user-select: none;
+}
+
+.JXGtext {
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  font-family: var(--font-monospace), monospace;
+}
+
+.JXG_navigation {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  z-index: 100;
+  padding: 2px;
+  background-color: transparent;
+  color: #666666;
+  cursor: pointer;
+}
+
+.d3-hwschematic text,
+.d3-hwschematic .node text,
+.d3-hwschematic.node-operator text,
+.d3-hwschematic .node-external-port text {
+  font-family: var(--font-monospace), monospace;
+  fill: #111111;
+  stroke-width: 0;
+}
+
+.d3-hwschematic .node,
+.d3-hwschematic.node-operator {
+  fill: #e6ffff;
+  stroke: #bdbdbd;
+  stroke-width: 1px;
+}
+
+.d3-hwschematic .node-external-port {
+  fill: #bdbdbd;
+  stroke: #111111;
+  stroke-width: 0;
+}
+
+.d3-hwschematic .link,
+.d3-hwschematic .link-selected {
+  fill: none;
+  stroke: #111111;
+}
+
+.d3-hwschematic .link {
+  stroke-opacity: 0.6;
+}
+
+.d3-hwschematic .link-selected {
+  stroke: orange;
+}
+
+.d3-hwschematic .link-wrap {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 8;
+}
+
+.d3-hwschematic .link-wrap.link-wrap-activated {
+  stroke: deepskyblue;
+}
+
+.d3-hwschematic .port {
+  opacity: 0.6;
+  stroke: #111111;
+}
+
+.d3-hwschematic tspan {
+  white-space: pre;
+}
+
+.d3-hwschematic-tooltip {
+  position: fixed;
+  z-index: 2;
+  padding: 5px;
+  border: 1px solid #111111;
+  border-radius: 5px;
+  background: cornsilk;
+}
+
 .lotus-output-image-fullscreen {
   position: fixed;
   inset: 0;

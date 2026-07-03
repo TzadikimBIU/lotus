@@ -436,7 +436,7 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const buffer = requestChunkToBuffer(chunk);
     total += buffer.length;
     if (total > MAX_BODY_BYTES) {
       throw new Error("Request body is too large.");
@@ -444,6 +444,16 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function requestChunkToBuffer(chunk: unknown): Buffer {
+  if (Buffer.isBuffer(chunk)) {
+    return chunk;
+  }
+  if (typeof chunk === "string" || chunk instanceof Uint8Array) {
+    return Buffer.from(chunk);
+  }
+  throw new Error("Received an unsupported request body chunk.");
 }
 
 export async function readApiLogEvents(host: lotusApiHost, limit: number): Promise<lotusApiLogEvent[]> {

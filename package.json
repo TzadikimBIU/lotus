@@ -20,6 +20,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.6",
     "@eslint/js": "^9.39.4",
+    "@types/d3": "^7.4.3",
     "@types/node": "^22.15.30",
     "@typescript-eslint/parser": "^8.62.0",
     "esbuild": "^0.25.6",
@@ -30,6 +31,11 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "jszip": "^3.10.1"
+    "cytoscape": "^3.34.0",
+    "d3": "^7.9.0",
+    "elkjs": "^0.10.2",
+    "jsxgraph": "^1.12.2",
+    "jszip": "^3.10.1",
+    "plotly.js-dist-min": "^2.35.3"
   }
 }

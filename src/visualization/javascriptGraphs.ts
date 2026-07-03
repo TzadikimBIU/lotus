@@ -1,3 +1,8 @@
+import * as d3 from "d3";
+import ELK from "elkjs";
+import type JXG from "jsxgraph";
+import type Plotly from "plotly.js-dist-min";
+import type cytoscape from "cytoscape";
 import type { lotusDisplayRenderer, lotusDisplayRendererContext, lotusDisplayRendererCleanup } from "../types";
 
 export const LOTUS_D3_MIME = "application/vnd.lotus.d3+json";
@@ -10,88 +15,23 @@ export const LOTUS_HWSCHEMATIC_MIME = "application/vnd.lotus.hwschematic+json";
 export const LOTUS_CYTOSCAPE_MIME = "application/vnd.lotus.cytoscape+json";
 export const CYTOSCAPE_MIME = "application/vnd.cytoscapejs+json";
 
-const D3_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js";
-const PLOTLY_SCRIPT_URL = "https://cdn.plot.ly/plotly-3.6.0.min.js";
-const JSXGRAPH_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraphcore.js";
-const JSXGRAPH_STYLESHEET_URL = "https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraph.css";
-const ELK_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/elkjs/lib/elk.bundled.js";
-const HWSCHEMATIC_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/d3-hwschematic@0.1.6/dist/d3-hwschematic.js";
-const HWSCHEMATIC_STYLESHEET_URL = "https://cdn.jsdelivr.net/npm/d3-hwschematic@0.1.6/dist/d3-hwschematic.css";
-const CYTOSCAPE_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js";
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 const GRAPH_BLACK = "#111111";
 const GRAPH_WHITE = "#ffffff";
 const GRAPH_BORDER = "#111111";
 const GRAPH_GRID = "#e5e5e5";
-const scriptLoads = new Map<string, Promise<void>>();
 let graphIdCounter = 0;
+let plotlyLoad: Promise<PlotlyModule> | undefined;
+let jsxGraphLoad: Promise<JsxGraphModule> | undefined;
+let cytoscapeLoad: Promise<CytoscapeModule> | undefined;
 
-interface LotusGraphWindow extends Window {
-  d3?: D3Global;
-  Plotly?: PlotlyGlobal;
-  JXG?: JsxGraphGlobal;
-  ELK?: ElkConstructor;
-  cytoscape?: CytoscapeFactory;
-}
-
-interface D3Global {
-  select(node: Element): any;
-  scaleBand(): any;
-  scaleLinear(): any;
-  axisBottom(scale: unknown): any;
-  axisLeft(scale: unknown): any;
-  line(): any;
-  max<T>(values: T[], accessor: (value: T) => number): number | undefined;
-  zoom(): any;
-  HwSchematic?: HwSchematicConstructor & {
-    fromYosys?: (graph: unknown) => unknown;
-    selectGraphRootByPath?: (graph: unknown, path: string) => unknown;
-  };
-}
-
-interface PlotlyGlobal {
-  newPlot(graphDiv: HTMLElement, figure: unknown): Promise<unknown>;
-  purge?: (graphDiv: HTMLElement) => void;
-  Plots?: {
-    resize?: (graphDiv: HTMLElement) => void;
-  };
-}
-
-interface JsxGraphGlobal {
-  JSXGraph: {
-    initBoard(id: string, options: Record<string, unknown>): JsxGraphBoard;
-    freeBoard?: (board: JsxGraphBoard) => void;
-  };
-}
-
-interface JsxGraphBoard {
-  create(type: string, args: unknown, attributes?: Record<string, unknown>): unknown;
-  removeObject?: (object: unknown) => void;
-}
-
-type ElkConstructor = new (options?: Record<string, unknown>) => ElkInstance;
+type PlotlyModule = typeof Plotly;
+type JsxGraphModule = typeof JXG;
+type CytoscapeModule = typeof cytoscape;
 
 interface ElkInstance {
   layout(graph: unknown, options?: Record<string, unknown>): Promise<unknown>;
   terminateWorker?: () => void;
-}
-
-type HwSchematicConstructor = new (svgSelection: unknown) => HwSchematicInstance;
-
-interface HwSchematicInstance {
-  root?: {
-    attr(name: string, value: unknown): unknown;
-  };
-  bindData(graph: unknown): Promise<unknown>;
-  setErrorText?: (error: unknown) => void;
-}
-
-type CytoscapeFactory = (options: Record<string, unknown>) => CytoscapeInstance;
-
-interface CytoscapeInstance {
-  destroy(): void;
-  fit?: () => void;
 }
 
 interface GraphDimensions {
@@ -202,11 +142,10 @@ async function renderD3Display(container: HTMLElement, context: lotusDisplayRend
   const { surface } = createGraphSurface(container, context, 720, 360);
   const spec = readD3ChartSpec(context.value);
   try {
-    const d3 = await loadD3();
-    renderD3Chart(surface, d3, spec, readDimensions(context, 720, 360));
+    renderD3Chart(surface, spec, readDimensions(context, 720, 360));
   } catch (error) {
     surface.empty();
-    createGraphNotice(surface, `D3 could not be loaded, so Lotus rendered a static fallback: ${formatUnknownError(error)}`);
+    createGraphNotice(surface, `D3 could not render this chart, so Lotus rendered a static fallback: ${formatUnknownError(error)}`);
     renderNativeChart(surface, spec, readDimensions(context, 720, 360));
   }
   return () => surface.empty();
@@ -226,7 +165,6 @@ async function renderPlotlyDisplay(container: HTMLElement, context: lotusDisplay
 
 async function renderJsxGraphDisplay(container: HTMLElement, context: lotusDisplayRendererContext): Promise<lotusDisplayRendererCleanup> {
   const { surface } = createGraphSurface(container, context, 520, 420);
-  loadStylesheet(JSXGRAPH_STYLESHEET_URL);
   const jxg = await loadJsxGraph();
   const payload = readRecordPayload(context.value);
   const boardOptions = readRecord(payload.board) ?? {};
@@ -250,7 +188,7 @@ async function renderJsxGraphDisplay(container: HTMLElement, context: lotusDispl
     if (!type) {
       continue;
     }
-    const args = objectRecord.args ?? objectRecord.parameters ?? [];
+    const args = readArray(objectRecord.args ?? objectRecord.parameters);
     const attributes = {
       ...defaultJsxGraphAttributes(type),
       ...(readRecord(objectRecord.attributes) ?? readRecord(objectRecord.options) ?? {}),
@@ -259,7 +197,7 @@ async function renderJsxGraphDisplay(container: HTMLElement, context: lotusDispl
   }
 
   return () => {
-    jxg.JSXGraph.freeBoard?.(board);
+    jxg.JSXGraph.freeBoard(board);
     surface.empty();
   };
 }
@@ -292,43 +230,9 @@ async function renderHwSchematicDisplay(container: HTMLElement, context: lotusDi
   const graph = readGraphPayload(payload);
   const dimensions = readDimensions(context, 820, 460);
 
-  try {
-    surface.addClass("lotus-hwschematic-surface");
-    loadStylesheet(HWSCHEMATIC_STYLESHEET_URL);
-    const d3 = await loadD3();
-    await loadElkConstructor();
-    await loadScript(HWSCHEMATIC_SCRIPT_URL, () => Boolean(graphWindow().d3?.HwSchematic));
-    const HwSchematic = graphWindow().d3?.HwSchematic;
-    if (!HwSchematic) {
-      throw new Error("d3.HwSchematic was not registered.");
-    }
-
-    const svg = svgElement("svg");
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("height", `${dimensions.height}`);
-    svg.setAttribute("viewBox", `0 0 ${dimensions.width} ${dimensions.height}`);
-    surface.appendChild(svg);
-    const svgSelection = d3.select(svg);
-    const schematic = new HwSchematic(svgSelection);
-    const format = readString(payload.format)?.toLowerCase();
-    const selectedRoot = readString(payload.root);
-    let schematicGraph = format === "yosys" && HwSchematic.fromYosys ? HwSchematic.fromYosys(graph) : graph;
-    if (selectedRoot && HwSchematic.selectGraphRootByPath) {
-      schematicGraph = HwSchematic.selectGraphRootByPath(schematicGraph, selectedRoot);
-    }
-
-    const zoom = d3.zoom();
-    zoom.on("zoom", (event: { transform: unknown }) => {
-      schematic.root?.attr("transform", event.transform);
-    });
-    svgSelection.call(zoom).on("dblclick.zoom", null);
-    await schematic.bindData(schematicGraph);
-    applyMonochromeSchematicTheme(svg);
-  } catch (error) {
-    surface.empty();
-    createGraphNotice(surface, `d3-hwschematic could not be loaded, so Lotus rendered an ELK-style fallback: ${formatUnknownError(error)}`);
-    renderElkGraph(surface, assignFallbackElkLayout(readElkNode(graph)), dimensions);
-  }
+  surface.addClass("lotus-hwschematic-surface");
+  createGraphNotice(surface, "Lotus rendered this hardware schematic with the built-in ELK fallback.");
+  renderElkGraph(surface, assignFallbackElkLayout(readElkNode(readHwSchematicGraph(graph, payload))), dimensions);
 
   return () => surface.empty();
 }
@@ -338,14 +242,15 @@ async function renderCytoscapeDisplay(container: HTMLElement, context: lotusDisp
   const payload = readRecordPayload(context.value);
   try {
     const cytoscape = await loadCytoscape();
+    const options = payload as Partial<cytoscape.CytoscapeOptions>;
     const cy = cytoscape({
-      ...payload,
+      ...options,
       container: surface,
-      elements: payload.elements ?? [],
-      style: payload.style ?? defaultCytoscapeStyle(),
-      layout: payload.layout ?? { name: "cose" },
+      elements: options.elements ?? [],
+      style: options.style ?? defaultCytoscapeStyle(),
+      layout: options.layout ?? { name: "cose" },
     });
-    window.requestAnimationFrame(() => cy.fit?.());
+    window.requestAnimationFrame(() => cy.fit());
     return () => {
       cy.destroy();
       surface.empty();
@@ -400,7 +305,7 @@ function readD3ChartSpec(value: unknown): D3ChartSpec {
   };
 }
 
-function renderD3Chart(surface: HTMLElement, d3: D3Global, spec: D3ChartSpec, dimensions: GraphDimensions): void {
+function renderD3Chart(surface: HTMLElement, spec: D3ChartSpec, dimensions: GraphDimensions): void {
   const margin = { top: 22, right: 24, bottom: 42, left: 52 };
   const innerWidth = Math.max(1, dimensions.width - margin.left - margin.right);
   const innerHeight = Math.max(1, dimensions.height - margin.top - margin.bottom);
@@ -463,7 +368,7 @@ function renderD3Chart(surface: HTMLElement, d3: D3Global, spec: D3ChartSpec, di
   plot.append("g").call(d3.axisLeft(y).ticks(5));
 
   if (spec.kind === "line") {
-    const line = d3.line()
+    const line = d3.line<ChartPoint>()
       .x((datum: ChartPoint) => Number(x(datum.x)))
       .y((datum: ChartPoint) => Number(y(datum.y)));
     plot.append("path")
@@ -653,13 +558,63 @@ function readDatumLabel(datum: Record<string, unknown>, spec: D3ChartSpec, index
 }
 
 async function createElkInstance(payload: Record<string, unknown>): Promise<ElkInstance> {
-  const Elk = await loadElkConstructor();
   const options = readRecord(payload.elkOptions) ?? {};
-  return new Elk(options);
+  return new ELK(options);
 }
 
 function readGraphPayload(payload: Record<string, unknown>): unknown {
   return payload.graph ?? payload.elk ?? payload.schematic ?? payload;
+}
+
+function readHwSchematicGraph(graph: unknown, payload: Record<string, unknown>): unknown {
+  const selectedRoot = readString(payload.root);
+  if (!selectedRoot) {
+    return graph;
+  }
+  return selectGraphRootByPath(graph, selectedRoot) ?? graph;
+}
+
+function selectGraphRootByPath(graph: unknown, rootPath: string): Record<string, unknown> | null {
+  const root = readRecord(graph);
+  if (!root) {
+    return null;
+  }
+  const segments = rootPath
+    .split(/[/.]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (!segments.length || graphNodeMatchesPathSegment(root, segments[0])) {
+    segments.shift();
+  }
+
+  let current: Record<string, unknown> | null = root;
+  for (const segment of segments) {
+    current = current ? findGraphChildByPathSegment(current, segment) : null;
+    if (!current) {
+      return null;
+    }
+  }
+  return current;
+}
+
+function findGraphChildByPathSegment(node: Record<string, unknown>, segment: string): Record<string, unknown> | null {
+  for (const child of readArray(node.children)) {
+    const childRecord = readRecord(child);
+    if (childRecord && graphNodeMatchesPathSegment(childRecord, segment)) {
+      return childRecord;
+    }
+  }
+  return null;
+}
+
+function graphNodeMatchesPathSegment(node: Record<string, unknown>, segment: string): boolean {
+  if (String(node.id ?? "") === segment) {
+    return true;
+  }
+  const labels = readArray(node.labels)
+    .map((label) => readRecord(label))
+    .filter((label): label is Record<string, unknown> => Boolean(label));
+  return labels.some((label) => readString(label.text) === segment || String(label.id ?? "") === segment);
 }
 
 function readElkNode(value: unknown): ElkNode {
@@ -884,7 +839,7 @@ function renderCytoscapeFallback(surface: HTMLElement, payload: Record<string, u
   }
 }
 
-function defaultCytoscapeStyle(): Array<Record<string, unknown>> {
+function defaultCytoscapeStyle(): cytoscape.StylesheetJson {
   return [
     {
       selector: "node",
@@ -1012,94 +967,19 @@ function createGraphNotice(container: HTMLElement, message: string): void {
   container.createDiv({ cls: "lotus-js-graph-notice", text: message });
 }
 
-async function loadD3(): Promise<D3Global> {
-  await loadScript(D3_SCRIPT_URL, () => Boolean(graphWindow().d3));
-  const d3 = graphWindow().d3;
-  if (!d3) {
-    throw new Error("D3 did not expose window.d3.");
-  }
-  return d3;
+async function loadPlotly(): Promise<PlotlyModule> {
+  plotlyLoad ??= import("plotly.js-dist-min").then((module) => module.default);
+  return plotlyLoad;
 }
 
-async function loadPlotly(): Promise<PlotlyGlobal> {
-  await loadScript(PLOTLY_SCRIPT_URL, () => Boolean(graphWindow().Plotly));
-  const plotly = graphWindow().Plotly;
-  if (!plotly) {
-    throw new Error("Plotly did not expose window.Plotly.");
-  }
-  return plotly;
+async function loadJsxGraph(): Promise<JsxGraphModule> {
+  jsxGraphLoad ??= import("jsxgraph").then((module) => module.default ?? module);
+  return jsxGraphLoad;
 }
 
-async function loadJsxGraph(): Promise<JsxGraphGlobal> {
-  await loadScript(JSXGRAPH_SCRIPT_URL, () => Boolean(graphWindow().JXG?.JSXGraph));
-  const jxg = graphWindow().JXG;
-  if (!jxg) {
-    throw new Error("JSXGraph did not expose window.JXG.");
-  }
-  return jxg;
-}
-
-async function loadElkConstructor(): Promise<ElkConstructor> {
-  await loadScript(ELK_SCRIPT_URL, () => Boolean(graphWindow().ELK));
-  const Elk = graphWindow().ELK;
-  if (!Elk) {
-    throw new Error("elkjs did not expose window.ELK.");
-  }
-  return Elk;
-}
-
-async function loadCytoscape(): Promise<CytoscapeFactory> {
-  await loadScript(CYTOSCAPE_SCRIPT_URL, () => Boolean(graphWindow().cytoscape));
-  const cytoscape = graphWindow().cytoscape;
-  if (!cytoscape) {
-    throw new Error("Cytoscape.js did not expose window.cytoscape.");
-  }
-  return cytoscape;
-}
-
-function loadScript(src: string, isReady: () => boolean): Promise<void> {
-  if (isReady()) {
-    return Promise.resolve();
-  }
-  const existing = scriptLoads.get(src);
-  if (existing) {
-    return existing;
-  }
-
-  const promise = new Promise<void>((resolve, reject) => {
-    const script = activeDocument.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.dataset.lotusGraphScript = src;
-    script.addEventListener("load", () => {
-      if (isReady()) {
-        resolve();
-      } else {
-        reject(new Error(`Loaded ${src}, but the expected global was missing.`));
-      }
-    });
-    script.addEventListener("error", () => {
-      scriptLoads.delete(src);
-      reject(new Error(`Failed to load ${src}.`));
-    });
-    activeDocument.head.appendChild(script);
-  });
-  scriptLoads.set(src, promise);
-  return promise;
-}
-
-function loadStylesheet(href: string): void {
-  const existing = Array.from(activeDocument.querySelectorAll("link[data-lotus-graph-stylesheet]"))
-    .some((link) => link.getAttribute("data-lotus-graph-stylesheet") === href);
-  if (existing) {
-    return;
-  }
-  const link = activeDocument.createElement("link");
-  link.rel = "stylesheet";
-  link.href = href;
-  link.dataset.lotusGraphStylesheet = href;
-  activeDocument.head.appendChild(link);
+async function loadCytoscape(): Promise<CytoscapeModule> {
+  cytoscapeLoad ??= import("cytoscape").then((module) => module.default ?? module);
+  return cytoscapeLoad;
 }
 
 function readRecordPayload(value: unknown): Record<string, unknown> {
@@ -1147,10 +1027,6 @@ function cloneJson(value: unknown): unknown {
 function nextGraphId(prefix: string): string {
   graphIdCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${graphIdCounter.toString(36)}`;
-}
-
-function graphWindow(): LotusGraphWindow {
-  return window;
 }
 
 function formatUnknownError(error: unknown): string {

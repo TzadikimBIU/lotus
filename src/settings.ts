@@ -1458,8 +1458,7 @@ class EditContainerGroupModal extends Modal {
           .setDesc("Command used as the persistent container's main process.")
           .addText((text) => {
             text
-              // eslint-disable-next-line obsidianmd/ui/sentence-case -- This placeholder is a shell command.
-              .setPlaceholder("sleep infinity")
+              .setPlaceholder("Example: sleep infinity")
               .setValue(persistent.keepAliveCommand || "")
               .onChange((val) => {
                 persistent.keepAliveCommand = val.trim() || undefined;
