@@ -17,8 +17,17 @@ concurrency:
 jobs:
   tag-manifest-version:
     runs-on: ubuntu-latest
-
     steps:
+      - name: Wait for smoke tests to succeed
+        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc
+        with:
+          ref: ${{ github.sha }}
+          check-regexp: '^smoke.*'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 20
+          allowed-conclusions: success
+
+    
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
