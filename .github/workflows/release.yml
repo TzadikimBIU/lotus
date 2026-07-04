@@ -33,7 +33,7 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
-      - run: npm run build
+      - run: npm run build -- --production
 
       - name: Attest release assets
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373

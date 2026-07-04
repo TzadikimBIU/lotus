@@ -97,7 +97,15 @@ application/vnd.lotus.cytoscape+json
 application/vnd.cytoscapejs+json
 ```
 
-The adapters are loaded on demand from fixed library URLs when their MIME type is rendered, so Lotus does not add Plotly, D3, JSXGraph, elkjs, d3-hwschematic, or Cytoscape.js as baseline bundle dependencies.
+The adapters are bundled and loaded on demand when their MIME type is rendered. Plotly, JSXGraph, and Cytoscape.js also add static print snapshots so Obsidian PDF export has a stable image even when the interactive renderer uses browser-only DOM or canvas state.
+
+`obsidian-js` can load graph specs from JSON files relative to the current note:
+
+```obsidian-js
+await display.elkFile("graphs/pipeline.json", { title: "Pipeline" });
+await display.cytoscapeFile("graphs/network.json", { title: "Network" });
+const graph = await display.jsonFile("graphs/pipeline.json");
+```
 
 Payload shapes:
 

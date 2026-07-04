@@ -6,6 +6,7 @@ import os from "os";
 
 const buildArgs = process.argv.slice(2);
 const prod = buildArgs.includes("production") || readFlag("production");
+const sourcemap = readBooleanOption("sourcemap", "LOTUS_SOURCEMAP");
 const compileMode = normalizeCompileMode(
   readOption("compile-mode")
   ?? readOption("compile")
@@ -38,7 +39,7 @@ await esbuild.build({
   format: "cjs",
   platform: "node",
   target: "es2021",
-  sourcemap: prod ? false : "inline",
+  sourcemap: sourcemap ? "inline" : false,
   minify: prod,
   legalComments: "none",
   external: [

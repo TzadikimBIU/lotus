@@ -343,6 +343,13 @@
   background: #ffffff;
 }
 
+.lotus-js-graph-print-snapshot {
+  display: none;
+  max-width: 100%;
+  height: auto;
+  background: #ffffff;
+}
+
 .lotus-js-graph-notice {
   margin: 0.65rem;
   padding: 0.45rem 0.6rem;
@@ -885,6 +892,25 @@
 
   .lotus-output-panel {
     page-break-inside: avoid;
+  }
+
+  body .lotus-output-image-toolbar {
+    display: none;
+  }
+
+  body .lotus-output-image-viewport,
+  body .lotus-js-graph-frame {
+    overflow: visible;
+    max-height: none;
+  }
+
+  body .lotus-js-graph-print-snapshot {
+    display: block;
+  }
+
+  body .lotus-js-graph-print-snapshot ~ *,
+  body .lotus-js-graph-surface:has(.lotus-js-graph-print-snapshot) > :not(.lotus-js-graph-print-snapshot) {
+    display: none;
   }
 
   body .lotus-print-hide-code {
