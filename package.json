@@ -11,7 +11,7 @@
     "build:light": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --compile-mode=light --production",
     "build:dev": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs --sourcemap",
     "check": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint --quiet src scripts esbuild.config.mjs manifest.json LICENSE",
+    "lint": "eslint --quiet src scripts language-packs esbuild.config.mjs manifest.json LICENSE",
     "smoke": "node scripts/smoke.mjs",
     "smoke:matrix": "npm run smoke -- --profile minimal && npm run smoke -- --profile systems && npm run smoke -- --profile proofs && npm run smoke -- --profile ebpf && npm run smoke -- --profile full",
     "smoke:pdf": "node scripts/smoke.mjs --require-pdf",

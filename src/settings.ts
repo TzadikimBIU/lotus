@@ -19,7 +19,7 @@ import type { lotusCustomLanguage, lotusCustomPreprocessor, lotusPluginSettings 
 
 export { DEFAULT_SETTINGS } from "./defaultSettings";
 
-type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "extractorMode" | "mode" | "outputMode" | "preprocessors">;
+type lotusCustomLanguageTextKey = Exclude<keyof lotusCustomLanguage, "displayHeight" | "displayOutput" | "displayRole" | "extractorMode" | "mode" | "outputMode" | "packageDirectory" | "preprocessors">;
 type lotusCustomPreprocessorTextKey = keyof lotusCustomPreprocessor;
 type lotusContainerEditorRuntime = lotusCompileContainerRuntime;
 type lotusRemoteUploadMode = "inline" | "scp";
@@ -861,6 +861,11 @@ export class lotusSettingTab extends PluginSettingTab {
             extension: ".txt",
             outputMode: "streams",
             outputExtension: ".out",
+            displayOutput: "none",
+            displayMimeType: "text/plain",
+            displayTitle: "",
+            displayRole: "result",
+            displayHeight: undefined,
             preprocessors: [],
             extractorMode: "command",
             extractorExecutable: "",
@@ -930,6 +935,53 @@ export class lotusSettingTab extends PluginSettingTab {
         );
       if (language.outputMode === "file") {
         this.addCustomLanguageTextSetting(body, language, "Output extension", "Temp output file extension used for the {output} path.", "outputExtension");
+      }
+      new Setting(body)
+        .setName("Display output")
+        .setDesc("Optionally wrap stdout or generated file output as a Lotus rich display.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("none", "No display")
+            .addOption("copy-stdout", "Copy stdout to display")
+            .addOption("replace-stdout", "Replace stdout with display")
+            .setValue(language.displayOutput ?? "none")
+            .onChange(async (value) => {
+              language.displayOutput = value as "none" | "copy-stdout" | "replace-stdout";
+              await this.lotusPlugin.saveSettings();
+              this.renderSettings();
+            }),
+        );
+      if (language.displayOutput && language.displayOutput !== "none") {
+        this.addCustomLanguageTextSetting(body, language, "Display MIME type", "MIME type for the display payload, for example image/svg+xml, image/png, text/vnd.graphviz, or application/json.", "displayMimeType");
+        this.addCustomLanguageTextSetting(body, language, "Display title", "Optional title shown above the rendered display.", "displayTitle");
+        new Setting(body)
+          .setName("Display height")
+          .setDesc("Optional iframe/display height in pixels for HTML outputs.")
+          .addText((text) =>
+            text
+              .setPlaceholder("520")
+              .setValue(language.displayHeight ? String(language.displayHeight) : "")
+              .onChange(async (value) => {
+                const parsed = Number(value.trim());
+                language.displayHeight = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+                await this.lotusPlugin.saveSettings();
+              }),
+          );
+        new Setting(body)
+          .setName("Display role")
+          .setDesc("Semantic role attached to the display record.")
+          .addDropdown((dropdown) =>
+            dropdown
+              .addOption("result", "Result")
+              .addOption("visualization", "Visualization")
+              .addOption("diagnostic", "Diagnostic")
+              .addOption("artifact", "Artifact")
+              .setValue(language.displayRole ?? "result")
+              .onChange(async (value) => {
+                language.displayRole = value as "result" | "visualization" | "diagnostic" | "artifact";
+                await this.lotusPlugin.saveSettings();
+              }),
+          );
       }
       this.renderCustomPreprocessorList(body, language);
 

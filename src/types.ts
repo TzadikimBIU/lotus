@@ -83,6 +83,7 @@ export interface lotusRunResult {
   cancelled: boolean;
   warning?: string;
   displays?: lotusDisplayOutput[];
+  artifacts?: lotusRunArtifact[];
   stdoutLanguage?: lotusNormalizedLanguage;
   stdoutRole?: "output" | "transpiled-source";
 }
@@ -96,6 +97,16 @@ export interface lotusDisplayOutput {
   data: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
+
+export interface lotusRunArtifact {
+  name: string;
+  path: string;
+  mimeType: string;
+  size: number;
+  dataBase64: string;
+}
+
+export type lotusCustomLanguageDisplayOutput = "none" | "copy-stdout" | "replace-stdout";
 
 export type lotusDisplayRendererCleanup = () => void;
 
@@ -263,6 +274,12 @@ export interface lotusCustomLanguage {
   extension: string;
   outputMode?: "streams" | "file";
   outputExtension?: string;
+  displayOutput?: lotusCustomLanguageDisplayOutput;
+  displayMimeType?: string;
+  displayTitle?: string;
+  displayRole?: lotusDisplayRole;
+  displayHeight?: number;
+  packageDirectory?: string;
   preprocessors?: lotusCustomPreprocessor[];
   preprocessorExecutable?: string;
   preprocessorArgs?: string;

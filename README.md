@@ -118,7 +118,7 @@ Blocks can receive standard input through the toolbar input control or through a
 
 ## Rich Displays
 
-Lotus can render rich display outputs in addition to stdout and stderr. Display outputs use MIME bundles inspired by Jupyter outputs. Supported render targets include `image/svg+xml`, `image/png`, `image/jpeg`, `image/gif`, `text/vnd.graphviz`, `application/json`, and `text/plain`. Trusted plugins can register custom MIME renderers for application-specific payloads. The full producer contract is documented in [Rich Display Contract](docs/display-contract.md).
+Lotus can render rich display outputs in addition to stdout and stderr. Display outputs use MIME bundles inspired by Jupyter outputs. Supported render targets include `text/html`, `image/svg+xml`, `image/png`, `image/jpeg`, `image/gif`, `text/vnd.graphviz`, `application/json`, and `text/plain`. Trusted plugins can register custom MIME renderers for application-specific payloads. The full producer contract is documented in [Rich Display Contract](docs/display-contract.md).
 
 Obsidian JavaScript blocks receive a `display` helper:
 

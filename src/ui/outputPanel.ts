@@ -4,6 +4,7 @@ import type {
   lotusDisplayOutput,
   lotusDisplayRenderer,
   lotusDisplayRendererCleanup,
+  lotusRunArtifact,
   lotusSourcePreviewStage,
   lotusStoredOutput,
 } from "../types";
@@ -74,6 +75,9 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
       createDisplay(body, display, visibleLines, options.displayRenderers ?? []);
     }
   }
+  if (output.result.artifacts?.length) {
+    createArtifactList(body, output.result.artifacts);
+  }
   if (output.sourcePreview?.content.trim()) {
     createSourcePreview(body, output.sourcePreview);
   }
@@ -82,11 +86,101 @@ export function renderOutputPanel(panel: HTMLElement, output: lotusStoredOutput,
     && !output.result.warning?.trim()
     && !output.result.stderr.trim()
     && !output.result.displays?.length
+    && !output.result.artifacts?.length
     && !output.sourcePreview?.content.trim()
   ) {
     const empty = body.createDiv({ cls: "lotus-output-empty" });
     empty.setText("No output");
   }
+}
+
+function createArtifactList(container: HTMLElement, artifacts: readonly lotusRunArtifact[]): void {
+  const section = container.createDiv({ cls: "lotus-output-artifacts" });
+  section.createDiv({ cls: "lotus-output-stream-label", text: `Artifacts · ${artifacts.length}` });
+  const list = section.createDiv({ cls: "lotus-output-artifact-list" });
+  for (const artifact of artifacts) {
+    const row = list.createDiv({ cls: "lotus-output-artifact" });
+    const info = row.createDiv({ cls: "lotus-output-artifact-info" });
+    info.createDiv({ cls: "lotus-output-artifact-name", text: artifact.path || artifact.name });
+    info.createDiv({ cls: "lotus-output-artifact-meta", text: `${artifact.mimeType} · ${formatByteSize(artifact.size)}` });
+    const actions = row.createDiv({ cls: "lotus-output-artifact-actions" });
+    createArtifactButton(actions, "Open artifact", "external-link", () => openArtifact(artifact));
+    createArtifactButton(actions, "Download artifact", "download", () => downloadArtifact(artifact));
+    if (isTextArtifact(artifact)) {
+      createArtifactButton(actions, "Copy artifact", "copy", () => {
+        void copyButtonContent("Artifact", decodeArtifactText(artifact));
+      });
+    }
+  }
+}
+
+function createArtifactButton(container: HTMLElement, label: string, iconName: string, onClick: () => void): HTMLButtonElement {
+  const button = container.createEl("button", { cls: "lotus-output-artifact-button" });
+  button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  setIcon(button, iconName);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function openArtifact(artifact: lotusRunArtifact): void {
+  const url = createArtifactObjectUrl(artifact);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function downloadArtifact(artifact: lotusRunArtifact): void {
+  const url = createArtifactObjectUrl(artifact);
+  const link = activeDocument.createElement("a");
+  link.href = url;
+  link.download = artifact.name || "artifact";
+  activeDocument.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function createArtifactObjectUrl(artifact: lotusRunArtifact): string {
+  return URL.createObjectURL(new Blob([decodeArtifactArrayBuffer(artifact)], { type: artifact.mimeType || "application/octet-stream" }));
+}
+
+function decodeArtifactArrayBuffer(artifact: lotusRunArtifact): ArrayBuffer {
+  const bytes = decodeArtifactBytes(artifact);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+function decodeArtifactBytes(artifact: lotusRunArtifact): Uint8Array {
+  const binary = atob(artifact.dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function decodeArtifactText(artifact: lotusRunArtifact): string {
+  return new TextDecoder().decode(decodeArtifactBytes(artifact));
+}
+
+function isTextArtifact(artifact: lotusRunArtifact): boolean {
+  return artifact.mimeType.startsWith("text/") || artifact.mimeType === "application/json" || artifact.mimeType === "application/x-tex";
+}
+
+function formatByteSize(size: number): string {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function createStream(
@@ -189,6 +283,11 @@ function createDisplay(
 
   if (selected.mime.startsWith("image/") && typeof selected.value === "string") {
     createImageDisplay(section, display, selected.mime, selected.value);
+    return;
+  }
+
+  if (selected.mime === "text/html" && typeof selected.value === "string") {
+    createHtmlDisplay(section, display, selected.mime, selected.value);
     return;
   }
 
@@ -511,8 +610,27 @@ function createTextDisplay(container: HTMLElement, content: string, visibleLines
   }
 }
 
+function createHtmlDisplay(container: HTMLElement, display: lotusDisplayOutput, mime: string, value: string): void {
+  const metadata = readDisplayMetadata(display, mime);
+  const frame = container.createDiv({ cls: "lotus-output-html-frame" });
+  const iframe = frame.createEl("iframe", {
+    cls: "lotus-output-html-iframe",
+    attr: {
+      sandbox: "allow-forms allow-popups allow-scripts",
+      referrerpolicy: "no-referrer",
+      title: display.title?.trim() || "Lotus HTML display",
+    },
+  });
+  const height = readPositiveNumber(metadata.height);
+  if (height) {
+    iframe.style.height = `${Math.round(height)}px`;
+  }
+  iframe.srcdoc = value;
+}
+
 function selectDisplayMime(display: lotusDisplayOutput): { mime: string; value: unknown } | null {
   for (const mime of [
+    "text/html",
     "image/svg+xml",
     "image/png",
     "image/jpeg",

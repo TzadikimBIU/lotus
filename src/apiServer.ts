@@ -38,6 +38,8 @@ export interface lotusApiRun {
   stdout_role?: "output" | "transpiled-source" | null;
   stderr: string;
   warning: string | null;
+  displays?: number;
+  artifacts?: number;
 }
 
 export interface lotusApiRunner {
@@ -350,6 +352,8 @@ export function apiRunFromResult(blockId: string, notePath: string, result: lotu
     stdout_role: result.stdoutRole ?? null,
     stderr: result.stderr,
     warning: result.warning ?? null,
+    displays: result.displays?.length ?? 0,
+    artifacts: result.artifacts?.length ?? 0,
   };
 }
 
