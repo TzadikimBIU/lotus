@@ -11,6 +11,7 @@ A custom language configuration defines:
 - **Executable**
 - **Arguments** (e.g., `{file}`)
 - **Source file extension**
+- **Display output** (optional rich-display wrapping for stdout or generated file output)
 - **Optional preprocessor stages**
 - **Optional extractor executable**
 - **Optional extractor arguments** (e.g., `{request}`)
@@ -34,6 +35,10 @@ With this configured, a normal fenced block can run using that alias:
 echo hello
 ```
 ````
+
+Argument templates include `{file}`, `{tempDir}`, and `{output}` for all custom languages. External language-pack manifests also get `{packDir}`/`{packageDir}`/`{languagePackDir}`, which expand to the manifest directory so pack-local helper scripts can be referenced without hard-coded vault paths.
+
+Processes also receive `LOTUS_DISPLAY_JSONL` and `LOTUS_ARTIFACT_DIR`. Write display JSONL records to the first path when a runner needs multiple MIME bundles or custom metadata. Write files to the artifact directory when a run should expose durable downloads such as `preview.html`, `document.tex`, `plot.json`, or `output.pdf`.
 
 ---
 
@@ -119,6 +124,57 @@ For imported language-pack manifests the same fields are available:
   "outputExtension": ".ll"
 }
 ```
+
+---
+
+## Display Output Mode
+
+Custom languages can turn stdout, or the generated file content from `outputMode: file`, into a Lotus rich display. Use this for wrapper languages whose command naturally produces an SVG, raster image, Graphviz DOT, JSON graph payload, or another MIME bundle value.
+
+`displayOutput` accepts:
+- `none`: leave stdout as normal stream output.
+- `copy-stdout`: keep stdout and also add a display record.
+- `replace-stdout`: move stdout into a display record so raw image data is not shown as text.
+
+`displayMimeType` selects the display MIME type, such as `text/html`, `image/svg+xml`, `image/png`, `text/vnd.graphviz`, `application/vnd.lotus.plotly+json`, or `application/json`.
+
+`displayHeight` is optional metadata for display renderers. For `text/html`, Lotus uses it as the iframe height in pixels.
+
+Example:
+
+```json
+{
+  "name": "lilac-html",
+  "aliases": "lilac",
+  "mode": "execute",
+  "highlightLanguage": "markdown",
+  "executable": "node",
+  "args": "{packDir}/scripts/lilac-lotus.mjs --format html {file}",
+  "extension": ".md",
+  "outputMode": "streams",
+  "displayOutput": "replace-stdout",
+  "displayMimeType": "text/html",
+  "displayTitle": "Lilac HTML preview",
+  "displayRole": "artifact",
+  "displayHeight": 720
+}
+```
+
+When this language is enabled from an external language pack, a normal fence renders as an HTML display:
+
+````markdown
+```lilac-html
+# Research note
+
+Worked on **symbolic computation**.
+
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+```
+````
+
+Lotus also still supports the lower-level external process channel from the rich display contract. Use `LOTUS_DISPLAY_JSONL` when a tool needs to emit multiple displays or custom metadata.
 
 ---
 

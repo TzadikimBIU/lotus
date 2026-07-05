@@ -1,13 +1,15 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, extname, join, relative } from "path";
 import { spawn } from "child_process";
-import type { lotusDisplayOutput, lotusDisplayRole, lotusRunResult, lotusStdinSession } from "../types";
+import type { lotusDisplayOutput, lotusDisplayRole, lotusRunArtifact, lotusRunResult, lotusStdinSession } from "../types";
 import { formatTimeoutMs, type lotusTimeoutMs } from "../utils/timeout";
 import { lotusClearTimeout, lotusSetTimeout, type LotusTimeoutHandle } from "../utils/timers";
 
 const FORCE_KILL_GRACE_MS = 1_500;
 const MAX_DISPLAY_JSONL_BYTES = 10 * 1024 * 1024;
+const MAX_ARTIFACT_COUNT = 32;
+const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 const DISPLAY_ROLES = new Set<lotusDisplayRole>(["result", "visualization", "diagnostic", "artifact"]);
 
 export interface lotusProcessSpec {
@@ -24,6 +26,7 @@ export interface lotusProcessSpec {
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
   env?: NodeJS.ProcessEnv;
+  templateValues?: Record<string, string>;
 }
 
 export interface lotusTempSourceSpec extends lotusProcessSpec {
@@ -258,10 +261,12 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
   const finishedAt = new Date();
   const durationMs = finishedAt.getTime() - startedAt.getTime();
   let displays: lotusDisplayOutput[] = [];
+  let artifacts: lotusRunArtifact[] = [];
   try {
     displays = await readProcessDisplayOutputs(displayEnv.jsonlPath);
+    artifacts = await readProcessArtifacts(displayEnv.artifactDir);
   } catch (error) {
-    displayWarning = `Failed to read Lotus display output: ${error instanceof Error ? error.message : String(error)}`;
+    displayWarning = `Failed to read Lotus display or artifact output: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     await rm(displayEnv.tempDir, { recursive: true, force: true });
   }
@@ -294,6 +299,7 @@ export async function runProcess(spec: lotusProcessSpec): Promise<lotusRunResult
     cancelled,
     ...(warning ? { warning } : {}),
     ...(displays.length ? { displays } : {}),
+    ...(artifacts.length ? { artifacts } : {}),
   };
 }
 
@@ -357,6 +363,97 @@ async function readProcessDisplayOutputs(jsonlPath: string): Promise<lotusDispla
   return displays;
 }
 
+async function readProcessArtifacts(artifactDir: string): Promise<lotusRunArtifact[]> {
+  const paths = await listArtifactFiles(artifactDir, artifactDir);
+  const artifacts: lotusRunArtifact[] = [];
+  let totalBytes = 0;
+  for (const path of paths.sort()) {
+    if (artifacts.length >= MAX_ARTIFACT_COUNT) {
+      break;
+    }
+    const stats = await lstat(path);
+    if (!stats.isFile()) {
+      continue;
+    }
+    totalBytes += stats.size;
+    if (totalBytes > MAX_ARTIFACT_BYTES) {
+      throw new Error(`artifact files exceeded ${MAX_ARTIFACT_BYTES} bytes`);
+    }
+    const data = await readFile(path);
+    const artifactPath = normalizeArtifactPath(relative(artifactDir, path));
+    artifacts.push({
+      name: basename(artifactPath),
+      path: artifactPath,
+      mimeType: inferArtifactMimeType(path),
+      size: data.byteLength,
+      dataBase64: data.toString("base64"),
+    });
+  }
+  return artifacts;
+}
+
+async function listArtifactFiles(root: string, current: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(current, { withFileTypes: true });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+    const path = join(current, entry.name);
+    if (entry.isDirectory()) {
+      if (normalizeArtifactPath(relative(root, path)).split("/").length <= 4) {
+        files.push(...await listArtifactFiles(root, path));
+      }
+    } else if (entry.isFile()) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+function normalizeArtifactPath(path: string): string {
+  return path.replaceAll("\\", "/").split("/").filter(Boolean).join("/");
+}
+
+function inferArtifactMimeType(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case ".html":
+    case ".htm":
+      return "text/html";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".json":
+      return "application/json";
+    case ".pdf":
+      return "application/pdf";
+    case ".tex":
+      return "application/x-tex";
+    case ".md":
+      return "text/markdown";
+    case ".txt":
+    case ".log":
+      return "text/plain";
+    default:
+      return "application/octet-stream";
+  }
+}
+
 function normalizeDisplayOutput(value: unknown): lotusDisplayOutput | null {
   if (!isRecord(value) || !isRecord(value.data)) {
     return null;
@@ -386,8 +483,8 @@ export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lot
     const result = await runProcess({
       runnerId: spec.runnerId,
       runnerName: spec.runnerName,
-      executable: spec.executable,
-      args: spec.args.map((value) => expandTempPathTemplates(value, tempFile, tempDir, outputFile)),
+      executable: expandTempPathTemplates(spec.executable, tempFile, tempDir, outputFile, spec.templateValues),
+      args: spec.args.map((value) => expandTempPathTemplates(value, tempFile, tempDir, outputFile, spec.templateValues)),
       workingDirectory: spec.workingDirectory,
       timeoutMs: spec.timeoutMs,
       signal: spec.signal,
@@ -395,7 +492,7 @@ export async function runTempFileProcess(spec: lotusTempSourceSpec): Promise<lot
       stdinSession: spec.stdinSession,
       onStdout: spec.onStdout,
       onStderr: spec.onStderr,
-      env: expandTemplatedEnv(spec.env, tempFile, tempDir, outputFile),
+      env: expandTemplatedEnv(spec.env, tempFile, tempDir, outputFile, spec.templateValues),
     });
 
     if (!spec.readOutputFile || !outputFile) {
@@ -428,7 +525,13 @@ async function readGeneratedOutputFile(
   }
 }
 
-function expandTemplatedEnv(env: NodeJS.ProcessEnv | undefined, tempFile: string, tempDir: string, outputFile: string | undefined): NodeJS.ProcessEnv | undefined {
+function expandTemplatedEnv(
+  env: NodeJS.ProcessEnv | undefined,
+  tempFile: string,
+  tempDir: string,
+  outputFile: string | undefined,
+  templateValues: Record<string, string> | undefined,
+): NodeJS.ProcessEnv | undefined {
   if (!env) {
     return undefined;
   }
@@ -436,16 +539,26 @@ function expandTemplatedEnv(env: NodeJS.ProcessEnv | undefined, tempFile: string
   return Object.fromEntries(
     Object.entries(env).map(([key, value]) => [
       key,
-      typeof value === "string" ? expandTempPathTemplates(value, tempFile, tempDir, outputFile) : value,
+      typeof value === "string" ? expandTempPathTemplates(value, tempFile, tempDir, outputFile, templateValues) : value,
     ]),
   );
 }
 
-function expandTempPathTemplates(value: string, tempFile: string, tempDir: string, outputFile: string | undefined): string {
-  return value
+function expandTempPathTemplates(
+  value: string,
+  tempFile: string,
+  tempDir: string,
+  outputFile: string | undefined,
+  templateValues: Record<string, string> | undefined,
+): string {
+  let expanded = value
     .replaceAll("{file}", tempFile)
     .replaceAll("{tempDir}", tempDir)
     .replaceAll("{output}", outputFile ?? "");
+  for (const [key, replacement] of Object.entries(templateValues ?? {})) {
+    expanded = expanded.replaceAll(`{${key}}`, replacement);
+  }
+  return expanded;
 }
 
 function normalizeTempOutputExtension(value: string | undefined): string {

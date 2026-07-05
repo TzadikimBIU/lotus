@@ -1,0 +1,37 @@
+{
+  "id": "lilac",
+  "displayName": "Lilac",
+  "description": "Markdown/Text to LaTeX and embedded HTML previews using the Lilac conversion model.",
+  "languages": [
+    {
+      "id": "lilac-html",
+      "displayName": "Lilac HTML preview",
+      "description": "Converts Markdown/Text to LaTeX, renders it, and returns a full sandboxed HTML preview.",
+      "aliases": ["lilac", "lilac-md", "lilac-preview"],
+      "mode": "execute",
+      "highlightLanguage": "markdown",
+      "executable": "node",
+      "args": "{packDir}/scripts/lilac-lotus.mjs --format html {file}",
+      "extension": ".md",
+      "outputMode": "streams",
+      "displayOutput": "replace-stdout",
+      "displayMimeType": "text/html",
+      "displayTitle": "Lilac HTML preview",
+      "displayRole": "artifact",
+      "displayHeight": 720
+    },
+    {
+      "id": "lilac-latex",
+      "displayName": "Lilac LaTeX",
+      "description": "Converts Markdown/Text to a LaTeX document and returns the generated source.",
+      "aliases": ["lilac-tex", "lilac-ltx"],
+      "mode": "transpile",
+      "targetLanguage": "tex",
+      "highlightLanguage": "markdown",
+      "executable": "node",
+      "args": "{packDir}/scripts/lilac-lotus.mjs --format latex {file}",
+      "extension": ".md",
+      "outputMode": "streams"
+    }
+  ]
+}

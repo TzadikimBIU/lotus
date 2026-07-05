@@ -25,9 +25,12 @@ Display outputs are MIME bundles. A record has this shape:
 
 `data` is required. `id`, `title`, `role`, and `metadata` are optional. Supported roles are `result`, `visualization`, `diagnostic`, and `artifact`.
 
+External processes can also write regular files into `LOTUS_ARTIFACT_DIR`. Lotus copies those files into the run result as durable artifacts before the temp workspace is removed, then exposes open, download, and copy actions in the output panel.
+
 Lotus currently renders these MIME types, in priority order:
 
 ```text
+text/html
 image/svg+xml
 image/png
 image/jpeg
@@ -37,6 +40,8 @@ text/vnd.graphviz
 application/json
 text/plain
 ```
+
+HTML values are full HTML documents or fragments. Lotus renders them in a sandboxed iframe with scripts enabled but without same-origin access to Obsidian. Use declarative graph MIME types for trusted first-party graph adapters when you need tighter integration with Obsidian styling or static print snapshots.
 
 SVG values are raw SVG strings. Raster image values are base64 strings unless they already include a `data:` URL.
 
@@ -53,7 +58,7 @@ LOTUS_ARTIFACT_DIR
 
 Append one JSON display record per line to `LOTUS_DISPLAY_JSONL`. Lotus reads the file after the process exits and attaches valid records to the output panel.
 
-`LOTUS_ARTIFACT_DIR` is a temporary directory for files produced during the run. The directory is removed after Lotus has read display records, so durable artifacts should be written to a vault path with `lotus-output-file` instead.
+`LOTUS_ARTIFACT_DIR` is a temporary directory for files produced during the run. Lotus reads regular files from this directory after the process exits and stores them as run artifacts. Artifact capture is capped by file count and total size.
 
 The JSONL file is capped at 10 MiB. Invalid records produce a warning and are not rendered.
 
@@ -215,6 +220,8 @@ lotus-visualize=svg
 
 Image displays render on a white viewport with zoom controls. Zoom preserves the current viewport center. When the image is larger than the viewport, dragging inside the image viewport pans the image. The fullscreen button opens the display in a full-window overlay with the same zoom and drag controls plus a larger zoom range.
 
-## Current Non-Goals
+## HTML Displays
 
-Lotus does not render arbitrary interactive HTML in this contract. JavaScript graph displays must use trusted renderers and declarative MIME payloads rather than embedding executable HTML or script output.
+`text/html` displays are intended for self-contained compiler or publisher output previews. They run in an isolated iframe using the browser sandbox, so page scripts cannot access the Obsidian document or plugin APIs. Prefer the built-in declarative graph MIME types when the result should participate in Lotus print snapshots or use trusted renderer integrations.
+
+HTML display metadata may include `height` to set the iframe height in pixels. Custom language manifests can set this with `displayHeight`.

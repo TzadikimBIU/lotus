@@ -1,0 +1,24 @@
+{
+  "id": "plotly-html",
+  "displayName": "Plotly HTML",
+  "description": "Renders a small Plotly spec as a full sandboxed HTML page.",
+  "languages": [
+    {
+      "id": "plotly-html",
+      "displayName": "Plotly HTML",
+      "description": "Reads JSON graph data, emits text/html, and writes durable HTML/JSON artifacts.",
+      "aliases": ["plotly-page", "plotly-preview"],
+      "mode": "execute",
+      "highlightLanguage": "json",
+      "executable": "node",
+      "args": "{packDir}/scripts/plotly-html.mjs {file}",
+      "extension": ".json",
+      "outputMode": "streams",
+      "displayOutput": "replace-stdout",
+      "displayMimeType": "text/html",
+      "displayTitle": "Plotly HTML graph",
+      "displayRole": "visualization",
+      "displayHeight": 560
+    }
+  ]
+}

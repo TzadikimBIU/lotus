@@ -94,6 +94,7 @@ import type {
   lotusExternalLanguagePack,
   lotusPluginSettings,
   lotusResolvedExecutionContext,
+  lotusRunArtifact,
   lotusStdinSession,
   lotusStoredOutput,
 } from "./types";
@@ -106,7 +107,7 @@ const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<lotusPluginSettings["loggingNo
 const SUPPORTED_LOGGING_MACHINE_HASH_SCOPES = new Set<lotusPluginSettings["loggingMachineHashScope"]>(["install", "vault", "install-vault"]);
 type lotusOutputFileMode = "replace" | "append";
 type lotusOutputFileFormat = "text" | "json";
-type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata" | "displays";
+type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata" | "displays" | "artifacts";
 type lotusVisualizationMode = "graphviz" | "svg";
 
 interface lotusSignatureMaterial {
@@ -636,6 +637,21 @@ export default class lotusPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "export-current-note-html",
+      name: "Export current note as Lotus HTML",
+      editorCheckCallback: (checking, editor, view) => {
+        const file = view.file;
+        if (!file) {
+          return false;
+        }
+        if (!checking) {
+          void this.exportCurrentNoteHtml(file, editor.getValue());
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "save-reproducibility-snapshot",
       name: "Save reproducibility snapshot",
       checkCallback: (checking) => {
@@ -937,7 +953,7 @@ export default class lotusPlugin extends Plugin {
 
       for (const filePath of files) {
         try {
-          const parsed = parseExternalLanguagePack(JSON.parse(await adapter.read(filePath)), filePath);
+          const parsed = parseExternalLanguagePack(JSON.parse(await adapter.read(filePath)), filePath, readAdapterBasePath(adapter));
           if (parsed) {
             packs.push(parsed);
           } else {
@@ -3643,13 +3659,13 @@ export default class lotusPlugin extends Plugin {
       .map((stream) => stream.trim().toLowerCase())
       .filter(Boolean);
     const expanded = parsed.includes("all")
-      ? ["metadata", "stdout", "warning", "stderr", ...(isCompileFeatureAllowed("rich-displays") ? ["displays"] : [])]
+      ? ["metadata", "stdout", "warning", "stderr", ...(isCompileFeatureAllowed("rich-displays") ? ["displays"] : []), "artifacts"]
       : parsed;
     const streams = expanded.map((stream) => {
       if (stream === "displays" && !isCompileFeatureAllowed("rich-displays")) {
         throw new Error("lotus-output-file-streams=displays requires a build with the rich-displays feature.");
       }
-      if (stream === "stdout" || stream === "stderr" || stream === "warning" || stream === "metadata" || stream === "displays") {
+      if (stream === "stdout" || stream === "stderr" || stream === "warning" || stream === "metadata" || stream === "displays" || stream === "artifacts") {
         return stream;
       }
       throw new Error(`Unsupported lotus-output-file-streams entry: ${stream}.`);
@@ -3711,6 +3727,8 @@ export default class lotusPlugin extends Plugin {
           return result.stderr ? [result.stderr] : [];
         case "displays":
           return result.displays?.length ? [JSON.stringify(result.displays, null, 2)] : [];
+        case "artifacts":
+          return result.artifacts?.length ? [JSON.stringify(result.artifacts, null, 2)] : [];
       }
     });
     return `${sections.join("\n\n").replace(/\s*$/, "")}\n`;
@@ -3736,9 +3754,71 @@ export default class lotusPlugin extends Plugin {
         ...(target.streams.includes("warning") ? { warning: result.warning ?? "" } : {}),
         ...(target.streams.includes("stderr") ? { stderr: result.stderr } : {}),
         ...(target.streams.includes("displays") ? { displays: result.displays ?? [] } : {}),
+        ...(target.streams.includes("artifacts") ? { artifacts: result.artifacts ?? [] } : {}),
       },
     };
     return `${JSON.stringify(payload, null, 2)}\n`;
+  }
+
+  private async exportCurrentNoteHtml(file: TFile, source: string): Promise<void> {
+    try {
+      const targetPath = normalizePath(`.lotus/exports/${sanitizeArtifactSegment(file.path)}.html`);
+      const blocks = parseMarkdownCodeBlocks(file.path, source, this.settings);
+      const html = this.renderLotusHtmlExport(file, source, blocks);
+      await this.ensureVaultParentFolder(targetPath);
+      await this.app.vault.adapter.write(targetPath, html);
+      new Notice(`Exported Lotus HTML to ${targetPath}`);
+      await this.logEvent({
+        type: "lotus.html.exported",
+        message: "Exported current note as HTML",
+        notePath: file.path,
+        data: {
+          path: targetPath,
+          blocks: blocks.length,
+          outputs: blocks.filter((block) => this.outputs.has(block.id)).length,
+        },
+      });
+    } catch (error) {
+      new Notice(`Failed to export Lotus HTML: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private renderLotusHtmlExport(file: TFile, source: string, blocks: lotusCodeBlock[]): string {
+    const lines = source.split(/\r?\n/);
+    const pieces: string[] = [];
+    let cursor = 0;
+    for (const block of blocks) {
+      if (block.startLine > cursor) {
+        pieces.push(renderMarkdownFragment(lines.slice(cursor, block.startLine).join("\n")));
+      }
+      pieces.push(renderExportCodeBlock(block));
+      const output = this.outputs.get(block.id);
+      if (output) {
+        pieces.push(renderExportOutput(output));
+      }
+      cursor = block.endLine + 1;
+    }
+    if (cursor < lines.length) {
+      pieces.push(renderMarkdownFragment(lines.slice(cursor).join("\n")));
+    }
+
+    return [
+      "<!doctype html>",
+      "<html>",
+      "<head>",
+      "<meta charset=\"utf-8\">",
+      "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+      `<title>${escapeHtml(file.basename || file.path)}</title>`,
+      `<style>${LOTUS_HTML_EXPORT_CSS}</style>`,
+      "</head>",
+      "<body>",
+      "<main>",
+      `<header class="lotus-export-header"><h1>${escapeHtml(file.basename || file.path)}</h1><p>${escapeHtml(file.path)}</p></header>`,
+      pieces.filter((piece) => piece.trim()).join("\n"),
+      "</main>",
+      "</body>",
+      "</html>",
+    ].join("\n");
   }
 
   private async removeManagedOutputBlock(filePath: string, blockId: string): Promise<void> {
@@ -3768,6 +3848,7 @@ export default class lotusPlugin extends Plugin {
       result.warning ? `warning:\n${result.warning}` : "",
       result.stderr ? `stderr:\n${result.stderr}` : "",
       result.displays?.length ? `displays:\n${JSON.stringify(result.displays, null, 2)}` : "",
+      result.artifacts?.length ? `artifacts:\n${JSON.stringify(result.artifacts, null, 2)}` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -4033,6 +4114,192 @@ function readTarString(bytes: Uint8Array, offset: number, length: number): strin
   return new TextDecoder().decode(bytes.slice(offset, sliceEnd)).trim();
 }
 
+const LOTUS_HTML_EXPORT_CSS = `
+:root{color-scheme:light dark;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;color:#1f2933;background:#f6f7f9}
+body{margin:0}
+main{box-sizing:border-box;width:min(100%,960px);margin:0 auto;padding:32px 20px 56px}
+.lotus-export-header{margin:0 0 28px;padding-bottom:16px;border-bottom:1px solid #d8dde5}
+.lotus-export-header h1{margin:0;font-size:1.8rem;line-height:1.2}
+.lotus-export-header p{margin:6px 0 0;color:#657080;font-size:.9rem}
+p{margin:0 0 1rem}
+h1,h2,h3,h4,h5,h6{margin:1.35rem 0 .6rem;line-height:1.2}
+ul{margin:.2rem 0 1rem;padding-left:1.35rem}
+hr{border:0;border-top:1px solid #d8dde5;margin:1.5rem 0}
+pre{overflow:auto;border-radius:8px;background:#101820;color:#eef4ff;padding:12px 14px;font-size:.88rem;line-height:1.45}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.lotus-export-code{margin:1rem 0}
+.lotus-export-output{margin:1rem 0 1.5rem;padding:12px;border:1px solid #c8d8f0;border-radius:8px;background:#fff}
+.lotus-export-output-meta{margin:0 0 .7rem;color:#526070;font-size:.82rem}
+.lotus-export-stream{margin:.7rem 0}
+.lotus-export-label{margin:.2rem 0 .35rem;color:#526070;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+.lotus-export-display{margin:.8rem 0}
+.lotus-export-html{width:100%;height:520px;border:1px solid #d8dde5;border-radius:8px;background:#fff}
+.lotus-export-image{max-width:100%;height:auto;background:#fff}
+.lotus-export-artifacts{display:grid;gap:.4rem;margin:.7rem 0}
+.lotus-export-artifact{display:flex;justify-content:space-between;gap:1rem;padding:.55rem .65rem;border:1px solid #d8dde5;border-radius:8px;background:#f8fafc}
+.lotus-export-artifact a{color:#1c64d1;text-decoration:none}
+.lotus-export-artifact small{color:#657080}
+@media (prefers-color-scheme:dark){:root{color:#e6edf5;background:#111418}.lotus-export-header{border-color:#30363f}.lotus-export-output{background:#171b21;border-color:#2b4a72}.lotus-export-artifact{background:#111820;border-color:#30363f}.lotus-export-header p,.lotus-export-output-meta,.lotus-export-label,.lotus-export-artifact small{color:#aab4c0}}
+`.trim();
+
+function renderMarkdownFragment(source: string): string {
+  const lines = source.split(/\r?\n/);
+  const html: string[] = [];
+  let paragraph: string[] = [];
+  let list: string[] = [];
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      html.push(`<p>${paragraph.join("<br>")}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      html.push(`<ul>${list.map((item) => `<li>${item}</li>`).join("")}</ul>`);
+      list = [];
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      html.push(`<h${heading[1].length}>${renderInlineMarkdown(heading[2])}</h${heading[1].length}>`);
+      continue;
+    }
+    if (/^[-*_]{3,}$/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      html.push("<hr>");
+      continue;
+    }
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      list.push(renderInlineMarkdown(bullet[1]));
+      continue;
+    }
+    flushList();
+    paragraph.push(renderInlineMarkdown(trimmed));
+  }
+  flushParagraph();
+  flushList();
+  return html.join("\n");
+}
+
+function renderInlineMarkdown(value: string): string {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+
+function renderExportCodeBlock(block: lotusCodeBlock): string {
+  const label = escapeHtml(block.sourceLanguage || block.language);
+  return `<section class="lotus-export-code"><div class="lotus-export-label">${label}</div><pre><code>${escapeHtml(block.content)}</code></pre></section>`;
+}
+
+function renderExportOutput(output: lotusStoredOutput): string {
+  const result = output.result;
+  const parts = [
+    `<div class="lotus-export-output-meta">${escapeHtml(result.runnerName)} · exit ${escapeHtml(String(result.exitCode ?? "?"))} · ${result.durationMs} ms · ${escapeHtml(result.finishedAt)}</div>`,
+    result.stdout.trim() ? renderExportStream("stdout", result.stdout) : "",
+    result.warning?.trim() ? renderExportStream("warning", result.warning) : "",
+    result.stderr.trim() ? renderExportStream("stderr", result.stderr) : "",
+    ...(result.displays ?? []).map(renderExportDisplay),
+    result.artifacts?.length ? renderExportArtifacts(result.artifacts) : "",
+  ].filter(Boolean);
+  return `<section class="lotus-export-output">${parts.join("\n")}</section>`;
+}
+
+function renderExportStream(label: string, content: string): string {
+  return `<div class="lotus-export-stream"><div class="lotus-export-label">${escapeHtml(label)}</div><pre><code>${escapeHtml(content)}</code></pre></div>`;
+}
+
+function renderExportDisplay(display: lotusDisplayOutput): string {
+  const selected = selectExportDisplayMime(display);
+  if (!selected) {
+    return "";
+  }
+  const label = escapeHtml(formatExportDisplayLabel(display, selected.mime));
+  const metadata = readExportDisplayMetadata(display, selected.mime);
+  const height = readExportPositiveNumber(metadata.height) ?? 520;
+  if (selected.mime === "text/html" && typeof selected.value === "string") {
+    return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><iframe class="lotus-export-html" sandbox="allow-forms allow-popups allow-scripts" referrerpolicy="no-referrer" style="height:${Math.round(height)}px" srcdoc="${escapeAttribute(selected.value)}"></iframe></div>`;
+  }
+  if (selected.mime === "image/svg+xml" && typeof selected.value === "string") {
+    return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div>${selected.value}</div>`;
+  }
+  if (selected.mime.startsWith("image/") && typeof selected.value === "string") {
+    return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><img class="lotus-export-image" alt="${escapeAttribute(display.title ?? "Lotus image display")}" src="${escapeAttribute(imageExportDataUrl(selected.mime, selected.value))}"></div>`;
+  }
+  const content = typeof selected.value === "string" ? selected.value : JSON.stringify(selected.value, null, 2);
+  return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><pre><code>${escapeHtml(content)}</code></pre></div>`;
+}
+
+function renderExportArtifacts(artifacts: readonly lotusRunArtifact[]): string {
+  return `<div class="lotus-export-artifacts"><div class="lotus-export-label">artifacts</div>${artifacts.map((artifact) => {
+    const href = `data:${artifact.mimeType || "application/octet-stream"};base64,${artifact.dataBase64}`;
+    return `<div class="lotus-export-artifact"><a href="${escapeAttribute(href)}" download="${escapeAttribute(artifact.name)}" target="_blank" rel="noopener noreferrer">${escapeHtml(artifact.path || artifact.name)}</a><small>${escapeHtml(artifact.mimeType)} · ${artifact.size} bytes</small></div>`;
+  }).join("")}</div>`;
+}
+
+function selectExportDisplayMime(display: lotusDisplayOutput): { mime: string; value: unknown } | null {
+  for (const mime of ["text/html", "image/svg+xml", "image/png", "image/jpeg", "image/gif", "text/markdown", "text/vnd.graphviz", "application/json", "text/plain"]) {
+    if (display.data[mime] != null) {
+      return { mime, value: display.data[mime] };
+    }
+  }
+  const firstMime = Object.keys(display.data)[0];
+  return firstMime ? { mime: firstMime, value: display.data[firstMime] } : null;
+}
+
+function formatExportDisplayLabel(display: lotusDisplayOutput, mime: string): string {
+  return `${display.title?.trim() || display.role || "display"} · ${mime}`;
+}
+
+function readExportDisplayMetadata(display: lotusDisplayOutput, mime: string): Record<string, unknown> {
+  const globalMetadata = isRecord(display.metadata) ? display.metadata : {};
+  const mimeMetadata = isRecord(globalMetadata[mime]) ? globalMetadata[mime] : {};
+  return { ...globalMetadata, ...mimeMetadata };
+}
+
+function readExportPositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function imageExportDataUrl(mime: string, value: string): string {
+  if (value.startsWith("data:")) {
+    return value;
+  }
+  if (mime === "image/svg+xml") {
+    return `data:${mime};charset=utf-8,${encodeURIComponent(value)}`;
+  }
+  return `data:${mime};base64,${value.replace(/\s/g, "")}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[char] ?? char);
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "&#10;");
+}
+
 function normalizeBundleEntries(entries: lotusArchiveEntry[], fileName: string): lotusArchiveEntry[] {
   const cleaned = entries
     .map((entry) => ({
@@ -4109,7 +4376,7 @@ function isPathWithin(path: string, parent: string): boolean {
   return path === parent || path.startsWith(`${parent}/`);
 }
 
-function parseExternalLanguagePack(value: unknown, filePath: string): lotusExternalLanguagePack | null {
+function parseExternalLanguagePack(value: unknown, filePath: string, vaultBasePath: string): lotusExternalLanguagePack | null {
   if (!isRecord(value)) {
     console.warn(`Ignoring lotus language pack ${filePath}: manifest must be an object`);
     return null;
@@ -4127,7 +4394,7 @@ function parseExternalLanguagePack(value: unknown, filePath: string): lotusExter
   }
 
   const languages = value.languages
-    .map((language) => parseExternalLanguage(language, filePath))
+    .map((language) => parseExternalLanguage(language, filePath, vaultBasePath))
     .filter((language): language is lotusExternalLanguage => Boolean(language));
   if (!languages.length) {
     console.warn(`Ignoring lotus language pack ${filePath}: no valid languages`);
@@ -4142,7 +4409,7 @@ function parseExternalLanguagePack(value: unknown, filePath: string): lotusExter
   };
 }
 
-function parseExternalLanguage(value: unknown, filePath: string): lotusExternalLanguage | null {
+function parseExternalLanguage(value: unknown, filePath: string, vaultBasePath: string): lotusExternalLanguage | null {
   if (!isRecord(value)) {
     console.warn(`Ignoring language entry in ${filePath}: entry must be an object`);
     return null;
@@ -4176,6 +4443,12 @@ function parseExternalLanguage(value: unknown, filePath: string): lotusExternalL
     extension: normalizeExtension(readString(value.extension), name),
     outputMode: readString(value.outputMode) === "file" ? "file" : "streams",
     outputExtension: normalizeExtension(readString(value.outputExtension), "out"),
+    displayOutput: readDisplayOutputMode(value.displayOutput),
+    displayMimeType: normalizeDisplayMimeType(readString(value.displayMimeType) || readString(value.displayMime) || readString(value.mimeType)),
+    displayTitle: readString(value.displayTitle) || readString(value.title),
+    displayRole: readDisplayRole(readString(value.displayRole) || readString(value.role)),
+    displayHeight: readPositiveNumber(value.displayHeight ?? value.height),
+    packageDirectory: resolveManifestDirectory(filePath, vaultBasePath),
     preprocessors: readPreprocessorList(value.preprocessors, filePath),
     preprocessorExecutable: readString(value.preprocessorExecutable),
     preprocessorArgs: readString(value.preprocessorArgs) || "{request}",
@@ -4231,6 +4504,49 @@ function readStoredSettings(value: unknown): Partial<lotusPluginSettings> {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readPositiveNumber(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readAdapterBasePath(adapter: DataAdapter): string {
+  const maybeAdapter = adapter as unknown as { basePath?: unknown };
+  return typeof maybeAdapter.basePath === "string"
+    ? maybeAdapter.basePath
+    : "";
+}
+
+function resolveManifestDirectory(filePath: string, vaultBasePath: string): string {
+  const directory = dirname(filePath);
+  if (!vaultBasePath) {
+    return directory;
+  }
+  return join(vaultBasePath, directory);
+}
+
+function readDisplayOutputMode(value: unknown): "none" | "copy-stdout" | "replace-stdout" {
+  const normalized = readString(value).toLowerCase();
+  if (normalized === "copy" || normalized === "copy-stdout" || normalized === "stdout") {
+    return "copy-stdout";
+  }
+  if (normalized === "replace" || normalized === "replace-stdout" || normalized === "display") {
+    return "replace-stdout";
+  }
+  return "none";
+}
+
+function normalizeDisplayMimeType(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+(?:\+[a-z0-9!#$&^_.+-]+)?$/.test(normalized) ? normalized : "";
+}
+
+function readDisplayRole(value: string): "result" | "visualization" | "diagnostic" | "artifact" | undefined {
+  if (value === "result" || value === "visualization" || value === "diagnostic" || value === "artifact") {
+    return value;
+  }
+  return undefined;
 }
 
 function readAliasList(value: unknown, name: string): string[] {
