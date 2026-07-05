@@ -30,6 +30,9 @@ External processes can also write regular files into `LOTUS_ARTIFACT_DIR`. Lotus
 Lotus currently renders these MIME types, in priority order:
 
 ```text
+application/vnd.lotus.plotly+json
+application/vnd.plotly.v1+json
+application/vnd.lotus.d3+json
 text/html
 image/svg+xml
 image/png
@@ -44,6 +47,8 @@ text/plain
 HTML values are full HTML documents or fragments. Lotus renders them in a sandboxed iframe with scripts enabled but without same-origin access to Obsidian. Use declarative graph MIME types for trusted first-party graph adapters when you need tighter integration with Obsidian styling or static print snapshots.
 
 SVG values are raw SVG strings. Raster image values are base64 strings unless they already include a `data:` URL.
+
+Lotus HTML export also prefers Plotly and D3 graph MIME types over generic JSON or text fallbacks. In settings, **HTML graph export assets** controls whether exported Plotly and D3 displays load chart libraries from a CDN for interactive charts, or render self-contained SVG fallbacks for offline publishing.
 
 Custom MIME types can be emitted in the same `data` object. If no trusted renderer is registered for that MIME type, Lotus falls back to JSON/text rendering or reports the display data as unsupported.
 

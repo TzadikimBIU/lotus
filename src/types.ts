@@ -3,6 +3,7 @@ import type { lotusTimeoutMs } from "./utils/timeout";
 
 export type lotusNormalizedLanguage = string;
 export type lotusLoggingMachineHashScope = "install" | "vault" | "install-vault";
+export type lotusHtmlExportGraphAssetMode = "cdn" | "self-contained";
 
 export interface lotusCodeBlock {
   id: string;
@@ -232,6 +233,7 @@ export interface lotusPluginSettings {
   externalLanguagePacks: lotusExternalLanguagePack[];
   customLanguages: lotusCustomLanguage[];
   pdfExportMode: "both" | "code" | "output";
+  htmlExportGraphAssetMode: lotusHtmlExportGraphAssetMode;
   loggingEnabled: boolean;
   loggingGlobalTextEnabled: boolean;
   loggingGlobalTextPath: string;

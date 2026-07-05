@@ -48,7 +48,7 @@ import { createCodeBlockToolbar } from "./ui/codeBlockToolbar";
 import { LOTUS_LOG_VIEW_TYPE, lotusLogView } from "./ui/logView";
 import { createOutputPanel, createRunningPanel } from "./ui/outputPanel";
 import { createSourceVisualizationDisplay, createStdoutVisualizationDisplay } from "./visualization/codeGraph";
-import { createJavaScriptGraphDisplayRenderers } from "./visualization/javascriptGraphs";
+import { LOTUS_D3_MIME, LOTUS_PLOTLY_MIME, PLOTLY_MIME, createJavaScriptGraphDisplayRenderers } from "./visualization/javascriptGraphs";
 import { addSyntaxLanguageClass, highlightCodeElement, normalizeSyntaxLanguage } from "./syntaxHighlight";
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
@@ -92,6 +92,7 @@ import type {
   lotusDisplayRenderer,
   lotusExternalLanguage,
   lotusExternalLanguagePack,
+  lotusHtmlExportGraphAssetMode,
   lotusPluginSettings,
   lotusResolvedExecutionContext,
   lotusRunArtifact,
@@ -103,12 +104,24 @@ const lotusRefreshEffect = StateEffect.define<void>();
 const EXTERNAL_LANGUAGE_PACK_DIR = "language-packs";
 const LANGUAGE_PACK_MANIFEST_NAMES = new Set(["lotus-language-pack.json", "language-pack.json", "manifest.json"]);
 const SUPPORTED_PDF_EXPORT_MODES = new Set<lotusPluginSettings["pdfExportMode"]>(["both", "code", "output"]);
+const SUPPORTED_HTML_EXPORT_GRAPH_ASSET_MODES = new Set<lotusHtmlExportGraphAssetMode>(["cdn", "self-contained"]);
 const SUPPORTED_LOGGING_NOTE_PATH_MODES = new Set<lotusPluginSettings["loggingNotePathMode"]>(["plain", "hash", "omit"]);
 const SUPPORTED_LOGGING_MACHINE_HASH_SCOPES = new Set<lotusPluginSettings["loggingMachineHashScope"]>(["install", "vault", "install-vault"]);
 type lotusOutputFileMode = "replace" | "append";
 type lotusOutputFileFormat = "text" | "json";
 type lotusOutputFileStream = "stdout" | "stderr" | "warning" | "metadata" | "displays" | "artifacts";
 type lotusVisualizationMode = "graphviz" | "svg";
+
+interface lotusHtmlExportSummary {
+  path: string;
+  resourceUrl: string;
+  bytes: number;
+  blocks: number;
+  outputs: number;
+  displays: number;
+  artifacts: number;
+  graphAssetMode: lotusHtmlExportGraphAssetMode;
+}
 
 interface lotusSignatureMaterial {
   mode: "passphrase" | "rsa" | "ssh";
@@ -507,6 +520,7 @@ export default class lotusPlugin extends Plugin {
   private statusBarItemEl!: HTMLElement;
   private editorViews = new Set<EditorView>();
   private lastMarkdownFilePath: string | null = null;
+  private lastHtmlExport: lotusHtmlExportSummary | null = null;
   private readonly logger = new lotusLogger(this.app, () => this.settings);
 
   async onload(): Promise<void> {
@@ -646,6 +660,34 @@ export default class lotusPlugin extends Plugin {
         }
         if (!checking) {
           void this.exportCurrentNoteHtml(file, editor.getValue());
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-last-html-export",
+      name: "Open last Lotus HTML export",
+      checkCallback: (checking) => {
+        if (!this.lastHtmlExport) {
+          return false;
+        }
+        if (!checking) {
+          this.openHtmlExport(this.lastHtmlExport);
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "copy-last-html-export-path",
+      name: "Copy last Lotus HTML export path",
+      checkCallback: (checking) => {
+        if (!this.lastHtmlExport) {
+          return false;
+        }
+        if (!checking) {
+          void this.copyHtmlExportPath(this.lastHtmlExport);
         }
         return true;
       },
@@ -3185,6 +3227,9 @@ export default class lotusPlugin extends Plugin {
     if (!SUPPORTED_PDF_EXPORT_MODES.has(this.settings.pdfExportMode)) {
       this.settings.pdfExportMode = DEFAULT_SETTINGS.pdfExportMode;
     }
+    if (!SUPPORTED_HTML_EXPORT_GRAPH_ASSET_MODES.has(this.settings.htmlExportGraphAssetMode)) {
+      this.settings.htmlExportGraphAssetMode = DEFAULT_SETTINGS.htmlExportGraphAssetMode;
+    }
     this.settings.loggingEnabled = isCompileLoggingForced() || Boolean(this.settings.loggingEnabled);
     this.settings.loggingGlobalTextEnabled = this.settings.loggingGlobalTextEnabled == null
       ? DEFAULT_SETTINGS.loggingGlobalTextEnabled
@@ -3767,15 +3812,22 @@ export default class lotusPlugin extends Plugin {
       const html = this.renderLotusHtmlExport(file, source, blocks);
       await this.ensureVaultParentFolder(targetPath);
       await this.app.vault.adapter.write(targetPath, html);
-      new Notice(`Exported Lotus HTML to ${targetPath}`);
+      const summary = this.createHtmlExportSummary(targetPath, html, blocks);
+      this.lastHtmlExport = summary;
+      new Notice(`Exported Lotus HTML: ${formatByteSize(summary.bytes)}, ${summary.blocks} blocks, ${summary.outputs} outputs.`);
+      new lotusHtmlExportSummaryModal(this, summary).open();
       await this.logEvent({
         type: "lotus.html.exported",
         message: "Exported current note as HTML",
         notePath: file.path,
         data: {
           path: targetPath,
-          blocks: blocks.length,
-          outputs: blocks.filter((block) => this.outputs.has(block.id)).length,
+          bytes: summary.bytes,
+          blocks: summary.blocks,
+          outputs: summary.outputs,
+          displays: summary.displays,
+          artifacts: summary.artifacts,
+          graphAssetMode: summary.graphAssetMode,
         },
       });
     } catch (error) {
@@ -3794,7 +3846,7 @@ export default class lotusPlugin extends Plugin {
       pieces.push(renderExportCodeBlock(block));
       const output = this.outputs.get(block.id);
       if (output) {
-        pieces.push(renderExportOutput(output));
+        pieces.push(renderExportOutput(output, this.settings.htmlExportGraphAssetMode));
       }
       cursor = block.endLine + 1;
     }
@@ -3819,6 +3871,35 @@ export default class lotusPlugin extends Plugin {
       "</body>",
       "</html>",
     ].join("\n");
+  }
+
+  private createHtmlExportSummary(targetPath: string, html: string, blocks: lotusCodeBlock[]): lotusHtmlExportSummary {
+    const outputs = blocks
+      .map((block) => this.outputs.get(block.id))
+      .filter((output): output is lotusStoredOutput => Boolean(output));
+    return {
+      path: targetPath,
+      resourceUrl: this.getVaultResourceUrl(targetPath),
+      bytes: new TextEncoder().encode(html).byteLength,
+      blocks: blocks.length,
+      outputs: outputs.length,
+      displays: outputs.reduce((count, output) => count + (output.result.displays?.length ?? 0), 0),
+      artifacts: outputs.reduce((count, output) => count + (output.result.artifacts?.length ?? 0), 0),
+      graphAssetMode: this.settings.htmlExportGraphAssetMode,
+    };
+  }
+
+  private getVaultResourceUrl(path: string): string {
+    const adapter = this.app.vault.adapter as DataAdapter & { getResourcePath?: (path: string) => string };
+    return adapter.getResourcePath?.(path) ?? path;
+  }
+
+  openHtmlExport(summary: lotusHtmlExportSummary): void {
+    window.open(summary.resourceUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async copyHtmlExportPath(summary: lotusHtmlExportSummary): Promise<void> {
+    await this.copyTextToClipboard(summary.path, "HTML export path copied.");
   }
 
   private async removeManagedOutputBlock(filePath: string, blockId: string): Promise<void> {
@@ -4134,6 +4215,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .lotus-export-label{margin:.2rem 0 .35rem;color:#526070;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
 .lotus-export-display{margin:.8rem 0}
 .lotus-export-html{width:100%;height:520px;border:1px solid #d8dde5;border-radius:8px;background:#fff}
+.lotus-export-inline-graph{box-sizing:border-box;width:100%;border:1px solid #d8dde5;border-radius:8px;background:#fbfcfe;overflow:hidden}
 .lotus-export-image{max-width:100%;height:auto;background:#fff}
 .lotus-export-artifacts{display:grid;gap:.4rem;margin:.7rem 0}
 .lotus-export-artifact{display:flex;justify-content:space-between;gap:1rem;padding:.55rem .65rem;border:1px solid #d8dde5;border-radius:8px;background:#f8fafc}
@@ -4207,14 +4289,14 @@ function renderExportCodeBlock(block: lotusCodeBlock): string {
   return `<section class="lotus-export-code"><div class="lotus-export-label">${label}</div><pre><code>${escapeHtml(block.content)}</code></pre></section>`;
 }
 
-function renderExportOutput(output: lotusStoredOutput): string {
+function renderExportOutput(output: lotusStoredOutput, graphAssetMode: lotusHtmlExportGraphAssetMode): string {
   const result = output.result;
   const parts = [
     `<div class="lotus-export-output-meta">${escapeHtml(result.runnerName)} · exit ${escapeHtml(String(result.exitCode ?? "?"))} · ${result.durationMs} ms · ${escapeHtml(result.finishedAt)}</div>`,
     result.stdout.trim() ? renderExportStream("stdout", result.stdout) : "",
     result.warning?.trim() ? renderExportStream("warning", result.warning) : "",
     result.stderr.trim() ? renderExportStream("stderr", result.stderr) : "",
-    ...(result.displays ?? []).map(renderExportDisplay),
+    ...(result.displays ?? []).map((display) => renderExportDisplay(display, graphAssetMode)),
     result.artifacts?.length ? renderExportArtifacts(result.artifacts) : "",
   ].filter(Boolean);
   return `<section class="lotus-export-output">${parts.join("\n")}</section>`;
@@ -4224,7 +4306,456 @@ function renderExportStream(label: string, content: string): string {
   return `<div class="lotus-export-stream"><div class="lotus-export-label">${escapeHtml(label)}</div><pre><code>${escapeHtml(content)}</code></pre></div>`;
 }
 
-function renderExportDisplay(display: lotusDisplayOutput): string {
+class lotusHtmlExportSummaryModal extends Modal {
+  constructor(
+    private readonly lotusPlugin: lotusPlugin,
+    private readonly summary: lotusHtmlExportSummary,
+  ) {
+    super(lotusPlugin.app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Lotus HTML Export" });
+    contentEl.createEl("p", { text: this.summary.path });
+
+    const stats = contentEl.createEl("ul");
+    stats.createEl("li", { text: `Size: ${formatByteSize(this.summary.bytes)}` });
+    stats.createEl("li", { text: `Blocks: ${this.summary.blocks}` });
+    stats.createEl("li", { text: `Outputs: ${this.summary.outputs}` });
+    stats.createEl("li", { text: `Displays: ${this.summary.displays}` });
+    stats.createEl("li", { text: `Artifacts: ${this.summary.artifacts}` });
+    stats.createEl("li", { text: `Graph assets: ${formatHtmlExportGraphAssetMode(this.summary.graphAssetMode)}` });
+
+    new Setting(contentEl)
+      .addButton((button) =>
+        button
+          .setButtonText("Open")
+          .setCta()
+          .onClick(() => this.lotusPlugin.openHtmlExport(this.summary)),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Copy Path")
+          .onClick(() => {
+            void this.lotusPlugin.copyHtmlExportPath(this.summary);
+          }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Close")
+          .onClick(() => this.close()),
+      );
+  }
+}
+
+function formatHtmlExportGraphAssetMode(mode: lotusHtmlExportGraphAssetMode): string {
+  return mode === "self-contained" ? "Self-contained SVG" : "CDN libraries";
+}
+
+function formatByteSize(size: number): string {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderExportHtmlFrame(label: string, html: string, height: number): string {
+  return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><iframe class="lotus-export-html" sandbox="allow-forms allow-popups allow-scripts" referrerpolicy="no-referrer" style="height:${Math.round(height)}px" srcdoc="${escapeAttribute(html)}"></iframe></div>`;
+}
+
+function renderPlotlyExportHtml(value: unknown, display: lotusDisplayOutput): string {
+  const payload = serializeExportJson(value);
+  const title = escapeHtml(display.title?.trim() || "Lotus Plotly display");
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#fbfcfe;color:#1f2937;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#chart{box-sizing:border-box;width:100%;height:100%;min-height:320px;padding:8px 10px 6px 6px}
+.fallback{display:none;margin:16px;padding:12px;border:1px solid #d8dde5;border-radius:6px;background:#f8fafc;color:#475569;font-size:14px}
+</style>
+</head>
+<body>
+<div id="chart" role="img" aria-label="${title}"></div>
+<p id="fallback" class="fallback">Plotly could not load. The display data is still available in the exported HTML source.</p>
+<script>
+const figure = ${payload};
+const data = Array.isArray(figure?.data) ? figure.data : Array.isArray(figure) ? figure : [];
+const colorway = ["#344054", "#667085", "#0f766e", "#9a3412", "#7c3aed", "#475569"];
+const styledData = data.map((trace, index) => {
+  if (!trace || typeof trace !== "object") return trace;
+  const color = colorway[index % colorway.length];
+  return {
+    ...trace,
+    marker: { color, size: 6, ...(trace.marker || {}) },
+    line: { color, width: 2, ...(trace.line || {}) }
+  };
+});
+const figureLayout = figure && typeof figure === "object" && !Array.isArray(figure) ? figure.layout || {} : {};
+const baseAxis = {
+  automargin: true,
+  showline: true,
+  linecolor: "#d0d5dd",
+  tickcolor: "#d0d5dd",
+  tickfont: { color: "#667085", size: 11 },
+  zeroline: false
+};
+const baseLayout = {
+  paper_bgcolor: "#fbfcfe",
+  plot_bgcolor: "#fbfcfe",
+  colorway,
+  margin: { l: 56, r: 28, t: 44, b: 52 },
+  font: { family: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", color: "#344054", size: 12 },
+  title: { font: { size: 15, color: "#1f2937" }, x: 0.02, xanchor: "left" },
+  xaxis: { ...baseAxis, showgrid: false },
+  yaxis: { ...baseAxis, gridcolor: "#e5e7eb", gridwidth: 1 },
+  hovermode: "x unified",
+  hoverlabel: { bgcolor: "#111827", bordercolor: "#111827", font: { color: "#ffffff", size: 12 } },
+  legend: { orientation: "h", y: 1.1, x: 0, font: { size: 11, color: "#475569" } }
+};
+const layout = {
+  ...baseLayout,
+  ...figureLayout,
+  margin: { ...baseLayout.margin, ...(figureLayout.margin || {}) },
+  font: { ...baseLayout.font, ...(figureLayout.font || {}) },
+  title: { ...baseLayout.title, ...(figureLayout.title || {}) },
+  xaxis: { ...baseLayout.xaxis, ...(figureLayout.xaxis || {}) },
+  yaxis: { ...baseLayout.yaxis, ...(figureLayout.yaxis || {}) },
+  legend: { ...baseLayout.legend, ...(figureLayout.legend || {}) }
+};
+const config = {
+  responsive: true,
+  displaylogo: false,
+  modeBarButtonsToRemove: ["lasso2d", "select2d"],
+  ...(figure && typeof figure === "object" && !Array.isArray(figure) ? figure.config || {} : {})
+};
+if (window.Plotly && data.length) {
+  window.Plotly.newPlot("chart", styledData, layout, config);
+} else {
+  document.getElementById("chart").style.display = "none";
+  document.getElementById("fallback").style.display = "block";
+}
+</script>
+</body>
+</html>`;
+}
+
+function renderD3ExportHtml(value: unknown, display: lotusDisplayOutput): string {
+  const payload = serializeExportJson(value);
+  const title = escapeHtml(display.title?.trim() || "Lotus D3 display");
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#fbfcfe;color:#1f2937;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#chart{box-sizing:border-box;width:100%;height:100%;min-height:320px;padding:14px 16px 10px}
+.axis text{fill:#667085;font-size:11px}.axis path,.axis line{stroke:#d0d5dd}.axis .domain{stroke:#d0d5dd}.grid line{stroke:#e5e7eb}.grid .domain{display:none}.series{fill:none;stroke:#475569;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.dot{fill:#475569;stroke:#fbfcfe;stroke-width:2}.bar{fill:#475569}.fallback{display:none;margin:16px;padding:12px;border:1px solid #d8dde5;border-radius:6px;background:#f8fafc;color:#475569;font-size:14px}
+</style>
+</head>
+<body>
+<div id="chart" role="img" aria-label="${title}"></div>
+<p id="fallback" class="fallback">D3 could not load. The display data is still available in the exported HTML source.</p>
+<script>
+const spec = ${payload};
+function readNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function readRows(spec) {
+  return Array.isArray(spec?.data) ? spec.data : [];
+}
+function render() {
+  if (!window.d3) {
+    document.getElementById("fallback").style.display = "block";
+    return;
+  }
+  const rows = readRows(spec);
+  const kind = spec?.kind || "line";
+  const xKey = spec?.xKey || "x";
+  const yKey = spec?.yKey || "y";
+  const labelKey = spec?.labelKey || "label";
+  const valueKey = spec?.valueKey || "value";
+  const color = spec?.color || "#475569";
+  const root = d3.select("#chart");
+  const rect = root.node().getBoundingClientRect();
+  const width = Math.max(360, rect.width || 760);
+  const height = Math.max(300, rect.height || 420);
+  const margin = { top: 18, right: 24, bottom: 42, left: 54 };
+  const innerWidth = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+  const svg = root.append("svg").attr("viewBox", [0, 0, width, height]).attr("width", "100%").attr("height", height);
+  const plot = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+  if (kind === "bar") {
+    const data = rows.map((row, index) => ({ label: String(row[labelKey] ?? row[xKey] ?? index + 1), value: readNumber(row[valueKey] ?? row[yKey], 0) }));
+    const x = d3.scaleBand().domain(data.map((row) => row.label)).range([0, innerWidth]).padding(0.25);
+    const y = d3.scaleLinear().domain([0, d3.max(data, (row) => row.value) || 1]).nice().range([innerHeight, 0]);
+    plot.append("g").attr("class", "grid").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""));
+    plot.append("g").attr("class", "axis").attr("transform", "translate(0," + innerHeight + ")").call(d3.axisBottom(x));
+    plot.append("g").attr("class", "axis").call(d3.axisLeft(y).ticks(5));
+    plot.selectAll("rect").data(data).join("rect").attr("class", "bar").attr("x", (row) => x(row.label) || 0).attr("y", (row) => y(row.value)).attr("width", x.bandwidth()).attr("height", (row) => innerHeight - y(row.value)).attr("rx", 3).attr("fill", (row) => row.color || color);
+    return;
+  }
+  const data = rows.map((row, index) => ({ x: readNumber(row[xKey], index), y: readNumber(row[yKey] ?? row[valueKey], 0) }));
+  const x = d3.scaleLinear().domain(d3.extent(data, (row) => row.x)).nice().range([0, innerWidth]);
+  const y = d3.scaleLinear().domain(d3.extent(data, (row) => row.y)).nice().range([innerHeight, 0]);
+  plot.append("g").attr("class", "grid").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""));
+  plot.append("g").attr("class", "axis").attr("transform", "translate(0," + innerHeight + ")").call(d3.axisBottom(x).ticks(6));
+  plot.append("g").attr("class", "axis").call(d3.axisLeft(y).ticks(5));
+  if (kind !== "scatter") {
+    plot.append("path").datum(data).attr("class", "series").attr("stroke", color).attr("d", d3.line().x((row) => x(row.x)).y((row) => y(row.y)));
+  }
+  plot.selectAll("circle").data(data).join("circle").attr("class", "dot").attr("fill", color).attr("cx", (row) => x(row.x)).attr("cy", (row) => y(row.y)).attr("r", 3.8);
+}
+render();
+</script>
+</body>
+</html>`;
+}
+
+function renderExportInlineGraph(label: string, svg: string, height: number): string {
+  return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><div class="lotus-export-inline-graph" style="min-height:${Math.round(height)}px">${svg}</div></div>`;
+}
+
+function renderPlotlyExportSvg(value: unknown, display: lotusDisplayOutput): string {
+  const figure = isRecord(value) ? value : {};
+  const traces = Array.isArray(figure.data) ? figure.data.filter(isRecord) : Array.isArray(value) ? value.filter(isRecord) : [];
+  if (!traces.length) {
+    return renderExportGraphNoticeSvg(display.title ?? "Plotly Display", "No plottable traces were found.");
+  }
+
+  const series = traces
+    .map((trace, index) => {
+      const y = readNumberArray(trace.y);
+      if (!y.length) {
+        return null;
+      }
+      const xValues = readLabelArray(trace.x, y.length);
+      return {
+        name: readStringValue(trace.name) || `Series ${index + 1}`,
+        xLabels: xValues,
+        y,
+        color: readTraceColor(trace, index),
+      };
+    })
+    .filter((trace): trace is { name: string; xLabels: string[]; y: number[]; color: string } => Boolean(trace));
+
+  if (!series.length) {
+    return renderExportGraphNoticeSvg(display.title ?? "Plotly Display", "No numeric Y values were found.");
+  }
+
+  const labels = series[0].xLabels;
+  return renderExportLineSvg({
+    title: readPlotTitle(figure) || display.title || "Plotly Display",
+    labels,
+    series,
+    yTitle: readAxisTitle(figure, "yaxis"),
+  });
+}
+
+function renderD3ExportSvg(value: unknown, display: lotusDisplayOutput): string {
+  if (!isRecord(value)) {
+    return renderExportGraphNoticeSvg(display.title ?? "D3 Display", "The D3 payload was not an object.");
+  }
+  const rows = Array.isArray(value.data) ? value.data.filter(isRecord) : [];
+  if (!rows.length) {
+    return renderExportGraphNoticeSvg(display.title ?? "D3 Display", "No rows were found.");
+  }
+  const kind = readStringValue(value.kind) || "line";
+  const xKey = readStringValue(value.xKey) || "x";
+  const yKey = readStringValue(value.yKey) || "y";
+  const labelKey = readStringValue(value.labelKey) || "label";
+  const valueKey = readStringValue(value.valueKey) || "value";
+  const color = readStringValue(value.color) || "#475569";
+
+  if (kind === "bar") {
+    return renderExportBarSvg({
+      title: display.title || "D3 Display",
+      bars: rows.map((row, index) => ({
+        label: readStringValue(row[labelKey]) || readStringValue(row[xKey]) || String(index + 1),
+        value: readExportNumber(row[valueKey] ?? row[yKey], 0),
+        color: readStringValue(row.color) || color,
+      })),
+    });
+  }
+
+  const points = rows.map((row, index) => ({
+    label: readStringValue(row[labelKey]) || String(readExportNumber(row[xKey], index)),
+    y: readExportNumber(row[yKey] ?? row[valueKey], 0),
+  }));
+  return renderExportLineSvg({
+    title: display.title || "D3 Display",
+    labels: points.map((point) => point.label),
+    series: [{ name: display.title || "Value", xLabels: points.map((point) => point.label), y: points.map((point) => point.y), color }],
+  });
+}
+
+function renderExportLineSvg(spec: { title: string; labels: string[]; series: Array<{ name: string; xLabels: string[]; y: number[]; color: string }>; yTitle?: string }): string {
+  const width = 920;
+  const height = 420;
+  const margin = { top: 56, right: 32, bottom: 56, left: 72 };
+  const innerWidth = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+  const allY = spec.series.flatMap((series) => series.y);
+  const yMin = Math.min(0, ...allY);
+  const yMax = Math.max(1, ...allY);
+  const ySpan = yMax - yMin || 1;
+  const xFor = (index: number, count: number) => margin.left + (count <= 1 ? innerWidth / 2 : (index / (count - 1)) * innerWidth);
+  const yFor = (value: number) => margin.top + innerHeight - ((value - yMin) / ySpan) * innerHeight;
+  const ticks = Array.from({ length: 5 }, (_, index) => yMin + (ySpan * index) / 4);
+  const longest = spec.series.reduce((count, series) => Math.max(count, series.y.length), 0);
+  const labels = spec.labels.length ? spec.labels : Array.from({ length: longest }, (_, index) => String(index + 1));
+  const labelStep = Math.max(1, Math.ceil(labels.length / 6));
+
+  const grid = ticks.map((tick) => {
+    const y = yFor(tick);
+    return `<line x1="${margin.left}" y1="${roundSvg(y)}" x2="${width - margin.right}" y2="${roundSvg(y)}" stroke="#e5e7eb"/><text x="${margin.left - 12}" y="${roundSvg(y + 4)}" text-anchor="end" fill="#667085" font-size="11">${escapeHtml(formatSvgTick(tick))}</text>`;
+  }).join("");
+  const paths = spec.series.map((series) => {
+    const path = series.y.map((value, index) => `${index === 0 ? "M" : "L"}${roundSvg(xFor(index, series.y.length))},${roundSvg(yFor(value))}`).join(" ");
+    const dots = series.y.map((value, index) => `<circle cx="${roundSvg(xFor(index, series.y.length))}" cy="${roundSvg(yFor(value))}" r="3.8" fill="${escapeAttribute(series.color)}" stroke="#fbfcfe" stroke-width="2"/>`).join("");
+    return `<path d="${path}" fill="none" stroke="${escapeAttribute(series.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
+  }).join("");
+  const xLabels = labels
+    .map((label, index) => index % labelStep === 0 || index === labels.length - 1
+      ? `<text x="${roundSvg(xFor(index, labels.length))}" y="${height - 24}" text-anchor="middle" fill="#667085" font-size="11">${escapeHtml(label)}</text>`
+      : "")
+    .join("");
+  const legend = spec.series.map((series, index) => {
+    const x = margin.left + index * 120;
+    return `<g transform="translate(${x},22)"><line x1="0" y1="0" x2="20" y2="0" stroke="${escapeAttribute(series.color)}" stroke-width="2"/><text x="28" y="4" fill="#475569" font-size="11">${escapeHtml(series.name)}</text></g>`;
+  }).join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(spec.title)}" style="display:block;width:100%;height:auto;background:#fbfcfe">
+<rect width="${width}" height="${height}" fill="#fbfcfe"/>
+<text x="${margin.left}" y="32" fill="#1f2937" font-size="16" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">${escapeHtml(spec.title)}</text>
+${legend}
+<g font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+${grid}
+<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="#d0d5dd"/>
+<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="#d0d5dd"/>
+${xLabels}
+${spec.yTitle ? `<text x="18" y="${margin.top + innerHeight / 2}" transform="rotate(-90 18 ${margin.top + innerHeight / 2})" text-anchor="middle" fill="#667085" font-size="11">${escapeHtml(spec.yTitle)}</text>` : ""}
+${paths}
+</g>
+</svg>`;
+}
+
+function renderExportBarSvg(spec: { title: string; bars: Array<{ label: string; value: number; color: string }> }): string {
+  const width = 920;
+  const height = 420;
+  const margin = { top: 56, right: 32, bottom: 64, left: 72 };
+  const innerWidth = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+  const max = Math.max(1, ...spec.bars.map((bar) => bar.value));
+  const band = innerWidth / Math.max(1, spec.bars.length);
+  const barWidth = Math.max(16, band * 0.56);
+  const ticks = Array.from({ length: 5 }, (_, index) => (max * index) / 4);
+  const yFor = (value: number) => margin.top + innerHeight - (value / max) * innerHeight;
+  const grid = ticks.map((tick) => {
+    const y = yFor(tick);
+    return `<line x1="${margin.left}" y1="${roundSvg(y)}" x2="${width - margin.right}" y2="${roundSvg(y)}" stroke="#e5e7eb"/><text x="${margin.left - 12}" y="${roundSvg(y + 4)}" text-anchor="end" fill="#667085" font-size="11">${escapeHtml(formatSvgTick(tick))}</text>`;
+  }).join("");
+  const bars = spec.bars.map((bar, index) => {
+    const x = margin.left + index * band + (band - barWidth) / 2;
+    const y = yFor(bar.value);
+    return `<rect x="${roundSvg(x)}" y="${roundSvg(y)}" width="${roundSvg(barWidth)}" height="${roundSvg(height - margin.bottom - y)}" rx="3" fill="${escapeAttribute(bar.color)}"/><text x="${roundSvg(x + barWidth / 2)}" y="${height - 32}" text-anchor="middle" fill="#667085" font-size="11">${escapeHtml(bar.label)}</text>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(spec.title)}" style="display:block;width:100%;height:auto;background:#fbfcfe">
+<rect width="${width}" height="${height}" fill="#fbfcfe"/>
+<text x="${margin.left}" y="32" fill="#1f2937" font-size="16" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">${escapeHtml(spec.title)}</text>
+<g font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+${grid}
+<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="#d0d5dd"/>
+<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="#d0d5dd"/>
+${bars}
+</g>
+</svg>`;
+}
+
+function renderExportGraphNoticeSvg(title: string, message: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-label="${escapeAttribute(title)}" style="display:block;width:100%;height:auto;background:#fbfcfe">
+<rect x="1" y="1" width="758" height="218" rx="8" fill="#fbfcfe" stroke="#d8dde5"/>
+<text x="32" y="72" fill="#1f2937" font-size="18" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">${escapeHtml(title)}</text>
+<text x="32" y="112" fill="#667085" font-size="13" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">${escapeHtml(message)}</text>
+</svg>`;
+}
+
+function readNumberArray(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+    : [];
+}
+
+function readLabelArray(value: unknown, fallbackLength: number): string[] {
+  if (Array.isArray(value) && value.length) {
+    return value.map((item) => String(item));
+  }
+  return Array.from({ length: fallbackLength }, (_, index) => String(index + 1));
+}
+
+function readExportNumber(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function readStringValue(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function readTraceColor(trace: Record<string, unknown>, index: number): string {
+  const colorway = ["#344054", "#667085", "#0f766e", "#9a3412", "#7c3aed", "#475569"];
+  const line = isRecord(trace.line) ? readStringValue(trace.line.color) : "";
+  const marker = isRecord(trace.marker) ? readStringValue(trace.marker.color) : "";
+  return line || marker || colorway[index % colorway.length];
+}
+
+function readPlotTitle(figure: Record<string, unknown>): string {
+  const layout = isRecord(figure.layout) ? figure.layout : {};
+  const title = layout.title;
+  if (typeof title === "string") {
+    return title;
+  }
+  return isRecord(title) ? readStringValue(title.text) : "";
+}
+
+function readAxisTitle(figure: Record<string, unknown>, axis: string): string {
+  const layout = isRecord(figure.layout) ? figure.layout : {};
+  const axisConfig = isRecord(layout[axis]) ? layout[axis] : {};
+  const title = axisConfig.title;
+  if (typeof title === "string") {
+    return title;
+  }
+  return isRecord(title) ? readStringValue(title.text) : "";
+}
+
+function roundSvg(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2).replace(/\.?0+$/, "") : "0";
+}
+
+function formatSvgTick(value: number): string {
+  if (Math.abs(value) >= 100) {
+    return String(Math.round(value));
+  }
+  if (Math.abs(value) >= 10) {
+    return value.toFixed(1).replace(/\.0$/, "");
+  }
+  return value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function renderExportDisplay(display: lotusDisplayOutput, graphAssetMode: lotusHtmlExportGraphAssetMode): string {
   const selected = selectExportDisplayMime(display);
   if (!selected) {
     return "";
@@ -4232,11 +4763,20 @@ function renderExportDisplay(display: lotusDisplayOutput): string {
   const label = escapeHtml(formatExportDisplayLabel(display, selected.mime));
   const metadata = readExportDisplayMetadata(display, selected.mime);
   const height = readExportPositiveNumber(metadata.height) ?? 520;
-  if (selected.mime === "text/html" && typeof selected.value === "string") {
-    return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><iframe class="lotus-export-html" sandbox="allow-forms allow-popups allow-scripts" referrerpolicy="no-referrer" style="height:${Math.round(height)}px" srcdoc="${escapeAttribute(selected.value)}"></iframe></div>`;
+  if (selected.mime === LOTUS_PLOTLY_MIME || selected.mime === PLOTLY_MIME) {
+    if (graphAssetMode === "self-contained") {
+      return renderExportInlineGraph(label, renderPlotlyExportSvg(selected.value, display), height);
+    }
+    return renderExportHtmlFrame(label, renderPlotlyExportHtml(selected.value, display), height);
   }
-  if (selected.mime === "image/svg+xml" && typeof selected.value === "string") {
-    return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div>${selected.value}</div>`;
+  if (selected.mime === LOTUS_D3_MIME) {
+    if (graphAssetMode === "self-contained") {
+      return renderExportInlineGraph(label, renderD3ExportSvg(selected.value, display), height);
+    }
+    return renderExportHtmlFrame(label, renderD3ExportHtml(selected.value, display), height);
+  }
+  if (selected.mime === "text/html" && typeof selected.value === "string") {
+    return renderExportHtmlFrame(label, selected.value, height);
   }
   if (selected.mime.startsWith("image/") && typeof selected.value === "string") {
     return `<div class="lotus-export-display"><div class="lotus-export-label">${label}</div><img class="lotus-export-image" alt="${escapeAttribute(display.title ?? "Lotus image display")}" src="${escapeAttribute(imageExportDataUrl(selected.mime, selected.value))}"></div>`;
@@ -4253,7 +4793,7 @@ function renderExportArtifacts(artifacts: readonly lotusRunArtifact[]): string {
 }
 
 function selectExportDisplayMime(display: lotusDisplayOutput): { mime: string; value: unknown } | null {
-  for (const mime of ["text/html", "image/svg+xml", "image/png", "image/jpeg", "image/gif", "text/markdown", "text/vnd.graphviz", "application/json", "text/plain"]) {
+  for (const mime of [LOTUS_PLOTLY_MIME, PLOTLY_MIME, LOTUS_D3_MIME, "text/html", "image/svg+xml", "image/png", "image/jpeg", "image/gif", "text/markdown", "text/vnd.graphviz", "application/json", "text/plain"]) {
     if (display.data[mime] != null) {
       return { mime, value: display.data[mime] };
     }
@@ -4274,6 +4814,13 @@ function readExportDisplayMetadata(display: lotusDisplayOutput, mime: string): R
 
 function readExportPositiveNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function serializeExportJson(value: unknown): string {
+  return JSON.stringify(value ?? null)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 function imageExportDataUrl(mime: string, value: string): string {
