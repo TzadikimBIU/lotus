@@ -63,6 +63,7 @@ export const DEFAULT_SETTINGS: lotusPluginSettings = {
   externalLanguagePacks: [],
   customLanguages: [],
   pdfExportMode: "code",
+  htmlExportGraphAssetMode: "cdn",
   loggingEnabled: false,
   loggingGlobalTextEnabled: true,
   loggingGlobalTextPath: ".lotus/logs/events.log",

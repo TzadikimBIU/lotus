@@ -299,6 +299,20 @@ export class lotusSettingTab extends PluginSettingTab {
             await this.lotusPlugin.saveSettings();
           }),
       );
+
+    new Setting(containerEl)
+      .setName("HTML graph export assets")
+      .setDesc("Choose whether Plotly and D3 HTML exports load chart libraries from a CDN or render self-contained SVG fallbacks.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("cdn", "CDN libraries")
+          .addOption("self-contained", "Self-contained SVG")
+          .setValue(this.lotusPlugin.settings.htmlExportGraphAssetMode || "cdn")
+          .onChange(async (value) => {
+            this.lotusPlugin.settings.htmlExportGraphAssetMode = value as "cdn" | "self-contained";
+            await this.lotusPlugin.saveSettings();
+          }),
+      );
   }
 
   private renderHashingAndObservabilitySettings(containerEl: HTMLElement): void {
