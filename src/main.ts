@@ -8,6 +8,7 @@ import {
   TFile,
   WorkspaceLeaf,
   normalizePath,
+  requestUrl,
   type DataAdapter,
   type MarkdownPostProcessorContext,
 } from "obsidian";
@@ -17,7 +18,7 @@ import { readFile } from "fs/promises";
 import JSZip from "jszip";
 import { dirname, isAbsolute, join } from "path";
 import { homedir } from "os";
-import { lotusContainerRunner } from "./execution/containerRunner";
+import { lotusContainerRunner, type lotusContainerGroupSummary } from "./execution/containerRunner";
 import { runProcess } from "./execution/processRunner";
 import { getCompileMachineHashScopeOverride, isCompileContainerGroupAllowed, isCompileFeatureAllowed, isCompileLoggingForced } from "./buildProfile";
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
@@ -506,7 +507,7 @@ export default class lotusPlugin extends Plugin {
     new CustomLanguageRunner(),
   ]);
   // Exposed as public and readonly so the settings panel and modals can access container configurations and default language mapping helpers.
-  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`);
+  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`, requestUrl);
   private hasRegisteredMarkdownDecorator = false;
   private readonly displayRenderers = new Set<lotusDisplayRenderer>();
   private readonly outputs = new Map<string, lotusStoredOutput>();
@@ -3016,7 +3017,7 @@ export default class lotusPlugin extends Plugin {
     return current;
   }
 
-  async getContainerGroupSummaries(): Promise<Array<{ name: string; status: string }>> {
+  async getContainerGroupSummaries(): Promise<lotusContainerGroupSummary[]> {
     if (!isCompileFeatureAllowed("container-groups")) {
       return [];
     }

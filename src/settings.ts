@@ -1170,15 +1170,20 @@ export class lotusSettingTab extends PluginSettingTab {
       }
 
       for (const group of groups) {
-        new Setting(listEl)
+        const setting = new Setting(listEl)
           .setName(group.name)
-          .setDesc(group.status)
-          .addButton((button) =>
+          .setDesc(group.status);
+
+        if (group.buildable !== false) {
+          setting.addButton((button) =>
             button.setButtonText("Build / rebuild").onClick(async () => {
               await this.lotusPlugin.buildContainerGroup(group.name);
             }),
-          )
-          .addButton((button) =>
+          );
+        }
+
+        if (group.editable !== false) {
+          setting.addButton((button) =>
             button.setButtonText("Edit").onClick(() => {
               const pluginDir = this.getPluginConfigDir();
               new EditContainerGroupModal(this.lotusPlugin, group.name, pluginDir, () => {
@@ -1186,6 +1191,7 @@ export class lotusSettingTab extends PluginSettingTab {
               }).open();
             }),
           );
+        }
       }
     } catch (error) {
       containerEl.empty();

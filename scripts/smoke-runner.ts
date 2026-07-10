@@ -4,6 +4,8 @@ import { delimiter } from "path";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import { pathToFileURL } from "url";
 import { spawn } from "child_process";
+import { request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
 import { generateKeyPairSync } from "crypto";
 import { tmpdir } from "os";
 import { DEFAULT_SETTINGS } from "../src/defaultSettings";
@@ -56,6 +58,15 @@ interface NoteFile {
   frontmatter: Record<string, string>;
 }
 
+interface SmokeRequestUrlParam {
+  url: string;
+  method?: string;
+  contentType?: string;
+  body?: string | ArrayBuffer;
+  headers?: Record<string, string>;
+  throw?: boolean;
+}
+
 const argv = readArgs(process.argv.slice(2));
 const vaultDir = resolve(requiredArg(argv, "vault"));
 const artifactDir = resolve(requiredArg(argv, "artifacts"));
@@ -87,7 +98,7 @@ const containerRunner = new lotusContainerRunner({
   metadataCache: {
     getFileCache: () => ({ frontmatter: {} }),
   },
-} as never, pluginDir);
+} as never, pluginDir, smokeRequestUrl);
 const notes = await readNotes(vaultDir);
 const results: SmokeBlockResult[] = [];
 
@@ -630,6 +641,52 @@ async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
 function readSettingsJson(raw: string): Partial<lotusPluginSettings> {
   const parsed: unknown = JSON.parse(raw);
   return isRecord(parsed) ? parsed : {};
+}
+
+async function smokeRequestUrl(request: SmokeRequestUrlParam | string): Promise<{ status: number; text: string }> {
+  const params = typeof request === "string" ? { url: request } : request;
+  const url = new URL(params.url);
+  const requester = url.protocol === "http:" ? httpRequest : url.protocol === "https:" ? httpsRequest : null;
+  if (!requester) {
+    throw new Error(`Unsupported smoke request protocol: ${url.protocol}`);
+  }
+
+  const body = typeof params.body === "string"
+    ? Buffer.from(params.body, "utf8")
+    : params.body
+      ? Buffer.from(params.body)
+      : undefined;
+  const headers: Record<string, string> = {
+    ...params.headers,
+    ...(params.contentType ? { "Content-Type": params.contentType } : {}),
+    ...(body ? { "Content-Length": String(body.length) } : {}),
+  };
+
+  return await new Promise((resolvePromise, reject) => {
+    const req = requester(url, {
+      method: params.method ?? "GET",
+      headers,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer | string) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      response.on("end", () => {
+        const status = response.statusCode ?? 0;
+        const text = Buffer.concat(chunks).toString("utf8");
+        if (params.throw !== false && status >= 400) {
+          reject(new Error(`HTTP ${status}: ${text}`));
+          return;
+        }
+        resolvePromise({ status, text });
+      });
+    });
+    req.on("error", reject);
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
 }
 
 function applySmokeExecutableOverrides(settings: lotusPluginSettings): void {

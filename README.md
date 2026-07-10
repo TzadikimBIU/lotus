@@ -46,6 +46,7 @@ Optional features that can use the network:
 
 - SSH and QEMU execution groups connect to the targets you configure.
 - Docker and Podman execution groups may pull images if your local runtime is configured to do so.
+- The built in Godbolt execution group posts snippet source to Compiler Explorer and returns a public shortlink.
 - The HTTP logging sink posts structured execution events to the endpoint you configure.
 
 Optional features that can access files or processes outside the vault:
@@ -159,6 +160,7 @@ Use `lotus: Open Log Viewer` to inspect the configured JSONL log inside Obsidian
 For more specialized setups, refer to the guides in the [docs/](docs/) directory:
 
 - [Custom Languages](docs/custom-languages.md): Configure local interpreters, highlighting inheritance, transpile-only outputs, staged preprocessors, JSON request/response schema extractors, and C partial-extraction strategies.
+- [Godbolt Showcase](docs/godbolt-showcase.md): Push a snippet through the built in Godbolt execution group and get a Compiler Explorer shortlink.
 - [Rich Display Contract](docs/display-contract.md): Emit SVG, raster images, Graphviz DOT, JSON, and text display records from runners and external processes.
 - [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.

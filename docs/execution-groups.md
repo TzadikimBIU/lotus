@@ -151,6 +151,34 @@ Declare a `graphviz` language when the group needs a custom command:
 
 If the group does not declare `graphviz`, Lotus falls back to `dot -Tsvg {file}`. The container, VM, WSL distro, or SSH target must still provide `dot`.
 
+### Built in godbolt group
+
+Lotus includes a built in `godbolt` execution group. It does not run a local container. Instead, it posts the resolved snippet source to the Compiler Explorer shortener API and returns the generated Godbolt URL. For languages with a known Compiler Explorer default, Lotus includes a compiler pane so opening the link shows compiler output immediately.
+
+````markdown
+```cpp lotus-execution=godbolt
+int square(int x) {
+  return x * x;
+}
+```
+````
+
+Set the compiler id and options on the block when you want to pin a specific compiler instead of using the Lotus default for that language:
+
+````markdown
+```cpp lotus-execution=godbolt lotus-godbolt-compiler=g152 lotus-godbolt-options="-O2 -std=c++20"
+int square(int x) {
+  return x * x;
+}
+```
+````
+
+Supported Lotus mappings include C/C++, Rust, Go, Java, Python, JavaScript/TypeScript, Ruby, Perl, Lua, Haskell, OCaml, Lean, LLVM IR, assembly, and eBPF C. For another Compiler Explorer language, set `lotus-godbolt-language=<id>`.
+
+Use `lotus-godbolt-compiler=none` for a source only link with no compiler pane.
+
+Use `lotus-godbolt-base-url="https://ce.example.com"` to target a self hosted Compiler Explorer instance. Godbolt shortlinks are public, so do not use this group for private snippets.
+
 ### SSH Runtime Configuration
 Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). By default, Lotus creates the remote workspace, writes the temp source file, runs the configured command, and removes the remote temp file through one `ssh` session. That avoids repeated password prompts and keeps stdin available for interactive programs.
 

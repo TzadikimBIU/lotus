@@ -1,4 +1,4 @@
-import type { App, TFile } from "obsidian";
+import type { App, RequestUrlParam, RequestUrlResponse, TFile } from "obsidian";
 import { closeSync, constants, existsSync, openSync } from "fs";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "fs/promises";
 import { basename, delimiter, isAbsolute, join, normalize as normalizeFsPath, posix as posixPath } from "path";
@@ -14,6 +14,91 @@ import { type lotusTimeoutMs } from "../utils/timeout";
 type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
 type lotusContainerElevationMode = "default" | "root";
 const ANSI_ESCAPE_SEQUENCE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+const BUILT_IN_GODBOLT_GROUP = "godbolt";
+const GODBOLT_DEFAULT_BASE_URL = "https://godbolt.org";
+const GODBOLT_PRIVACY_WARNING = "[Lotus] Godbolt shortlinks are public and send this snippet to Compiler Explorer.";
+const GODBOLT_DEFAULT_COMPILERS: Record<string, string> = {
+  "c": "cg161",
+  "c++": "g161",
+  "rust": "r1970",
+  "go": "gl1260",
+  "java": "java2501",
+  "python": "python314",
+  "javascript": "v8trunk",
+  "typescript": "tsc_0_0_35_gc",
+  "ruby": "ruby405",
+  "ocaml": "ocaml5200",
+};
+const GODBOLT_DEFAULT_COMPILER_OPTIONS: Record<string, string> = {
+  "c": "-O2",
+  "c++": "-O2 -std=c++20",
+  "rust": "-O",
+};
+const GODBOLT_DEFAULT_COMPILER_FILTERS: lotusGodboltCompilerFilters = {
+  binary: false,
+  binaryObject: false,
+  commentOnly: true,
+  demangle: true,
+  directives: true,
+  execute: false,
+  intel: true,
+  labels: true,
+  libraryCode: false,
+  trim: false,
+};
+const GODBOLT_LANGUAGE_ALIASES: Record<string, string> = {
+  "c": "c",
+  "h": "c",
+  "ebpf": "c",
+  "ebpf-c": "c",
+  "bpf": "c",
+  "bpf-c": "c",
+  "cpp": "c++",
+  "c++": "c++",
+  "cc": "c++",
+  "cxx": "c++",
+  "hpp": "c++",
+  "hxx": "c++",
+  "rust": "rust",
+  "rs": "rust",
+  "go": "go",
+  "golang": "go",
+  "java": "java",
+  "python": "python",
+  "py": "python",
+  "javascript": "javascript",
+  "js": "javascript",
+  "obsidian-js": "javascript",
+  "obsidianjs": "javascript",
+  "obsidian-javascript": "javascript",
+  "typescript": "typescript",
+  "ts": "typescript",
+  "ruby": "ruby",
+  "rb": "ruby",
+  "perl": "perl",
+  "pl": "perl",
+  "lua": "lua",
+  "haskell": "haskell",
+  "hs": "haskell",
+  "ocaml": "ocaml",
+  "ml": "ocaml",
+  "lean": "lean",
+  "lean4": "lean",
+  "llvm-ir": "llvm",
+  "llvmir": "llvm",
+  "llvm": "llvm",
+  "ll": "llvm",
+  "asm": "assembly",
+  "assembly": "assembly",
+  "s": "assembly",
+};
+
+export interface lotusContainerGroupSummary {
+  name: string;
+  status: string;
+  editable?: boolean;
+  buildable?: boolean;
+}
 
 interface lotusContainerLanguageConfig {
   command?: string;
@@ -162,12 +247,45 @@ interface lotusCustomRuntimeRequest {
   };
 }
 
+type lotusRequestUrl = (request: RequestUrlParam | string) => Promise<Pick<RequestUrlResponse, "status" | "text">>;
+
+interface lotusGodboltClientState {
+  sessions: lotusGodboltSessionState[];
+}
+
+interface lotusGodboltSessionState {
+  id: number;
+  language: string;
+  source: string;
+  compilers?: lotusGodboltCompilerState[];
+}
+
+interface lotusGodboltCompilerState {
+  id: string;
+  options?: string;
+  filters?: lotusGodboltCompilerFilters;
+}
+
+interface lotusGodboltCompilerFilters {
+  binary: boolean;
+  binaryObject: boolean;
+  commentOnly: boolean;
+  demangle: boolean;
+  directives: boolean;
+  execute: boolean;
+  intel: boolean;
+  labels: boolean;
+  libraryCode: boolean;
+  trim: boolean;
+}
+
 export class lotusContainerRunner {
   private readonly builtImages = new Set<string>();
 
   constructor(
     private readonly app: App,
     private readonly pluginDir: string,
+    private readonly requestUrlFn?: lotusRequestUrl,
   ) { }
 
   getContainerGroupName(file: TFile): string | null {
@@ -176,16 +294,17 @@ export class lotusContainerRunner {
     return typeof value === "string" && value.trim() ? value.trim() : null;
   }
 
-  async getGroupSummaries(): Promise<Array<{ name: string; status: string }>> {
+  async getGroupSummaries(): Promise<lotusContainerGroupSummary[]> {
+    const builtInGroups = this.getBuiltInGroupSummaries();
     const containersPath = this.getContainersPath();
     if (!existsSync(containersPath)) {
-      return [];
+      return builtInGroups;
     }
 
     const entries = await readdir(containersPath, { withFileTypes: true });
-    return Promise.all(
+    const diskGroups = await Promise.all(
       entries
-        .filter((entry) => entry.isDirectory() && isCompileContainerGroupAllowed(entry.name))
+        .filter((entry) => entry.isDirectory() && entry.name !== BUILT_IN_GODBOLT_GROUP && isCompileContainerGroupAllowed(entry.name))
         .map(async (entry) => {
           const groupPath = join(containersPath, entry.name);
           const hasConfig = existsSync(join(groupPath, "config.json"));
@@ -234,11 +353,15 @@ export class lotusContainerRunner {
           }
         }),
     );
+    return [...builtInGroups, ...diskGroups];
   }
 
   async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings, groupName: string): Promise<lotusRunResult> {
     if (!isCompileContainerGroupAllowed(groupName)) {
       throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
+    }
+    if (isBuiltInGodboltGroup(groupName)) {
+      return this.runGodbolt(block, context);
     }
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
@@ -311,6 +434,13 @@ export class lotusContainerRunner {
     if (!isCompileContainerGroupAllowed(groupName)) {
       throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
     }
+    if (isBuiltInGodboltGroup(groupName)) {
+      return this.createSyntheticResult(
+        `container:${groupName}:build`,
+        "Godbolt build",
+        "Built-in Godbolt execution group does not require a build step.\n",
+      );
+    }
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
     await mkdir(groupPath, { recursive: true });
@@ -336,6 +466,56 @@ export class lotusContainerRunner {
           `WSL environment ${config.image || "(default)"} does not require a build step.\n`,
         );
     }
+  }
+
+  private getBuiltInGroupSummaries(): lotusContainerGroupSummary[] {
+    if (!isCompileContainerGroupAllowed(BUILT_IN_GODBOLT_GROUP)) {
+      return [];
+    }
+    return [{
+      name: BUILT_IN_GODBOLT_GROUP,
+      status: "runtime: built-in, posts snippets to Compiler Explorer and returns a Godbolt shortlink",
+      editable: false,
+      buildable: false,
+    }];
+  }
+
+  private async runGodbolt(block: lotusCodeBlock, context: lotusRunContext): Promise<lotusRunResult> {
+    const startedAt = new Date();
+    const language = readGodboltLanguage(block);
+    const baseUrl = readGodboltBaseUrl(block);
+    const clientState = createGodboltClientState(block, language);
+    const url = await postGodboltShortlink(clientState, baseUrl, context.timeoutMs, context.signal, this.requestUrlFn);
+    const finishedAt = new Date();
+
+    return {
+      runnerId: `container:${BUILT_IN_GODBOLT_GROUP}`,
+      runnerName: "Godbolt",
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: 0,
+      stdout: `${url}\n`,
+      stderr: "",
+      success: true,
+      timedOut: false,
+      cancelled: false,
+      warning: GODBOLT_PRIVACY_WARNING,
+      displays: [{
+        id: "godbolt-link",
+        title: "Godbolt link",
+        role: "artifact",
+        data: {
+          "text/html": renderGodboltLinkHtml(url, language),
+          "text/plain": url,
+        },
+        metadata: {
+          "text/html": {
+            height: 92,
+          },
+        },
+      }],
+    };
   }
 
   private async runOciContainer(
@@ -2171,6 +2351,216 @@ function shellQuote(value: string): string {
 
 function finiteTimeoutMs(timeoutMs: lotusTimeoutMs, fallbackMs: number): number {
   return timeoutMs ?? fallbackMs;
+}
+
+function isBuiltInGodboltGroup(groupName: string): boolean {
+  return groupName.trim().toLowerCase() === BUILT_IN_GODBOLT_GROUP;
+}
+
+function createGodboltClientState(block: lotusCodeBlock, language: string): lotusGodboltClientState {
+  const session: lotusGodboltSessionState = {
+    id: 1,
+    language,
+    source: block.content,
+  };
+  const compilerId = readGodboltCompiler(block, language);
+  if (compilerId) {
+    const options = readGodboltCompilerOptions(block, language);
+    session.compilers = [{
+      id: compilerId,
+      ...(options ? { options } : {}),
+      filters: { ...GODBOLT_DEFAULT_COMPILER_FILTERS },
+    }];
+  }
+  return {
+    sessions: [session],
+  };
+}
+
+function readGodboltCompiler(block: lotusCodeBlock, language: string): string | undefined {
+  const compilerId = readBlockAttribute(block, "lotus-godbolt-compiler", "godbolt-compiler", "ce-compiler");
+  if (compilerId) {
+    return isDisabledGodboltValue(compilerId) ? undefined : compilerId;
+  }
+  return GODBOLT_DEFAULT_COMPILERS[language];
+}
+
+function readGodboltCompilerOptions(block: lotusCodeBlock, language: string): string | undefined {
+  const options = readBlockAttribute(block, "lotus-godbolt-options", "godbolt-options", "ce-options");
+  if (options) {
+    return isDisabledGodboltValue(options) ? undefined : options;
+  }
+  return GODBOLT_DEFAULT_COMPILER_OPTIONS[language];
+}
+
+function readGodboltLanguage(block: lotusCodeBlock): string {
+  const override = readBlockAttribute(block, "lotus-godbolt-language", "godbolt-language", "ce-language");
+  if (override) {
+    return normalizeGodboltLanguageId(override, "lotus-godbolt-language");
+  }
+
+  for (const candidate of [block.language, block.languageAlias, block.sourceLanguage]) {
+    const mapped = GODBOLT_LANGUAGE_ALIASES[candidate.trim().toLowerCase()];
+    if (mapped) {
+      return mapped;
+    }
+  }
+
+  throw new Error(`Godbolt has no default language mapping for ${block.sourceLanguage || block.language}. Set lotus-godbolt-language to a Compiler Explorer language id.`);
+}
+
+function readGodboltBaseUrl(block: lotusCodeBlock): string {
+  const value = readBlockAttribute(block, "lotus-godbolt-base-url", "godbolt-base-url", "compiler-explorer-url", "ce-url");
+  if (!value) {
+    return GODBOLT_DEFAULT_BASE_URL;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid Godbolt base URL: ${value}`);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(`Invalid Godbolt base URL protocol: ${url.protocol}`);
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+async function postGodboltShortlink(
+  clientState: lotusGodboltClientState,
+  baseUrl: string,
+  timeoutMs: lotusTimeoutMs,
+  signal: AbortSignal,
+  requestUrlFn?: lotusRequestUrl,
+): Promise<string> {
+  if (signal.aborted) {
+    throw new Error("Godbolt shortlink request was cancelled.");
+  }
+  if (!requestUrlFn) {
+    throw new Error("Godbolt shortlink creation requires Obsidian requestUrl.");
+  }
+  try {
+    const request = requestUrlFn({
+      url: `${baseUrl}/api/shortener`,
+      method: "POST",
+      contentType: "application/json",
+      headers: {
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(clientState),
+      throw: false,
+    });
+    request.catch(() => undefined);
+    const response = await waitForGodboltResponse(request, timeoutMs, signal);
+    const body = response.text;
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Godbolt shortener returned HTTP ${response.status}${body.trim() ? `: ${shortenForError(body)}` : ""}`);
+    }
+    const parsed: unknown = JSON.parse(body);
+    const url = isRecord(parsed) ? optionalString(parsed.url) : undefined;
+    if (!url) {
+      throw new Error("Godbolt shortener response did not include a url.");
+    }
+    return url;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Godbolt shortener returned invalid JSON: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+async function waitForGodboltResponse<T>(request: Promise<T>, timeoutMs: lotusTimeoutMs, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw new Error("Godbolt shortlink request was cancelled.");
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let timeoutHandle: ReturnType<typeof lotusSetTimeout> | null = null;
+    const cleanup = () => {
+      if (timeoutHandle !== null) {
+        lotusClearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onAbort = () => {
+      finish(() => reject(new Error("Godbolt shortlink request was cancelled.")));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (timeoutMs !== null) {
+      timeoutHandle = lotusSetTimeout(() => {
+        finish(() => reject(new Error(`Godbolt shortlink request timed out after ${timeoutMs} ms.`)));
+      }, timeoutMs);
+    }
+    request.then(
+      (response) => finish(() => resolve(response)),
+      (error: unknown) => finish(() => reject(error)),
+    );
+  });
+}
+
+function renderGodboltLinkHtml(url: string, language: string): string {
+  const escapedUrl = escapeHtml(url);
+  const escapedHref = escapeHtmlAttribute(url);
+  return [
+    "<!doctype html>",
+    "<meta charset=\"utf-8\">",
+    "<style>body{font:13px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;padding:12px;color:#222;background:#fff}a{font-weight:600;color:#0b5cad}.meta{margin-top:6px;color:#555;word-break:break-all}</style>",
+    `<a href="${escapedHref}" target="_blank" rel="noreferrer noopener">open in godbolt</a>`,
+    `<div class="meta">${escapedUrl}</div>`,
+    `<div class="meta">language: ${escapeHtml(language)}</div>`,
+  ].join("");
+}
+
+function readBlockAttribute(block: lotusCodeBlock, ...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = block.attributes[name];
+    if (value?.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function normalizeGodboltLanguageId(value: string, label: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-z0-9_+.#-]+$/.test(normalized)) {
+    throw new Error(`${label} must be a Compiler Explorer language id.`);
+  }
+  return normalized;
+}
+
+function isDisabledGodboltValue(value: string): boolean {
+  return ["0", "false", "no", "off", "none"].includes(value.trim().toLowerCase());
+}
+
+function shortenForError(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 500 ? `${normalized.slice(0, 500)}...` : normalized;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return escapeHtml(value).replaceAll("`", "&#96;");
 }
 
 function readFrontmatterRecord(app: App, file: TFile): Record<string, unknown> | undefined {

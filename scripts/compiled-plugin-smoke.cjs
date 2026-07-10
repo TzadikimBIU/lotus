@@ -159,6 +159,9 @@ function obsidianShim(dir) {
     TFile,
     WorkspaceLeaf,
     normalizePath: (value) => String(value).replace(/\\/g, "/").replace(/\/+/g, "/"),
+    requestUrl: async () => {
+      throw new Error("requestUrl is not available in compiled-plugin smoke");
+    },
   };
 }
 
