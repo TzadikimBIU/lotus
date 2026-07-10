@@ -9,10 +9,10 @@ declare const __LOTUS_MACHINE_HASH_SCOPE__: string;
 
 export type lotusCompileMode = "strict" | "light";
 export type lotusCompileFeature = "custom-languages" | "external-language-packs" | "container-groups" | "output-filters" | "rich-displays" | "signing";
-export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
+export type lotusCompileContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom" | "http";
 export type lotusCompileMachineHashScope = "install" | "vault" | "install-vault";
 
-const ALL_CONTAINER_RUNTIMES: lotusCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom"];
+const ALL_CONTAINER_RUNTIMES: lotusCompileContainerRuntime[] = ["docker", "podman", "qemu", "wsl", "ssh", "custom", "http"];
 
 const COMPILE_MODE: lotusCompileMode = readCompileMode(
   typeof __LOTUS_COMPILE_MODE__ === "undefined" ? "strict" : __LOTUS_COMPILE_MODE__,

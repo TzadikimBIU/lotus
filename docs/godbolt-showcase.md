@@ -6,7 +6,7 @@ this note shows the built in `godbolt` execution group. running these blocks sen
 
 this is the default path. lotus opens compiler explorer with a compiler pane already configured, so the link shows compiler output when it loads.
 
-```cpp lotus-execution=godbolt lotus-timeout=20000 lotus-smoke-name=godboltCompilerOutput lotus-smoke-profiles=full lotus-smoke-stdout-contains="godbolt.org/z/"
+```cpp lotus-execution=godbolt lotus-timeout=20000 lotus-smoke-name=godboltCompilerOutput lotus-smoke-profiles=full lotus-smoke-stdout-contains="godbolt.org/z/" lotus-smoke-godbolt-compiler-matches="^g[0-9]+$" lotus-smoke-godbolt-options="-O2 -std=c++20" lotus-smoke-godbolt-filter-execute=false lotus-smoke-godbolt-filter-intel=true
 #include <array>
 
 constexpr int sum(std::array<int, 4> values) {
@@ -35,6 +35,26 @@ int square(int x) {
   return x * x;
 }
 ```
+
+## vault defaults
+
+the lotus settings tab can set a vault level compiler map and options map for godbolt. block attributes still win, then vault settings, then compiler explorer metadata, then the baked in fallback map.
+
+```json
+{
+  "c": "cg161",
+  "c++": "clang_trunk",
+  "rust": "r1970",
+  "llvm": "llctrunk",
+  "assembly": "nasm301",
+  "haskell": "ghc9122",
+  "lua": "lua550",
+  "perl": "perl5422",
+  "lean": "lean_4_29_1"
+}
+```
+
+the built in map also covers go, java, python, javascript, typescript, ruby and ocaml. use `llvm`, `llvm-ir`, `ll`, `asm` or `assembly` in block languages and lotus will normalise them before resolving the compiler.
 
 ## other compiler explorer languages
 

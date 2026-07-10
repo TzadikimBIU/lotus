@@ -3277,6 +3277,9 @@ export default class lotusPlugin extends Plugin {
     if (this.settings.defaultContainerGroup && !isCompileContainerGroupAllowed(this.settings.defaultContainerGroup)) {
       this.settings.defaultContainerGroup = "";
     }
+    this.settings.godboltResolveCompilerFromApi = normalizeBooleanSetting(this.settings.godboltResolveCompilerFromApi, DEFAULT_SETTINGS.godboltResolveCompilerFromApi);
+    this.settings.godboltCompilerDefaults = normalizeStringSetting(this.settings.godboltCompilerDefaults, DEFAULT_SETTINGS.godboltCompilerDefaults);
+    this.settings.godboltOptionsDefaults = normalizeStringSetting(this.settings.godboltOptionsDefaults, DEFAULT_SETTINGS.godboltOptionsDefaults);
     this.settings.workingDirectory = normalizeStringSetting(this.settings.workingDirectory, DEFAULT_SETTINGS.workingDirectory);
     this.settings.graphvizExecutable = isCompileFeatureAllowed("rich-displays")
       ? normalizeStringSetting(this.settings.graphvizExecutable, DEFAULT_SETTINGS.graphvizExecutable)

@@ -10,30 +10,16 @@ import { findEnabledCommandLanguage } from "../languagePackages";
 import type { lotusCodeBlock, lotusPluginSettings, lotusRunContext, lotusRunResult } from "../types";
 import { lotusClearTimeout, lotusSetTimeout } from "../utils/timers";
 import { type lotusTimeoutMs } from "../utils/timeout";
+import { DEFAULT_GODBOLT_COMPILER_DEFAULTS, DEFAULT_GODBOLT_OPTIONS_DEFAULTS } from "../defaultSettings";
 
-type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom";
+type lotusContainerRuntime = "docker" | "podman" | "qemu" | "wsl" | "ssh" | "custom" | "http";
 type lotusContainerElevationMode = "default" | "root";
 const ANSI_ESCAPE_SEQUENCE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
 const BUILT_IN_GODBOLT_GROUP = "godbolt";
 const GODBOLT_DEFAULT_BASE_URL = "https://godbolt.org";
 const GODBOLT_PRIVACY_WARNING = "[Lotus] Godbolt shortlinks are public and send this snippet to Compiler Explorer.";
-const GODBOLT_DEFAULT_COMPILERS: Record<string, string> = {
-  "c": "cg161",
-  "c++": "g161",
-  "rust": "r1970",
-  "go": "gl1260",
-  "java": "java2501",
-  "python": "python314",
-  "javascript": "v8trunk",
-  "typescript": "tsc_0_0_35_gc",
-  "ruby": "ruby405",
-  "ocaml": "ocaml5200",
-};
-const GODBOLT_DEFAULT_COMPILER_OPTIONS: Record<string, string> = {
-  "c": "-O2",
-  "c++": "-O2 -std=c++20",
-  "rust": "-O",
-};
+const GODBOLT_DEFAULT_COMPILERS = DEFAULT_GODBOLT_COMPILER_DEFAULTS;
+const GODBOLT_DEFAULT_COMPILER_OPTIONS = DEFAULT_GODBOLT_OPTIONS_DEFAULTS;
 const GODBOLT_DEFAULT_COMPILER_FILTERS: lotusGodboltCompilerFilters = {
   binary: false,
   binaryObject: false,
@@ -172,6 +158,28 @@ interface lotusCustomRuntimeConfig {
   healthCheck?: lotusCommandExpectation;
 }
 
+type lotusHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+type lotusHttpResponseMode = "auto" | "json" | "text";
+
+interface lotusHttpStatusRange {
+  min: number;
+  max: number;
+}
+
+interface lotusHttpConfig {
+  url: string;
+  method: lotusHttpMethod;
+  contentType?: string;
+  headers: Record<string, string>;
+  body?: unknown;
+  responseMode: lotusHttpResponseMode;
+  successStatuses: lotusHttpStatusRange[];
+  stdoutPath?: string;
+  stderrPath?: string;
+  exitCodePath?: string;
+  successPath?: string;
+}
+
 interface lotusWslConfig {
   interactive?: boolean;
 }
@@ -199,6 +207,7 @@ interface lotusContainerConfig {
   ssh?: lotusRemoteConfig;
   qemu?: lotusQemuConfig;
   custom?: lotusCustomRuntimeConfig;
+  http?: lotusHttpConfig;
   languages: Record<string, lotusContainerLanguageConfig>;
 }
 
@@ -233,6 +242,7 @@ interface lotusCustomRuntimeRequest {
     custom?: lotusCustomRuntimeConfig;
     ssh?: lotusRemoteConfig;
     qemu?: lotusQemuConfig;
+    http?: lotusHttpConfig;
     healthCheck?: lotusCommandExpectation;
     elevation?: lotusContainerElevationConfig;
     outputFilters?: {
@@ -279,8 +289,18 @@ interface lotusGodboltCompilerFilters {
   trim: boolean;
 }
 
+interface lotusCompilerExplorerCompiler {
+  id: string;
+  name: string;
+  lang: string;
+  semver: string;
+  compilerType: string;
+  instructionSet: string;
+}
+
 export class lotusContainerRunner {
   private readonly builtImages = new Set<string>();
+  private readonly godboltDefaultCompilerCache = new Map<string, string | null>();
 
   constructor(
     private readonly app: App,
@@ -336,6 +356,9 @@ export class lotusContainerRunner {
             if (config.runtime === "custom" && config.custom?.executable) {
               pieces.push(`wrapper: ${config.custom.executable}`);
             }
+            if (config.runtime === "http" && config.http?.url) {
+              pieces.push(`${config.http.method} ${config.http.url}`);
+            }
             if (config.elevation.mode === "root") {
               pieces.push(config.elevation.commandPrefix ? `elevation: root via ${config.elevation.commandPrefix}` : "elevation: root");
             }
@@ -361,7 +384,7 @@ export class lotusContainerRunner {
       throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
     }
     if (isBuiltInGodboltGroup(groupName)) {
-      return this.runGodbolt(block, context);
+      return this.runGodbolt(block, context, settings);
     }
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
@@ -381,12 +404,21 @@ export class lotusContainerRunner {
       isFallback = true;
     }
 
-    if (!language || !language.command || !language.extension) {
+    if (!language && config.runtime === "http") {
+      language = {
+        extension: `.${block.language || block.languageAlias || "txt"}`,
+      };
+      isFallback = true;
+    }
+
+    if (!language || (config.runtime !== "http" && !language.command) || !language.extension) {
       throw new Error(`Container group ${groupName} has no command for ${block.language}.`);
     }
 
     await mkdir(groupPath, { recursive: true });
-    await this.runHealthCheck(config.healthCheck, groupPath, context.timeoutMs, context.signal, `container:${groupName}:health`, `Container ${groupName} health check`);
+    if (config.runtime !== "http") {
+      await this.runHealthCheck(config.healthCheck, groupPath, context.timeoutMs, context.signal, `container:${groupName}:health`, `Container ${groupName} health check`);
+    }
     const tempFileName = `temp_${Date.now()}_${Math.random().toString(16).slice(2)}${normalizeExtension(language.extension)}`;
     const tempFilePath = join(groupPath, tempFileName);
 
@@ -410,6 +442,9 @@ export class lotusContainerRunner {
         case "ssh":
           result = await this.runSshRemote(groupName, groupPath, config, language, tempFileName, tempFilePath, context);
           break;
+        case "http":
+          result = await this.runHttpGroup(groupName, config, block, language, tempFileName, context);
+          break;
         default:
           throw new Error(`Unsupported runtime: ${config.runtime}`);
       }
@@ -417,7 +452,9 @@ export class lotusContainerRunner {
       this.applyOutputFilters(result, config.outputFilters);
 
       if (isFallback) {
-        const fallbackMsg = `[Lotus] Language '${block.language}' was not declared in container group. Running using default command: ${language.command}`;
+        const fallbackMsg = config.runtime === "http"
+          ? `[Lotus] Language '${block.language}' was not declared in HTTP execution group. Submitting with fallback language metadata.`
+          : `[Lotus] Language '${block.language}' was not declared in container group. Running using default command: ${language.command}`;
         result.warning = result.warning ? `${result.warning}\n${fallbackMsg}` : fallbackMsg;
       }
       if (config.elevation.mode === "root") {
@@ -444,7 +481,9 @@ export class lotusContainerRunner {
     const groupPath = this.resolveGroupPath(groupName);
     const config = await this.readConfig(groupPath);
     await mkdir(groupPath, { recursive: true });
-    await this.runHealthCheck(config.healthCheck, groupPath, timeoutMs, signal, `container:${groupName}:health`, `Container ${groupName} health check`);
+    if (config.runtime !== "http") {
+      await this.runHealthCheck(config.healthCheck, groupPath, timeoutMs, signal, `container:${groupName}:health`, `Container ${groupName} health check`);
+    }
     switch (config.runtime) {
       case "docker":
       case "podman":
@@ -465,6 +504,12 @@ export class lotusContainerRunner {
           `WSL ${groupName} build`,
           `WSL environment ${config.image || "(default)"} does not require a build step.\n`,
         );
+      case "http":
+        return this.createSyntheticResult(
+          `container:${groupName}:http:build`,
+          `HTTP ${groupName} build`,
+          `HTTP execution group ${groupName} does not require a build step.\n`,
+        );
     }
   }
 
@@ -480,11 +525,11 @@ export class lotusContainerRunner {
     }];
   }
 
-  private async runGodbolt(block: lotusCodeBlock, context: lotusRunContext): Promise<lotusRunResult> {
+  private async runGodbolt(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings): Promise<lotusRunResult> {
     const startedAt = new Date();
     const language = readGodboltLanguage(block);
     const baseUrl = readGodboltBaseUrl(block);
-    const clientState = createGodboltClientState(block, language);
+    const clientState = await createGodboltClientState(block, language, settings, baseUrl, context.timeoutMs, context.signal, this.requestUrlFn, this.godboltDefaultCompilerCache);
     const url = await postGodboltShortlink(clientState, baseUrl, context.timeoutMs, context.signal, this.requestUrlFn);
     const finishedAt = new Date();
 
@@ -946,6 +991,54 @@ export class lotusContainerRunner {
     return result;
   }
 
+  private async runHttpGroup(
+    groupName: string,
+    config: lotusContainerConfig,
+    block: lotusCodeBlock,
+    language: lotusContainerLanguageConfig,
+    tempFileName: string,
+    context: lotusRunContext,
+  ): Promise<lotusRunResult> {
+    if (!this.requestUrlFn) {
+      throw new Error("HTTP execution groups require Obsidian requestUrl.");
+    }
+
+    const http = this.requireHttpConfig(config);
+    const templateContext = createHttpTemplateContext(groupName, block, language, tempFileName, context);
+    const url = renderHttpTemplateString(http.url, templateContext);
+    assertHttpUrl(url, `HTTP execution group ${groupName} url`);
+    const headers = renderHttpHeaders(http.headers, templateContext);
+    const body = createHttpRequestBody(http, templateContext, headers);
+    const startedAt = new Date();
+    const request = this.requestUrlFn({
+      url,
+      method: http.method,
+      headers,
+      ...(body.body != null ? { body: body.body } : {}),
+      ...(body.contentType ? { contentType: body.contentType } : {}),
+      throw: false,
+    });
+    request.catch(() => undefined);
+    const response = await waitForHttpResponse(request, context.timeoutMs, context.signal, `HTTP execution group ${groupName}`);
+    const finishedAt = new Date();
+    const decoded = decodeHttpRunResponse(http, response);
+
+    return {
+      runnerId: `container:${groupName}:http`,
+      runnerName: `HTTP ${groupName}`,
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: decoded.exitCode,
+      stdout: decoded.stdout,
+      stderr: decoded.stderr,
+      success: decoded.success,
+      timedOut: false,
+      cancelled: false,
+      ...(decoded.warning ? { warning: decoded.warning } : {}),
+    };
+  }
+
   private async runWslContainer(
     groupName: string,
     groupPath: string,
@@ -1221,6 +1314,7 @@ export class lotusContainerRunner {
       remote?: unknown;
       qemu?: unknown;
       custom?: unknown;
+      http?: unknown;
       elevation?: unknown;
       languages?: unknown;
     };
@@ -1243,7 +1337,7 @@ export class lotusContainerRunner {
       const languageConfig = value as { command?: unknown; extension?: unknown; useDefault?: unknown };
       const useDefault = languageConfig.useDefault === true;
 
-      if (!useDefault && (typeof languageConfig.command !== "string" || !languageConfig.command.trim())) {
+      if (!useDefault && runtime !== "http" && (typeof languageConfig.command !== "string" || !languageConfig.command.trim())) {
         throw new Error(`Container language ${language} must define command or useDefault.`);
       }
 
@@ -1266,6 +1360,7 @@ export class lotusContainerRunner {
       ssh: this.readSshConfig(data.ssh ?? data.remote, runtime),
       qemu: this.readQemuConfig(data.qemu),
       custom: this.readCustomConfig(data.custom),
+      http: this.readHttpConfig(data.http, runtime),
       languages,
     };
   }
@@ -1276,10 +1371,10 @@ export class lotusContainerRunner {
       runtime = "docker";
     } else if (value === "remote") {
       runtime = "ssh";
-    } else if (value === "docker" || value === "podman" || value === "qemu" || value === "custom" || value === "wsl" || value === "ssh") {
+    } else if (value === "docker" || value === "podman" || value === "qemu" || value === "custom" || value === "wsl" || value === "ssh" || value === "http") {
       runtime = value;
     } else {
-      throw new Error("Container config runtime must be docker, podman, qemu, custom, wsl, ssh, or remote.");
+      throw new Error("Container config runtime must be docker, podman, qemu, custom, wsl, ssh, http, or remote.");
     }
 
     if (!isCompileContainerRuntimeAllowed(runtime)) {
@@ -1489,6 +1584,36 @@ export class lotusContainerRunner {
     };
   }
 
+  private readHttpConfig(value: unknown, runtime: lotusContainerRuntime): lotusHttpConfig | undefined {
+    if (value == null) {
+      if (runtime === "http") {
+        throw new Error("HTTP runtime requires an http config object.");
+      }
+      return undefined;
+    }
+    if (!isRecord(value)) {
+      throw new Error("Container config http must be an object.");
+    }
+    const url = optionalString(value.url ?? value.endpoint);
+    if (!url) {
+      throw new Error("Container config http.url must be a string.");
+    }
+    assertHttpUrl(url, "Container config http.url");
+    return {
+      url,
+      method: readHttpMethod(value.method),
+      contentType: optionalString(value.contentType ?? value.content_type),
+      headers: readHttpHeadersConfig(value.headers),
+      body: value.body,
+      responseMode: readHttpResponseMode(value.responseMode ?? value.response_mode),
+      successStatuses: readHttpSuccessStatuses(value.successStatus ?? value.successStatuses ?? value.okStatus),
+      stdoutPath: optionalString(value.stdoutPath ?? value.stdout ?? value.outputPath ?? value.output),
+      stderrPath: optionalString(value.stderrPath ?? value.stderr),
+      exitCodePath: optionalString(value.exitCodePath ?? value.exitCode),
+      successPath: optionalString(value.successPath ?? value.success),
+    };
+  }
+
   private readHealthCheck(value: unknown, label: string): lotusCommandExpectation | undefined {
     if (value == null) {
       return undefined;
@@ -1526,6 +1651,13 @@ export class lotusContainerRunner {
       throw new Error("Custom runtime requires a custom config object.");
     }
     return config.custom;
+  }
+
+  private requireHttpConfig(config: lotusContainerConfig): lotusHttpConfig {
+    if (!config.http) {
+      throw new Error("HTTP runtime requires an http config object.");
+    }
+    return config.http;
   }
 
   private runtimeExecutable(config: lotusContainerConfig): string {
@@ -1894,6 +2026,7 @@ export class lotusContainerRunner {
         executable: config.executable,
         custom: config.custom,
         qemu: config.qemu,
+        http: config.http,
         healthCheck: config.healthCheck,
         elevation: config.elevation,
       },
@@ -2342,6 +2475,8 @@ function runtimeLabel(runtime: lotusContainerRuntime): string {
       return "WSL";
     case "ssh":
       return "SSH";
+    case "http":
+      return "HTTP";
   }
 }
 
@@ -2353,19 +2488,424 @@ function finiteTimeoutMs(timeoutMs: lotusTimeoutMs, fallbackMs: number): number 
   return timeoutMs ?? fallbackMs;
 }
 
+interface lotusHttpTemplateContext {
+  values: Record<string, string>;
+}
+
+interface lotusHttpRequestBody {
+  body?: string;
+  contentType?: string;
+}
+
+interface lotusDecodedHttpRunResponse {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  success: boolean;
+  warning?: string;
+}
+
+function readHttpMethod(value: unknown): lotusHttpMethod {
+  if (value == null || value === "") {
+    return "POST";
+  }
+  if (typeof value !== "string") {
+    throw new Error("Container config http.method must be a string.");
+  }
+  const normalized = value.trim().toUpperCase();
+  if (["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].includes(normalized)) {
+    return normalized as lotusHttpMethod;
+  }
+  throw new Error("Container config http.method must be GET, POST, PUT, PATCH, DELETE, or HEAD.");
+}
+
+function readHttpResponseMode(value: unknown): lotusHttpResponseMode {
+  if (value == null || value === "") {
+    return "auto";
+  }
+  if (value === "auto" || value === "json" || value === "text") {
+    return value;
+  }
+  throw new Error("Container config http.responseMode must be auto, json, or text.");
+}
+
+function readHttpHeadersConfig(value: unknown): Record<string, string> {
+  if (value == null) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    throw new Error("Container config http.headers must be an object.");
+  }
+  const headers: Record<string, string> = {};
+  for (const [name, headerValue] of Object.entries(value)) {
+    if (typeof headerValue !== "string") {
+      throw new Error(`Container config http.headers.${name} must be a string.`);
+    }
+    if (name.trim() && headerValue.trim()) {
+      headers[name.trim()] = headerValue;
+    }
+  }
+  return headers;
+}
+
+function readHttpSuccessStatuses(value: unknown): lotusHttpStatusRange[] {
+  if (value == null || value === "") {
+    return [{ min: 200, max: 299 }];
+  }
+  const values = Array.isArray(value) ? value : [value];
+  const ranges = values.map(readHttpStatusRange);
+  return ranges.length ? ranges : [{ min: 200, max: 299 }];
+}
+
+function readHttpStatusRange(value: unknown): lotusHttpStatusRange {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599) {
+    return { min: value, max: value };
+  }
+  if (typeof value !== "string") {
+    throw new Error("Container config http success status values must be numbers or strings.");
+  }
+  const trimmed = value.trim();
+  const range = trimmed.match(/^(\d{3})\s*-\s*(\d{3})$/);
+  if (range) {
+    const min = Number.parseInt(range[1], 10);
+    const max = Number.parseInt(range[2], 10);
+    if (min >= 100 && max <= 599 && min <= max) {
+      return { min, max };
+    }
+  }
+  const status = Number.parseInt(trimmed, 10);
+  if (/^\d{3}$/.test(trimmed) && status >= 100 && status <= 599) {
+    return { min: status, max: status };
+  }
+  throw new Error(`Invalid HTTP success status: ${trimmed}`);
+}
+
+function createHttpTemplateContext(
+  groupName: string,
+  block: lotusCodeBlock,
+  language: lotusContainerLanguageConfig,
+  tempFileName: string,
+  context: lotusRunContext,
+): lotusHttpTemplateContext {
+  const extension = language.extension ? normalizeExtension(language.extension) : "";
+  const baseValues: Record<string, string> = {
+    source: block.content,
+    stdin: context.stdin ?? "",
+    language: block.language,
+    languageAlias: block.languageAlias,
+    sourceLanguage: block.sourceLanguage,
+    group: groupName,
+    fileName: tempFileName,
+    filename: tempFileName,
+    extension,
+    command: language.command ?? "",
+    workingDirectory: context.workingDirectory,
+  };
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(baseValues)) {
+    values[key] = value;
+    values[`${key}Uri`] = encodeURIComponent(value);
+    values[`${key}Json`] = JSON.stringify(value);
+  }
+  return { values };
+}
+
+function renderHttpHeaders(headers: Record<string, string>, context: lotusHttpTemplateContext): Record<string, string> {
+  const rendered: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    rendered[name] = renderHttpTemplateString(value, context);
+  }
+  return rendered;
+}
+
+function createHttpRequestBody(http: lotusHttpConfig, context: lotusHttpTemplateContext, headers: Record<string, string>): lotusHttpRequestBody {
+  const bodyConfig = http.body === undefined && !["GET", "DELETE", "HEAD"].includes(http.method)
+    ? {
+      source: "{source}",
+      stdin: "{stdin}",
+      language: "{language}",
+      languageAlias: "{languageAlias}",
+      sourceLanguage: "{sourceLanguage}",
+      fileName: "{fileName}",
+      command: "{command}",
+    }
+    : http.body;
+
+  if (bodyConfig == null) {
+    return {};
+  }
+
+  if (typeof bodyConfig === "string") {
+    return {
+      body: renderHttpTemplateString(bodyConfig, context),
+      contentType: http.contentType ?? (hasHttpHeader(headers, "content-type") ? undefined : "text/plain"),
+    };
+  }
+
+  return {
+    body: JSON.stringify(renderHttpTemplateValue(bodyConfig, context)),
+    contentType: http.contentType ?? (hasHttpHeader(headers, "content-type") ? undefined : "application/json"),
+  };
+}
+
+function renderHttpTemplateValue(value: unknown, context: lotusHttpTemplateContext): unknown {
+  if (typeof value === "string") {
+    return renderHttpTemplateString(value, context);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => renderHttpTemplateValue(entry, context));
+  }
+  if (isRecord(value)) {
+    const rendered: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      rendered[key] = renderHttpTemplateValue(entry, context);
+    }
+    return rendered;
+  }
+  return value;
+}
+
+function renderHttpTemplateString(value: string, context: lotusHttpTemplateContext): string {
+  return value.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (match, token: string) => context.values[token] ?? match);
+}
+
+function hasHttpHeader(headers: Record<string, string>, name: string): boolean {
+  const normalized = name.toLowerCase();
+  return Object.keys(headers).some((headerName) => headerName.toLowerCase() === normalized);
+}
+
+function assertHttpUrl(value: string, label: string): void {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${label} must use http or https.`);
+  }
+}
+
+async function waitForHttpResponse<T>(request: Promise<T>, timeoutMs: lotusTimeoutMs, signal: AbortSignal, label: string): Promise<T> {
+  if (signal.aborted) {
+    throw new Error(`${label} request was cancelled.`);
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let timeoutHandle: ReturnType<typeof lotusSetTimeout> | null = null;
+    const cleanup = () => {
+      if (timeoutHandle !== null) {
+        lotusClearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onAbort = () => {
+      finish(() => reject(new Error(`${label} request was cancelled.`)));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (timeoutMs !== null) {
+      timeoutHandle = lotusSetTimeout(() => {
+        finish(() => reject(new Error(`${label} request timed out after ${timeoutMs} ms.`)));
+      }, timeoutMs);
+    }
+    request.then(
+      (response) => finish(() => resolve(response)),
+      (error: unknown) => finish(() => reject(error)),
+    );
+  });
+}
+
+function decodeHttpRunResponse(http: lotusHttpConfig, response: Pick<RequestUrlResponse, "status" | "text">): lotusDecodedHttpRunResponse {
+  const statusSuccess = matchesHttpStatus(response.status, http.successStatuses);
+  const parsed = parseHttpResponseBody(http, response.text);
+  const stdout = http.stdoutPath
+    ? httpOutputFromPath(parsed, http.stdoutPath, "stdoutPath")
+    : response.text;
+  const stderr = http.stderrPath
+    ? httpOutputFromPath(parsed, http.stderrPath, "stderrPath")
+    : "";
+  const exitCode = http.exitCodePath
+    ? httpExitCodeFromValue(readRequiredHttpPath(parsed, http.exitCodePath, "exitCodePath"), "exitCodePath")
+    : statusSuccess ? 0 : 1;
+  const mappedSuccess = http.successPath
+    ? httpSuccessFromValue(readRequiredHttpPath(parsed, http.successPath, "successPath"), "successPath")
+    : undefined;
+  const success = mappedSuccess ?? (statusSuccess && exitCode === 0);
+  const warning = statusSuccess ? undefined : `HTTP status ${response.status} was outside configured success statuses.`;
+  return {
+    stdout,
+    stderr,
+    exitCode,
+    success,
+    ...(warning ? { warning } : {}),
+  };
+}
+
+function parseHttpResponseBody(http: lotusHttpConfig, text: string): unknown {
+  if (http.responseMode === "text") {
+    return text;
+  }
+  const needsJson = Boolean(http.stdoutPath || http.stderrPath || http.exitCodePath || http.successPath || http.responseMode === "json");
+  const trimmed = text.trim();
+  if (!trimmed) {
+    if (needsJson) {
+      throw new Error("HTTP response body was empty but JSON response paths were configured.");
+    }
+    return undefined;
+  }
+  if (!needsJson && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    if (needsJson) {
+      throw new Error(`HTTP response body was not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return undefined;
+  }
+}
+
+function httpOutputFromPath(parsed: unknown, path: string, label: string): string {
+  return httpValueToOutput(readRequiredHttpPath(parsed, path, label));
+}
+
+function readRequiredHttpPath(parsed: unknown, path: string, label: string): unknown {
+  const value = readHttpPath(parsed, path);
+  if (value === undefined) {
+    throw new Error(`HTTP response ${label} did not resolve: ${path}`);
+  }
+  return value;
+}
+
+function readHttpPath(parsed: unknown, path: string): unknown {
+  const segments = readHttpPathSegments(path);
+  if (!segments.length) {
+    return parsed;
+  }
+
+  let current = parsed;
+  for (const segment of segments) {
+    if (Array.isArray(current)) {
+      const index = Number.parseInt(segment, 10);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+    } else if (isRecord(current)) {
+      current = current[segment];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+function readHttpPathSegments(path: string): string[] {
+  const normalized = path.trim().replace(/^\$\.?/, "");
+  if (!normalized) {
+    return [];
+  }
+  const matches = normalized.match(/[^.[\]]+|\[\d+\]/g);
+  return (matches ?? []).map((segment) => segment.startsWith("[") ? segment.slice(1, -1) : segment);
+}
+
+function httpValueToOutput(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function httpExitCodeFromValue(value: unknown, label: string): number {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? 0 : 1;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^-?\d+$/.test(trimmed)) {
+      return Number.parseInt(trimmed, 10);
+    }
+    if (isHttpTrueValue(trimmed)) {
+      return 0;
+    }
+    if (isHttpFalseValue(trimmed)) {
+      return 1;
+    }
+  }
+  throw new Error(`HTTP response ${label} must resolve to an integer or boolean.`);
+}
+
+function httpSuccessFromValue(value: unknown, label: string): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value === 0;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (isHttpTrueValue(trimmed)) {
+      return true;
+    }
+    if (isHttpFalseValue(trimmed)) {
+      return false;
+    }
+  }
+  throw new Error(`HTTP response ${label} must resolve to a boolean.`);
+}
+
+function isHttpTrueValue(value: string): boolean {
+  return ["1", "true", "yes", "ok", "success"].includes(value.toLowerCase());
+}
+
+function isHttpFalseValue(value: string): boolean {
+  return ["0", "false", "no", "fail", "failed", "error"].includes(value.toLowerCase());
+}
+
+function matchesHttpStatus(status: number, ranges: lotusHttpStatusRange[]): boolean {
+  return ranges.some((range) => status >= range.min && status <= range.max);
+}
+
 function isBuiltInGodboltGroup(groupName: string): boolean {
   return groupName.trim().toLowerCase() === BUILT_IN_GODBOLT_GROUP;
 }
 
-function createGodboltClientState(block: lotusCodeBlock, language: string): lotusGodboltClientState {
+async function createGodboltClientState(
+  block: lotusCodeBlock,
+  language: string,
+  settings: lotusPluginSettings,
+  baseUrl: string,
+  timeoutMs: lotusTimeoutMs,
+  signal: AbortSignal,
+  requestUrlFn: lotusRequestUrl | undefined,
+  compilerCache: Map<string, string | null>,
+): Promise<lotusGodboltClientState> {
   const session: lotusGodboltSessionState = {
     id: 1,
     language,
     source: block.content,
   };
-  const compilerId = readGodboltCompiler(block, language);
+  const compilerId = await readGodboltCompiler(block, language, settings, baseUrl, timeoutMs, signal, requestUrlFn, compilerCache);
   if (compilerId) {
-    const options = readGodboltCompilerOptions(block, language);
+    const options = readGodboltCompilerOptions(block, language, settings);
     session.compilers = [{
       id: compilerId,
       ...(options ? { options } : {}),
@@ -2377,26 +2917,229 @@ function createGodboltClientState(block: lotusCodeBlock, language: string): lotu
   };
 }
 
-function readGodboltCompiler(block: lotusCodeBlock, language: string): string | undefined {
+async function readGodboltCompiler(
+  block: lotusCodeBlock,
+  language: string,
+  settings: lotusPluginSettings,
+  baseUrl: string,
+  timeoutMs: lotusTimeoutMs,
+  signal: AbortSignal,
+  requestUrlFn: lotusRequestUrl | undefined,
+  compilerCache: Map<string, string | null>,
+): Promise<string | undefined> {
   const compilerId = readBlockAttribute(block, "lotus-godbolt-compiler", "godbolt-compiler", "ce-compiler");
   if (compilerId) {
     return isDisabledGodboltValue(compilerId) ? undefined : compilerId;
   }
+  const settingsCompiler = readGodboltSettingsMap(settings.godboltCompilerDefaults, "Godbolt compiler defaults")[language];
+  if (settingsCompiler) {
+    return isDisabledGodboltValue(settingsCompiler) ? undefined : settingsCompiler;
+  }
+  if (settings.godboltResolveCompilerFromApi) {
+    const remoteCompiler = await readGodboltRemoteCompiler(language, baseUrl, timeoutMs, signal, requestUrlFn, compilerCache);
+    if (remoteCompiler) {
+      return remoteCompiler;
+    }
+  }
   return GODBOLT_DEFAULT_COMPILERS[language];
 }
 
-function readGodboltCompilerOptions(block: lotusCodeBlock, language: string): string | undefined {
+function readGodboltCompilerOptions(block: lotusCodeBlock, language: string, settings: lotusPluginSettings): string | undefined {
   const options = readBlockAttribute(block, "lotus-godbolt-options", "godbolt-options", "ce-options");
   if (options) {
     return isDisabledGodboltValue(options) ? undefined : options;
   }
+  const settingsOptions = readGodboltSettingsMap(settings.godboltOptionsDefaults, "Godbolt options defaults")[language];
+  if (settingsOptions) {
+    return isDisabledGodboltValue(settingsOptions) ? undefined : settingsOptions;
+  }
   return GODBOLT_DEFAULT_COMPILER_OPTIONS[language];
+}
+
+function readGodboltSettingsMap(value: string, label: string): Record<string, string> {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "{}") {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(`${label} must be a JSON object: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(parsed)) {
+    if (typeof rawValue !== "string") {
+      throw new Error(`${label}.${key} must be a string.`);
+    }
+    const normalizedKey = normalizeGodboltLanguageKey(key, label);
+    const normalizedValue = rawValue.trim();
+    if (normalizedValue) {
+      result[normalizedKey] = normalizedValue;
+    }
+  }
+  return result;
+}
+
+async function readGodboltRemoteCompiler(
+  language: string,
+  baseUrl: string,
+  timeoutMs: lotusTimeoutMs,
+  signal: AbortSignal,
+  requestUrlFn: lotusRequestUrl | undefined,
+  compilerCache: Map<string, string | null>,
+): Promise<string | undefined> {
+  if (!requestUrlFn) {
+    return undefined;
+  }
+  const cacheKey = `${baseUrl}\u0000${language}`;
+  if (compilerCache.has(cacheKey)) {
+    return compilerCache.get(cacheKey) ?? undefined;
+  }
+
+  try {
+    const compilers = await fetchGodboltCompilers(language, baseUrl, timeoutMs, signal, requestUrlFn);
+    const selected = selectGodboltCompiler(language, compilers);
+    compilerCache.set(cacheKey, selected ?? null);
+    return selected;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchGodboltCompilers(
+  language: string,
+  baseUrl: string,
+  timeoutMs: lotusTimeoutMs,
+  signal: AbortSignal,
+  requestUrlFn: lotusRequestUrl,
+): Promise<lotusCompilerExplorerCompiler[]> {
+  const endpoint = `${baseUrl}/api/compilers/${encodeURIComponent(language)}?fields=id,name,lang,semver,compilerType,instructionSet`;
+  const request = requestUrlFn({
+    url: endpoint,
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+    },
+    throw: false,
+  });
+  request.catch(() => undefined);
+  const response = await waitForGodboltResponse(request, timeoutMs, signal);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Godbolt compiler metadata returned HTTP ${response.status}`);
+  }
+
+  const parsed: unknown = JSON.parse(response.text);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Godbolt compiler metadata was not an array.");
+  }
+  return parsed.map(readGodboltCompilerMetadata).filter((compiler): compiler is lotusCompilerExplorerCompiler => compiler !== null);
+}
+
+function readGodboltCompilerMetadata(value: unknown): lotusCompilerExplorerCompiler | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = optionalString(value.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    name: optionalString(value.name) ?? "",
+    lang: optionalString(value.lang) ?? "",
+    semver: optionalString(value.semver) ?? "",
+    compilerType: optionalString(value.compilerType) ?? "",
+    instructionSet: optionalString(value.instructionSet) ?? "",
+  };
+}
+
+function selectGodboltCompiler(language: string, compilers: lotusCompilerExplorerCompiler[]): string | undefined {
+  const candidates = compilers.filter((compiler) => compiler.lang === language || !compiler.lang);
+  const preferred = candidates.filter((compiler) => isPreferredGodboltCompiler(language, compiler));
+  const selected = selectHighestStableCompiler(preferred.length ? preferred : candidates.filter(hasStableCompilerVersion));
+  return selected?.id;
+}
+
+function isPreferredGodboltCompiler(language: string, compiler: lotusCompilerExplorerCompiler): boolean {
+  switch (language) {
+    case "c":
+      return compiler.instructionSet === "amd64" && /^cg\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "c++":
+      return compiler.instructionSet === "amd64" && /^g\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "rust":
+      return compiler.instructionSet === "amd64" && /^r\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "go":
+      return compiler.instructionSet === "amd64" && /^gl\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "java":
+      return /^java\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "python":
+      return compiler.compilerType === "python" && /^python\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "javascript":
+      return compiler.id === "v8trunk" || (compiler.compilerType === "v8" && hasStableCompilerVersion(compiler));
+    case "typescript":
+      return compiler.instructionSet === "amd64" && /^tsc_.+_gc$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "ruby":
+      return compiler.compilerType === "ruby" && /^ruby\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "ocaml":
+      return compiler.instructionSet === "amd64" && /^ocaml\d+/.test(compiler.id) && !compiler.id.includes("flambda") && hasStableCompilerVersion(compiler);
+    case "llvm":
+      return compiler.instructionSet === "amd64" && compiler.compilerType === "llc" && /^llc\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "assembly":
+      return compiler.instructionSet === "amd64" && compiler.compilerType === "nasm" && /^nasm\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "haskell":
+      return compiler.instructionSet === "amd64" && compiler.compilerType === "haskell" && /^ghc\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "lua":
+      return compiler.instructionSet === "amd64" && compiler.compilerType === "lua" && /^lua\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "perl":
+      return compiler.compilerType === "perl" && /^perl\d+$/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    case "lean":
+      return compiler.instructionSet === "amd64" && compiler.compilerType === "lean" && /^lean_/.test(compiler.id) && hasStableCompilerVersion(compiler);
+    default:
+      return hasStableCompilerVersion(compiler);
+  }
+}
+
+function selectHighestStableCompiler(compilers: lotusCompilerExplorerCompiler[]): lotusCompilerExplorerCompiler | undefined {
+  return [...compilers].sort((left, right) => compareCompilerVersion(right, left))[0];
+}
+
+function compareCompilerVersion(left: lotusCompilerExplorerCompiler, right: lotusCompilerExplorerCompiler): number {
+  if (left.id === "v8trunk" && right.id !== "v8trunk") {
+    return 1;
+  }
+  if (right.id === "v8trunk" && left.id !== "v8trunk") {
+    return -1;
+  }
+  const leftVersion = readCompilerVersionParts(left);
+  const rightVersion = readCompilerVersionParts(right);
+  const width = Math.max(leftVersion.length, rightVersion.length);
+  for (let index = 0; index < width; index += 1) {
+    const delta = (leftVersion[index] ?? 0) - (rightVersion[index] ?? 0);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function hasStableCompilerVersion(compiler: lotusCompilerExplorerCompiler): boolean {
+  return readCompilerVersionParts(compiler).length > 0 && !/\b(?:trunk|snapshot|tip|nightly|beta|master)\b/i.test(`${compiler.id} ${compiler.name} ${compiler.semver}`);
+}
+
+function readCompilerVersionParts(compiler: lotusCompilerExplorerCompiler): number[] {
+  const match = compiler.semver.match(/\d+(?:\.\d+){0,3}/) ?? compiler.name.match(/\d+(?:\.\d+){0,3}/);
+  return match ? match[0].split(".").map((part) => Number.parseInt(part, 10)) : [];
 }
 
 function readGodboltLanguage(block: lotusCodeBlock): string {
   const override = readBlockAttribute(block, "lotus-godbolt-language", "godbolt-language", "ce-language");
   if (override) {
-    return normalizeGodboltLanguageId(override, "lotus-godbolt-language");
+    return normalizeGodboltLanguageKey(override, "lotus-godbolt-language");
   }
 
   for (const candidate of [block.language, block.languageAlias, block.sourceLanguage]) {
@@ -2539,6 +3282,11 @@ function normalizeGodboltLanguageId(value: string, label: string): string {
     throw new Error(`${label} must be a Compiler Explorer language id.`);
   }
   return normalized;
+}
+
+function normalizeGodboltLanguageKey(value: string, label: string): string {
+  const normalized = normalizeGodboltLanguageId(value, label);
+  return GODBOLT_LANGUAGE_ALIASES[normalized] ?? normalized;
 }
 
 function isDisabledGodboltValue(value: string): boolean {

@@ -1,6 +1,31 @@
 import { getDefaultLanguageIds, getDefaultLanguagePackIds } from "./languagePackages";
 import type { lotusPluginSettings } from "./types";
 
+export const DEFAULT_GODBOLT_COMPILER_DEFAULTS: Record<string, string> = {
+  "c": "cg161",
+  "c++": "g161",
+  "rust": "r1970",
+  "go": "gl1260",
+  "java": "java2501",
+  "python": "python314",
+  "javascript": "v8trunk",
+  "typescript": "tsc_0_0_35_gc",
+  "ruby": "ruby405",
+  "ocaml": "ocaml5200",
+  "llvm": "llctrunk",
+  "assembly": "nasm301",
+  "haskell": "ghc9122",
+  "lua": "lua550",
+  "perl": "perl5422",
+  "lean": "lean_4_29_1",
+};
+
+export const DEFAULT_GODBOLT_OPTIONS_DEFAULTS: Record<string, string> = {
+  "c": "-O2",
+  "c++": "-O2 -std=c++20",
+  "rust": "-O",
+};
+
 export const DEFAULT_SETTINGS: lotusPluginSettings = {
   enableLocalExecution: false,
   hasAcknowledgedExecutionRisk: false,
@@ -88,4 +113,7 @@ export const DEFAULT_SETTINGS: lotusPluginSettings = {
   loggingMaxEventBytes: 65536,
   loggingMachineId: "",
   defaultContainerGroup: "",
+  godboltResolveCompilerFromApi: true,
+  godboltCompilerDefaults: JSON.stringify(DEFAULT_GODBOLT_COMPILER_DEFAULTS, null, 2),
+  godboltOptionsDefaults: JSON.stringify(DEFAULT_GODBOLT_OPTIONS_DEFAULTS, null, 2),
 };

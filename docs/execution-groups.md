@@ -99,6 +99,7 @@ Lotus supports the following runtimes under `"runtime"` in `config.json`:
 - `"ssh"`: Runs commands on a remote SSH target through an SSH session.
 - `"qemu"`: Runs commands on a remote VM using SSH, with optional automated QEMU local process management.
 - `"custom"`: Delegates container building, running, and teardown to a custom local executable wrapper.
+- `"http"`: Posts the resolved snippet to an HTTP endpoint through Obsidian requestUrl and maps the response back into normal Lotus output.
 
 ### Persistent Docker and Podman Containers
 
@@ -129,6 +130,44 @@ Docker and Podman groups can keep one container alive and run each block with `d
 `persistent: true` is accepted as shorthand for `{ "enabled": true }`. If `name` is omitted, Lotus derives a stable name from the execution group. On the first run Lotus creates and starts the container, then later runs reuse it. Remove it manually with `docker rm -f <name>` or `podman rm -f <name>` when you want a clean environment.
 
 Persistent containers always run snippets in `/workspace`, the mounted execution group directory. Per-block `lotus-cwd` values cannot add new bind mounts to an already-created container, so Lotus warns and keeps exec runs in `/workspace`.
+
+### HTTP Runtime Configuration
+
+HTTP groups send the resolved block source to an endpoint and turn the response into a normal Lotus run result. This is useful for hosted compilers, internal sandboxes, queue based runners, or team services that already expose an API.
+
+```json
+{
+  "runtime": "http",
+  "http": {
+    "url": "https://runner.example/run/{languageUri}",
+    "method": "POST",
+    "headers": {
+      "X-Lotus-Language": "{language}"
+    },
+    "body": {
+      "source": "{source}",
+      "stdin": "{stdin}",
+      "language": "{language}",
+      "fileName": "{fileName}",
+      "command": "{command}"
+    },
+    "successStatus": 200,
+    "stdoutPath": "stdout",
+    "stderrPath": "stderr",
+    "exitCodePath": "exitCode",
+    "successPath": "success"
+  },
+  "languages": {
+    "python": {
+      "extension": ".py"
+    }
+  }
+}
+```
+
+Template values include `{source}`, `{stdin}`, `{language}`, `{languageAlias}`, `{sourceLanguage}`, `{fileName}`, `{extension}`, `{command}`, and `{workingDirectory}`. The `Uri` suffix gives an encoded value for URL paths and query strings. The `Json` suffix gives a JSON encoded string for raw body templates.
+
+If `body` is omitted on POST, PUT, or PATCH, Lotus sends a JSON payload with the source, stdin, language, file name, and command. If response paths are omitted, stdout is the raw response body and success is based on the configured HTTP status.
 
 ### Graphviz Displays in Execution Groups
 
@@ -172,6 +211,8 @@ int square(int x) {
 }
 ```
 ````
+
+Lotus resolves the compiler in this order: block attributes, vault Godbolt compiler defaults JSON, Compiler Explorer compiler metadata, then the baked in fallback map. Compiler metadata is fetched once per language and base URL, then cached in memory for the session. The settings tab exposes the default compiler map and default options map as JSON.
 
 Supported Lotus mappings include C/C++, Rust, Go, Java, Python, JavaScript/TypeScript, Ruby, Perl, Lua, Haskell, OCaml, Lean, LLVM IR, assembly, and eBPF C. For another Compiler Explorer language, set `lotus-godbolt-language=<id>`.
 
