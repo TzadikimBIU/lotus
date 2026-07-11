@@ -258,6 +258,9 @@ export interface lotusPluginSettings {
   loggingMaxEventBytes: number;
   loggingMachineId: string;
   defaultContainerGroup: string;
+  godboltResolveCompilerFromApi: boolean;
+  godboltCompilerDefaults: string;
+  godboltOptionsDefaults: string;
 }
 
 export interface lotusRunState {

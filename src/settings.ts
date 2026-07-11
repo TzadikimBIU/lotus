@@ -73,6 +73,29 @@ interface lotusContainerEditorCustomConfig {
   [key: string]: unknown;
 }
 
+interface lotusContainerEditorHttpConfig {
+  url?: string;
+  endpoint?: string;
+  method?: string;
+  contentType?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  responseMode?: "auto" | "json" | "text";
+  successStatus?: number | string | Array<number | string>;
+  successStatuses?: number | string | Array<number | string>;
+  stdoutPath?: string;
+  stdout?: string;
+  outputPath?: string;
+  output?: string;
+  stderrPath?: string;
+  stderr?: string;
+  exitCodePath?: string;
+  exitCode?: string;
+  successPath?: string;
+  success?: string;
+  [key: string]: unknown;
+}
+
 interface lotusContainerEditorOutputFilters {
   stripAnsi?: boolean;
   stdoutStart?: string;
@@ -101,6 +124,7 @@ interface lotusContainerEditorConfig {
   remote?: lotusContainerEditorRemoteConfig;
   qemu?: lotusContainerEditorRemoteConfig;
   custom?: lotusContainerEditorCustomConfig;
+  http?: lotusContainerEditorHttpConfig;
   outputFilters?: lotusContainerEditorOutputFilters;
   languages?: Record<string, lotusContainerEditorLanguageConfig>;
   [key: string]: unknown;
@@ -1100,6 +1124,8 @@ export class lotusSettingTab extends PluginSettingTab {
       const groups = (await this.lotusPlugin.getContainerGroupSummaries())
         .filter((group) => isCompileContainerGroupAllowed(group.name));
 
+      this.renderGodboltSettings(containerEl);
+
       new Setting(containerEl)
         .setName("Default execution group")
         .setDesc("The execution group to run code blocks in by default if the note does not specify one.")
@@ -1170,15 +1196,20 @@ export class lotusSettingTab extends PluginSettingTab {
       }
 
       for (const group of groups) {
-        new Setting(listEl)
+        const setting = new Setting(listEl)
           .setName(group.name)
-          .setDesc(group.status)
-          .addButton((button) =>
+          .setDesc(group.status);
+
+        if (group.buildable !== false) {
+          setting.addButton((button) =>
             button.setButtonText("Build / rebuild").onClick(async () => {
               await this.lotusPlugin.buildContainerGroup(group.name);
             }),
-          )
-          .addButton((button) =>
+          );
+        }
+
+        if (group.editable !== false) {
+          setting.addButton((button) =>
             button.setButtonText("Edit").onClick(() => {
               const pluginDir = this.getPluginConfigDir();
               new EditContainerGroupModal(this.lotusPlugin, group.name, pluginDir, () => {
@@ -1186,6 +1217,7 @@ export class lotusSettingTab extends PluginSettingTab {
               }).open();
             }),
           );
+        }
       }
     } catch (error) {
       containerEl.empty();
@@ -1198,6 +1230,31 @@ export class lotusSettingTab extends PluginSettingTab {
     }
   }
 
+  private renderGodboltSettings(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Resolve Godbolt compilers from API")
+      .setDesc("Fetch Compiler Explorer compiler metadata and cache the selected default per language. Lotus falls back to its baked in map if the API is unavailable.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.lotusPlugin.settings.godboltResolveCompilerFromApi).onChange(async (value) => {
+          this.lotusPlugin.settings.godboltResolveCompilerFromApi = value;
+          await this.lotusPlugin.saveSettings();
+        }),
+      );
+
+    this.addTextAreaSetting(
+      containerEl,
+      "Godbolt compiler defaults JSON",
+      "Optional language to compiler id map. Example: {\"c++\":\"clang_trunk\",\"rust\":\"r1970\"}. Use none for source only links.",
+      "godboltCompilerDefaults",
+    );
+    this.addTextAreaSetting(
+      containerEl,
+      "Godbolt options defaults JSON",
+      "Optional language to options map. Example: {\"c++\":\"-O3 -std=c++23\",\"c\":\"-O2\"}.",
+      "godboltOptionsDefaults",
+    );
+  }
+
   private addTextSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, name: string, description: string, key: K): void {
     new Setting(containerEl)
       .setName(name)
@@ -1208,6 +1265,23 @@ export class lotusSettingTab extends PluginSettingTab {
           await this.lotusPlugin.saveSettings();
         }),
       );
+  }
+
+  private addTextAreaSetting<K extends keyof lotusPluginSettings>(containerEl: HTMLElement, name: string, description: string, key: K): void {
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addTextArea((text) => {
+        text.setValue(String(this.lotusPlugin.settings[key] ?? "")).onChange(async (value) => {
+          (this.lotusPlugin.settings[key] as string) = value.trim();
+          await this.lotusPlugin.saveSettings();
+        });
+        text.inputEl.rows = 4;
+        text.inputEl.setCssStyles({
+          fontFamily: "monospace",
+          width: "100%",
+        });
+      });
   }
 
   private addCustomLanguageTextSetting<K extends lotusCustomLanguageTextKey>(
@@ -1260,11 +1334,36 @@ function readContainerEditorConfig(value: unknown): lotusContainerEditorConfig {
 }
 
 function isContainerEditorRuntime(value: unknown): value is lotusContainerEditorRuntime {
-  return typeof value === "string" && ["custom", "docker", "podman", "qemu", "ssh", "wsl"].includes(value);
+  return typeof value === "string" && ["custom", "docker", "podman", "qemu", "ssh", "wsl", "http"].includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatHttpBodyForEditor(value: unknown): string {
+  if (value === undefined) {
+    return JSON.stringify({
+      source: "{source}",
+      stdin: "{stdin}",
+      language: "{language}",
+      fileName: "{fileName}",
+      command: "{command}",
+    }, null, 2);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
 }
 
 function createMachineIdSeed(): string {
@@ -1453,6 +1552,7 @@ class EditContainerGroupModal extends Modal {
           ssh: "SSH Remote",
           qemu: "QEMU",
           custom: "Custom",
+          http: "HTTP",
         };
         const allowedRuntimes = getCompileContainerRuntimes();
         for (const runtime of allowedRuntimes) {
@@ -1681,6 +1781,10 @@ class EditContainerGroupModal extends Modal {
       this.renderOutputFilters(containerEl);
     }
 
+    if (this.configObj.runtime === "http") {
+      this.renderHttpSettings(containerEl);
+    }
+
     // Conditional Custom Settings
     if (this.configObj.runtime === "custom") {
       if (!this.configObj.custom) {
@@ -1717,6 +1821,153 @@ class EditContainerGroupModal extends Modal {
       this.configObj.persistent = { enabled: this.configObj.persistent === true };
     }
     return this.configObj.persistent;
+  }
+
+  renderHttpSettings(containerEl: HTMLElement) {
+    if (!this.configObj.http || typeof this.configObj.http !== "object") {
+      this.configObj.http = {
+        url: "",
+        method: "POST",
+        responseMode: "auto",
+        headers: {},
+      };
+    }
+    const http = this.configObj.http;
+
+    containerEl.createEl("h3", { text: "HTTP request", attr: { style: "margin-top: 1.5rem;" } });
+
+    new Setting(containerEl)
+      .setName("URL")
+      .setDesc("HTTP endpoint. Supports templates like {languageUri}, {sourceUri}, {stdinUri}, and {fileName}.")
+      .addText((text) => {
+        text
+          .setPlaceholder("https://runner.example/run")
+          .setValue(http.url || http.endpoint || "")
+          .onChange((val) => {
+            http.url = val.trim();
+            delete http.endpoint;
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Method")
+      .setDesc("HTTP method used for snippet submission.")
+      .addDropdown((dropdown) => {
+        const method = typeof http.method === "string" ? http.method.toUpperCase() : "POST";
+        dropdown
+          .addOption("GET", "GET")
+          .addOption("POST", "POST")
+          .addOption("PUT", "PUT")
+          .addOption("PATCH", "PATCH")
+          .addOption("DELETE", "DELETE")
+          .addOption("HEAD", "HEAD")
+          .setValue(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].includes(method) ? method : "POST")
+          .onChange((value) => {
+            http.method = value;
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Content type")
+      .setDesc("Optional request content type. Lotus defaults to application/json for structured bodies and text/plain for raw bodies.")
+      .addText((text) => {
+        text
+          .setPlaceholder("application/json")
+          .setValue(http.contentType || "")
+          .onChange((val) => {
+            http.contentType = val.trim() || undefined;
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Headers JSON")
+      .setDesc("String map of request headers. Values support the same templates as URL.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 4;
+        text.inputEl.setCssStyles({ fontFamily: "monospace", width: "100%" });
+        text.setValue(JSON.stringify(http.headers ?? {}, null, 2));
+        text.onChange((val) => {
+          const parsed = parseJsonRecord(val);
+          if (parsed) {
+            http.headers = Object.fromEntries(
+              Object.entries(parsed)
+                .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+            );
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Body template")
+      .setDesc("JSON object, array, or raw string. String values support templates like {source}, {stdin}, {language}, and {command}.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 8;
+        text.inputEl.setCssStyles({ fontFamily: "monospace", width: "100%" });
+        text.setValue(formatHttpBodyForEditor(http.body));
+        text.onChange((val) => {
+          const trimmed = val.trim();
+          if (!trimmed) {
+            delete http.body;
+            return;
+          }
+          try {
+            http.body = JSON.parse(trimmed) as unknown;
+          } catch {
+            http.body = val;
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Response mode")
+      .setDesc("Auto parses JSON when response paths are configured. Text keeps the raw response body.")
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("auto", "Auto")
+          .addOption("json", "JSON")
+          .addOption("text", "Text")
+          .setValue(http.responseMode ?? "auto")
+          .onChange((value) => {
+            http.responseMode = value as "auto" | "json" | "text";
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Success statuses")
+      .setDesc("Status code or range. Use 200-299 for normal HTTP success.")
+      .addText((text) => {
+        const value = http.successStatus ?? http.successStatuses;
+        text
+          .setPlaceholder("200-299")
+          .setValue(Array.isArray(value) ? value.join(", ") : value == null ? "" : String(value))
+          .onChange((val) => {
+            const trimmed = val.trim();
+            if (trimmed) {
+              http.successStatus = trimmed.includes(",") ? trimmed.split(",").map((entry) => entry.trim()).filter(Boolean) : trimmed;
+            } else {
+              delete http.successStatus;
+            }
+            delete http.successStatuses;
+          });
+      });
+
+    this.addHttpPathSetting(containerEl, http, "Stdout path", "Optional JSON path for stdout. Leave empty to use the raw response body.", "stdoutPath", http.stdoutPath ?? http.stdout ?? http.outputPath ?? http.output);
+    this.addHttpPathSetting(containerEl, http, "Stderr path", "Optional JSON path for stderr.", "stderrPath", http.stderrPath ?? http.stderr);
+    this.addHttpPathSetting(containerEl, http, "Exit code path", "Optional JSON path for exit code. Missing path defaults to HTTP status.", "exitCodePath", http.exitCodePath ?? http.exitCode);
+    this.addHttpPathSetting(containerEl, http, "Success path", "Optional JSON path for a boolean success flag.", "successPath", http.successPath ?? http.success);
+  }
+
+  addHttpPathSetting(containerEl: HTMLElement, http: lotusContainerEditorHttpConfig, name: string, description: string, key: keyof lotusContainerEditorHttpConfig, value: unknown) {
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addText((text) => {
+        text
+          .setValue(typeof value === "string" ? value : "")
+          .onChange((val) => {
+            http[key] = val.trim() || undefined;
+          });
+      });
   }
 
   renderRemoteTransportSettings(containerEl: HTMLElement, remoteConfig: lotusContainerEditorRemoteConfig, includeSshSettings: boolean) {
@@ -2109,6 +2360,10 @@ class EditContainerGroupModal extends Modal {
     }
     if (this.configObj.runtime === "custom" && !this.configObj.custom?.executable) {
       new Notice("Custom runtime requires custom executable.");
+      return;
+    }
+    if (this.configObj.runtime === "http" && !(this.configObj.http?.url || this.configObj.http?.endpoint)) {
+      new Notice("HTTP runtime requires an HTTP URL.");
       return;
     }
 

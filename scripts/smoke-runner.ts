@@ -4,6 +4,8 @@ import { delimiter } from "path";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
 import { pathToFileURL } from "url";
 import { spawn } from "child_process";
+import { createServer, request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
 import { generateKeyPairSync } from "crypto";
 import { tmpdir } from "os";
 import { DEFAULT_SETTINGS } from "../src/defaultSettings";
@@ -14,15 +16,7 @@ import { resolveReferencedSource } from "../src/sourceExtract";
 import { runExternalSourcePreprocessorPipeline, type lotusExternalSourcePreprocessor } from "../src/sourcePreprocess";
 import { buildSourceReferenceHarness } from "../src/sourceHarness";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature } from "../src/signing";
-import { PythonRunner } from "../src/runners/python";
-import { NodeRunner } from "../src/runners/node";
-import { OcamlRunner } from "../src/runners/ocaml";
-import { NativeCompiledRunner } from "../src/runners/nativeCompiled";
-import { InterpretedRunner } from "../src/runners/interpreted";
-import { ManagedCompiledRunner } from "../src/runners/managedCompiled";
-import { EbpfRunner } from "../src/runners/ebpf";
-import { LlvmRunner } from "../src/runners/llvm";
-import { ProofRunner } from "../src/runners/proof";
+import { createBuiltInRunners } from "../src/runners/builtIn";
 import { CustomLanguageRunner } from "../src/runners/custom";
 import { lotusRunnerRegistry } from "../src/runners/registry";
 import { lotusContainerRunner } from "../src/execution/containerRunner";
@@ -56,6 +50,22 @@ interface NoteFile {
   frontmatter: Record<string, string>;
 }
 
+interface SmokeRequestUrlParam {
+  url: string;
+  method?: string;
+  contentType?: string;
+  body?: string | ArrayBuffer;
+  headers?: Record<string, string>;
+  throw?: boolean;
+}
+
+interface SmokeGodboltCompilerState {
+  compiler?: string;
+  id?: string;
+  options?: string;
+  filters?: Record<string, unknown>;
+}
+
 const argv = readArgs(process.argv.slice(2));
 const vaultDir = resolve(requiredArg(argv, "vault"));
 const artifactDir = resolve(requiredArg(argv, "artifacts"));
@@ -67,15 +77,7 @@ const configRootDir = configDir.split("/")[0] ?? configDir;
 const pluginDir = `${configDir}/plugins/lotus`;
 const settings = await loadSettings(vaultDir, profile);
 const registry = new lotusRunnerRegistry([
-  new PythonRunner(),
-  new NodeRunner(),
-  new OcamlRunner(),
-  new NativeCompiledRunner(),
-  new InterpretedRunner(),
-  new ManagedCompiledRunner(),
-  new EbpfRunner(),
-  new LlvmRunner(),
-  new ProofRunner(),
+  ...createBuiltInRunners(),
   new CustomLanguageRunner(),
 ]);
 const containerRunner = new lotusContainerRunner({
@@ -87,7 +89,7 @@ const containerRunner = new lotusContainerRunner({
   metadataCache: {
     getFileCache: () => ({ frontmatter: {} }),
   },
-} as never, pluginDir);
+} as never, pluginDir, smokeRequestUrl);
 const notes = await readNotes(vaultDir);
 const results: SmokeBlockResult[] = [];
 
@@ -177,7 +179,7 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
       const preprocessorNotice = `Ran preprocessed source with ${preprocessDescription}.`;
       result.warning = result.warning ? `${preprocessorNotice}\n${result.warning}` : preprocessorNotice;
     }
-    return classifyResult(note, executableBlock, name, directives, `Execution group ${context.containerGroup}`, result, sourcePreview);
+    return await classifyResult(note, executableBlock, name, directives, `Execution group ${context.containerGroup}`, result, sourcePreview);
   }
 
   const runner = registry.getRunnerForBlock(executableBlock, settings);
@@ -204,7 +206,7 @@ async function runBlock(note: NoteFile, block: lotusCodeBlock): Promise<SmokeBlo
     result.warning = result.warning ? `${preprocessorNotice}\n${result.warning}` : preprocessorNotice;
   }
 
-  return classifyResult(note, executableBlock, name, directives, runner.displayName, result, sourcePreview);
+  return await classifyResult(note, executableBlock, name, directives, runner.displayName, result, sourcePreview);
 }
 
 async function runSigningSmoke(): Promise<SmokeBlockResult[]> {
@@ -286,6 +288,117 @@ async function runSigningSmoke(): Promise<SmokeBlockResult[]> {
 
 async function runTransportSmoke(): Promise<SmokeBlockResult[]> {
   return [
+    await runSyntheticSmoke("transport-http-container-group", async () => {
+      const server = createServer((request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        request.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          const parsed = JSON.parse(body) as Record<string, unknown>;
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "application/json");
+          response.end(JSON.stringify({
+            stdout: [
+              request.url ?? "",
+              request.headers["x-lotus-language"] ?? "",
+              parsed.language,
+              parsed.source,
+              parsed.stdin,
+              parsed.fileName,
+              parsed.command,
+            ].join("|"),
+            stderr: "",
+            exitCode: 0,
+            success: true,
+          }));
+        });
+      });
+      const port = await listenOnLoopback(server);
+      const tempVault = await mkdtemp(join(tmpdir(), "lotus-smoke-http-group-"));
+      try {
+        const groupDir = join(tempVault, pluginDir, "containers", "http-echo");
+        await mkdir(groupDir, { recursive: true });
+        await writeFile(join(groupDir, "config.json"), JSON.stringify({
+          runtime: "http",
+          http: {
+            url: `http://127.0.0.1:${port}/run/{languageUri}`,
+            method: "POST",
+            headers: {
+              "X-Lotus-Language": "{language}",
+            },
+            body: {
+              source: "{source}",
+              stdin: "{stdin}",
+              language: "{language}",
+              fileName: "{fileName}",
+              command: "{command}",
+            },
+            successStatus: 200,
+            stdoutPath: "stdout",
+            stderrPath: "stderr",
+            exitCodePath: "exitCode",
+            successPath: "success",
+          },
+          languages: {
+            python: {
+              command: "python3 {file}",
+              extension: ".py",
+            },
+          },
+        }, null, 2), "utf8");
+
+        const runner = new lotusContainerRunner({
+          vault: {
+            adapter: {
+              basePath: tempVault,
+            },
+          },
+          metadataCache: {
+            getFileCache: () => ({ frontmatter: {} }),
+          },
+        } as never, pluginDir, smokeRequestUrl);
+        const controller = new AbortController();
+        const block: lotusCodeBlock = {
+          id: "http-smoke",
+          ordinal: 1,
+          filePath: "HTTP Smoke.md",
+          language: "python",
+          languageAlias: "python",
+          sourceLanguage: "python",
+          content: "print('http smoke')",
+          attributes: {},
+          executionContext: {},
+          startLine: 1,
+          endLine: 1,
+          fenceStart: 1,
+          fenceEnd: 3,
+        };
+        const result = await runner.run(block, {
+          file: { path: "HTTP Smoke.md" } as never,
+          workingDirectory: tempVault,
+          timeoutMs: 5000,
+          signal: controller.signal,
+          stdin: "stdin-smoke",
+        }, settings, "http-echo");
+        const expectedPieces = [
+          "/run/python",
+          "python",
+          "python",
+          "print('http smoke')",
+          "stdin-smoke",
+          ".py",
+          "python3 {file}",
+        ];
+        if (!result.success || expectedPieces.some((piece) => !result.stdout.includes(piece))) {
+          throw new Error(`HTTP container group smoke failed: stdout=${JSON.stringify(result.stdout)} stderr=${JSON.stringify(result.stderr)}`);
+        }
+      } finally {
+        await closeServer(server);
+        await rm(tempVault, { recursive: true, force: true });
+      }
+    }),
     await runSyntheticSmoke("transport-stdin-prefix", async () => {
       const controller = new AbortController();
       const expected = "lotus-source-user-input";
@@ -372,6 +485,37 @@ async function runTransportSmoke(): Promise<SmokeBlockResult[]> {
   ];
 }
 
+async function listenOnLoopback(server: ReturnType<typeof createServer>): Promise<number> {
+  return await new Promise<number>((resolvePromise, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", onError);
+      const address = server.address();
+      if (address && typeof address === "object" && typeof address.port === "number") {
+        resolvePromise(address.port);
+        return;
+      }
+      reject(new Error("HTTP smoke server did not expose a port."));
+    });
+  });
+}
+
+async function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+  if (!server.listening) {
+    return;
+  }
+  await new Promise<void>((resolvePromise, reject) => {
+    server.close((error?: Error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolvePromise();
+    });
+  });
+}
+
 function createSyntheticBlock(language: string, content: string): lotusCodeBlock {
   return {
     id: `synthetic:${language}`,
@@ -436,7 +580,7 @@ async function runSyntheticSmoke(
   }
 }
 
-function classifyResult(
+async function classifyResult(
   note: NoteFile,
   block: lotusCodeBlock,
   name: string,
@@ -444,7 +588,7 @@ function classifyResult(
   runnerName: string,
   result: lotusRunResult,
   sourcePreview: lotusSourcePreview | undefined,
-): SmokeBlockResult {
+): Promise<SmokeBlockResult> {
   const base = {
     profile,
     note: note.path,
@@ -473,7 +617,7 @@ function classifyResult(
     return { ...base, status: "failed", reason: result.stderr || result.stdout || `exit ${result.exitCode}` };
   }
 
-  const assertionFailure = checkAssertions(block, result);
+  const assertionFailure = await checkAssertions(block, result);
   if (assertionFailure) {
     return { ...base, status: "failed", reason: assertionFailure };
   }
@@ -481,7 +625,7 @@ function classifyResult(
   return { ...base, status: "passed" };
 }
 
-function checkAssertions(block: lotusCodeBlock, result: lotusRunResult): string | null {
+async function checkAssertions(block: lotusCodeBlock, result: lotusRunResult): Promise<string | null> {
   const exactStdout = block.attributes["lotus-smoke-stdout"];
   if (exactStdout != null && result.stdout.trim() !== exactStdout) {
     return `stdout mismatch: expected ${JSON.stringify(exactStdout)}, got ${JSON.stringify(result.stdout.trim())}`;
@@ -494,7 +638,124 @@ function checkAssertions(block: lotusCodeBlock, result: lotusRunResult): string 
   if (stderrContains != null && !result.stderr.includes(stderrContains)) {
     return `stderr did not contain ${JSON.stringify(stderrContains)}`;
   }
+  const godboltAssertion = await checkGodboltAssertions(block, result);
+  if (godboltAssertion) {
+    return godboltAssertion;
+  }
   return null;
+}
+
+async function checkGodboltAssertions(block: lotusCodeBlock, result: lotusRunResult): Promise<string | null> {
+  const expectedCompiler = block.attributes["lotus-smoke-godbolt-compiler"];
+  const expectedCompilerPattern = block.attributes["lotus-smoke-godbolt-compiler-matches"];
+  const expectedOptions = block.attributes["lotus-smoke-godbolt-options"];
+  const expectedFilters = Object.entries(block.attributes)
+    .filter(([name]) => name.startsWith("lotus-smoke-godbolt-filter-"))
+    .map(([name, value]) => [name.slice("lotus-smoke-godbolt-filter-".length), value] as const);
+  if (!expectedCompiler && !expectedCompilerPattern && expectedOptions == null && !expectedFilters.length) {
+    return null;
+  }
+
+  const url = result.stdout.trim().split(/\s+/)[0];
+  if (!/^https?:\/\/\S+/.test(url)) {
+    return `godbolt assertion expected url in stdout, got ${JSON.stringify(result.stdout)}`;
+  }
+
+  const response = await smokeRequestUrl({
+    url,
+    method: "GET",
+    headers: {
+      "Accept": "text/html",
+    },
+    throw: false,
+  });
+  if (response.status < 200 || response.status >= 300) {
+    return `godbolt expanded link returned HTTP ${response.status}`;
+  }
+
+  const compilers = readGodboltCompilerStates(response.text);
+  if (!compilers.length) {
+    return "godbolt expanded layout did not contain a compiler pane";
+  }
+
+  if (expectedCompiler && !compilers.some((compiler) => (compiler.compiler ?? compiler.id) === expectedCompiler)) {
+    return `godbolt compiler mismatch: expected ${JSON.stringify(expectedCompiler)}, got ${JSON.stringify(compilers.map((compiler) => compiler.compiler ?? compiler.id))}`;
+  }
+  if (expectedCompilerPattern) {
+    const regex = new RegExp(expectedCompilerPattern);
+    if (!compilers.some((compiler) => regex.test(String(compiler.compiler ?? compiler.id ?? "")))) {
+      return `godbolt compiler pattern mismatch: expected ${JSON.stringify(expectedCompilerPattern)}, got ${JSON.stringify(compilers.map((compiler) => compiler.compiler ?? compiler.id))}`;
+    }
+  }
+  if (expectedOptions != null && !compilers.some((compiler) => compiler.options === expectedOptions)) {
+    return `godbolt options mismatch: expected ${JSON.stringify(expectedOptions)}, got ${JSON.stringify(compilers.map((compiler) => compiler.options ?? ""))}`;
+  }
+  for (const [filterName, expectedValue] of expectedFilters) {
+    const parsedExpected = parseSmokeBoolean(expectedValue);
+    if (!compilers.some((compiler) => compiler.filters?.[filterName] === parsedExpected)) {
+      return `godbolt filter mismatch for ${filterName}: expected ${JSON.stringify(parsedExpected)}, got ${JSON.stringify(compilers.map((compiler) => compiler.filters?.[filterName]))}`;
+    }
+  }
+  return null;
+}
+
+function readGodboltCompilerStates(html: string): SmokeGodboltCompilerState[] {
+  const match = html.match(/\bextraOptions="([^"]+)"/);
+  if (!match) {
+    return [];
+  }
+  const decoded = decodeURIComponent(decodeHtmlAttribute(match[1]));
+  const parsed: unknown = JSON.parse(decoded);
+  const config = isRecord(parsed) ? parsed.config : undefined;
+  const states: SmokeGodboltCompilerState[] = [];
+  collectGodboltCompilerStates(config, states);
+  return states;
+}
+
+function collectGodboltCompilerStates(value: unknown, states: SmokeGodboltCompilerState[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectGodboltCompilerStates(item, states);
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+  if (value.componentName === "compiler" && isRecord(value.componentState)) {
+    states.push(readSmokeGodboltCompilerState(value.componentState));
+  }
+  for (const child of Object.values(value)) {
+    collectGodboltCompilerStates(child, states);
+  }
+}
+
+function readSmokeGodboltCompilerState(value: Record<string, unknown>): SmokeGodboltCompilerState {
+  return {
+    compiler: typeof value.compiler === "string" ? value.compiler : undefined,
+    id: typeof value.id === "string" ? value.id : undefined,
+    options: typeof value.options === "string" ? value.options : undefined,
+    filters: isRecord(value.filters) ? value.filters : undefined,
+  };
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&#x27;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function parseSmokeBoolean(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`Expected boolean smoke value, got ${JSON.stringify(value)}`);
 }
 
 async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusSourcePreview; preprocessDescription?: string }> {
@@ -630,6 +891,52 @@ async function loadSettings(vaultPath: string): Promise<lotusPluginSettings> {
 function readSettingsJson(raw: string): Partial<lotusPluginSettings> {
   const parsed: unknown = JSON.parse(raw);
   return isRecord(parsed) ? parsed : {};
+}
+
+async function smokeRequestUrl(request: SmokeRequestUrlParam | string): Promise<{ status: number; text: string }> {
+  const params = typeof request === "string" ? { url: request } : request;
+  const url = new URL(params.url);
+  const requester = url.protocol === "http:" ? httpRequest : url.protocol === "https:" ? httpsRequest : null;
+  if (!requester) {
+    throw new Error(`Unsupported smoke request protocol: ${url.protocol}`);
+  }
+
+  const body = typeof params.body === "string"
+    ? Buffer.from(params.body, "utf8")
+    : params.body
+      ? Buffer.from(params.body)
+      : undefined;
+  const headers: Record<string, string> = {
+    ...params.headers,
+    ...(params.contentType ? { "Content-Type": params.contentType } : {}),
+    ...(body ? { "Content-Length": String(body.length) } : {}),
+  };
+
+  return await new Promise((resolvePromise, reject) => {
+    const req = requester(url, {
+      method: params.method ?? "GET",
+      headers,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer | string) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      response.on("end", () => {
+        const status = response.statusCode ?? 0;
+        const text = Buffer.concat(chunks).toString("utf8");
+        if (params.throw !== false && status >= 400) {
+          reject(new Error(`HTTP ${status}: ${text}`));
+          return;
+        }
+        resolvePromise({ status, text });
+      });
+    });
+    req.on("error", reject);
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
 }
 
 function applySmokeExecutableOverrides(settings: lotusPluginSettings): void {

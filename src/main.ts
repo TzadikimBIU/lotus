@@ -8,6 +8,7 @@ import {
   TFile,
   WorkspaceLeaf,
   normalizePath,
+  requestUrl,
   type DataAdapter,
   type MarkdownPostProcessorContext,
 } from "obsidian";
@@ -17,7 +18,7 @@ import { readFile } from "fs/promises";
 import JSZip from "jszip";
 import { dirname, isAbsolute, join } from "path";
 import { homedir } from "os";
-import { lotusContainerRunner } from "./execution/containerRunner";
+import { lotusContainerRunner, type lotusContainerGroupSummary } from "./execution/containerRunner";
 import { runProcess } from "./execution/processRunner";
 import { getCompileMachineHashScopeOverride, isCompileContainerGroupAllowed, isCompileFeatureAllowed, isCompileLoggingForced } from "./buildProfile";
 import { resolveExecutionContext as resolveLotusExecutionContext } from "./executionContext";
@@ -27,17 +28,9 @@ import { resolveBlockHighlightLanguage } from "./languageHighlight";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
 import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
-import { NodeRunner } from "./runners/node";
 import { ObsidianContextRunner } from "./runners/obsidianContext";
 import { CustomLanguageRunner } from "./runners/custom";
-import { InterpretedRunner } from "./runners/interpreted";
-import { EbpfRunner } from "./runners/ebpf";
-import { LlvmRunner } from "./runners/llvm";
-import { ManagedCompiledRunner } from "./runners/managedCompiled";
-import { NativeCompiledRunner } from "./runners/nativeCompiled";
-import { OcamlRunner } from "./runners/ocaml";
-import { PythonRunner } from "./runners/python";
-import { ProofRunner } from "./runners/proof";
+import { createBuiltInRunners } from "./runners/builtIn";
 import { lotusRunnerRegistry } from "./runners/registry";
 import { DEFAULT_SETTINGS } from "./defaultSettings";
 import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
@@ -493,20 +486,12 @@ class lotusOutputWidget extends WidgetType {
 export default class lotusPlugin extends Plugin {
   settings: lotusPluginSettings = DEFAULT_SETTINGS;
   readonly registry = new lotusRunnerRegistry([
-    new PythonRunner(),
-    new NodeRunner(),
+    ...createBuiltInRunners(),
     new ObsidianContextRunner({ app: this.app, plugin: this }),
-    new OcamlRunner(),
-    new NativeCompiledRunner(),
-    new InterpretedRunner(),
-    new ManagedCompiledRunner(),
-    new EbpfRunner(),
-    new LlvmRunner(),
-    new ProofRunner(),
     new CustomLanguageRunner(),
   ]);
   // Exposed as public and readonly so the settings panel and modals can access container configurations and default language mapping helpers.
-  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`);
+  public readonly containerRunner = new lotusContainerRunner(this.app, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/lotus`, requestUrl);
   private hasRegisteredMarkdownDecorator = false;
   private readonly displayRenderers = new Set<lotusDisplayRenderer>();
   private readonly outputs = new Map<string, lotusStoredOutput>();
@@ -3016,7 +3001,7 @@ export default class lotusPlugin extends Plugin {
     return current;
   }
 
-  async getContainerGroupSummaries(): Promise<Array<{ name: string; status: string }>> {
+  async getContainerGroupSummaries(): Promise<lotusContainerGroupSummary[]> {
     if (!isCompileFeatureAllowed("container-groups")) {
       return [];
     }
@@ -3276,6 +3261,9 @@ export default class lotusPlugin extends Plugin {
     if (this.settings.defaultContainerGroup && !isCompileContainerGroupAllowed(this.settings.defaultContainerGroup)) {
       this.settings.defaultContainerGroup = "";
     }
+    this.settings.godboltResolveCompilerFromApi = normalizeBooleanSetting(this.settings.godboltResolveCompilerFromApi, DEFAULT_SETTINGS.godboltResolveCompilerFromApi);
+    this.settings.godboltCompilerDefaults = normalizeStringSetting(this.settings.godboltCompilerDefaults, DEFAULT_SETTINGS.godboltCompilerDefaults);
+    this.settings.godboltOptionsDefaults = normalizeStringSetting(this.settings.godboltOptionsDefaults, DEFAULT_SETTINGS.godboltOptionsDefaults);
     this.settings.workingDirectory = normalizeStringSetting(this.settings.workingDirectory, DEFAULT_SETTINGS.workingDirectory);
     this.settings.graphvizExecutable = isCompileFeatureAllowed("rich-displays")
       ? normalizeStringSetting(this.settings.graphvizExecutable, DEFAULT_SETTINGS.graphvizExecutable)

@@ -99,6 +99,7 @@ Lotus supports the following runtimes under `"runtime"` in `config.json`:
 - `"ssh"`: Runs commands on a remote SSH target through an SSH session.
 - `"qemu"`: Runs commands on a remote VM using SSH, with optional automated QEMU local process management.
 - `"custom"`: Delegates container building, running, and teardown to a custom local executable wrapper.
+- `"http"`: Posts the resolved snippet to an HTTP endpoint through Obsidian requestUrl and maps the response back into normal Lotus output.
 
 ### Persistent Docker and Podman Containers
 
@@ -130,6 +131,44 @@ Docker and Podman groups can keep one container alive and run each block with `d
 
 Persistent containers always run snippets in `/workspace`, the mounted execution group directory. Per-block `lotus-cwd` values cannot add new bind mounts to an already-created container, so Lotus warns and keeps exec runs in `/workspace`.
 
+### HTTP Runtime Configuration
+
+HTTP groups send the resolved block source to an endpoint and turn the response into a normal Lotus run result. This is useful for hosted compilers, internal sandboxes, queue based runners, or team services that already expose an API.
+
+```json
+{
+  "runtime": "http",
+  "http": {
+    "url": "https://runner.example/run/{languageUri}",
+    "method": "POST",
+    "headers": {
+      "X-Lotus-Language": "{language}"
+    },
+    "body": {
+      "source": "{source}",
+      "stdin": "{stdin}",
+      "language": "{language}",
+      "fileName": "{fileName}",
+      "command": "{command}"
+    },
+    "successStatus": 200,
+    "stdoutPath": "stdout",
+    "stderrPath": "stderr",
+    "exitCodePath": "exitCode",
+    "successPath": "success"
+  },
+  "languages": {
+    "python": {
+      "extension": ".py"
+    }
+  }
+}
+```
+
+Template values include `{source}`, `{stdin}`, `{language}`, `{languageAlias}`, `{sourceLanguage}`, `{fileName}`, `{extension}`, `{command}`, and `{workingDirectory}`. The `Uri` suffix gives an encoded value for URL paths and query strings. The `Json` suffix gives a JSON encoded string for raw body templates.
+
+If `body` is omitted on POST, PUT, or PATCH, Lotus sends a JSON payload with the source, stdin, language, file name, and command. If response paths are omitted, stdout is the raw response body and success is based on the configured HTTP status.
+
 ### Graphviz Displays in Execution Groups
 
 Graphviz display enrichment follows the same resolved execution context as the code block. If a note or block uses an execution group, Lotus runs `text/vnd.graphviz` rendering inside that group instead of requiring Graphviz on the host machine.
@@ -150,6 +189,36 @@ Declare a `graphviz` language when the group needs a custom command:
 ```
 
 If the group does not declare `graphviz`, Lotus falls back to `dot -Tsvg {file}`. The container, VM, WSL distro, or SSH target must still provide `dot`.
+
+### Built in godbolt group
+
+Lotus includes a built in `godbolt` execution group. It does not run a local container. Instead, it posts the resolved snippet source to the Compiler Explorer shortener API and returns the generated Godbolt URL. For languages with a known Compiler Explorer default, Lotus includes a compiler pane so opening the link shows compiler output immediately.
+
+````markdown
+```cpp lotus-execution=godbolt
+int square(int x) {
+  return x * x;
+}
+```
+````
+
+Set the compiler id and options on the block when you want to pin a specific compiler instead of using the Lotus default for that language:
+
+````markdown
+```cpp lotus-execution=godbolt lotus-godbolt-compiler=g152 lotus-godbolt-options="-O2 -std=c++20"
+int square(int x) {
+  return x * x;
+}
+```
+````
+
+Lotus resolves the compiler in this order: block attributes, vault Godbolt compiler defaults JSON, Compiler Explorer compiler metadata, then the baked in fallback map. Compiler metadata is fetched once per language and base URL, then cached in memory for the session. The settings tab exposes the default compiler map and default options map as JSON.
+
+Supported Lotus mappings include C/C++, Rust, Go, Java, Python, JavaScript/TypeScript, Ruby, Perl, Lua, Haskell, OCaml, Lean, LLVM IR, assembly, and eBPF C. For another Compiler Explorer language, set `lotus-godbolt-language=<id>`.
+
+Use `lotus-godbolt-compiler=none` for a source only link with no compiler pane.
+
+Use `lotus-godbolt-base-url="https://ce.example.com"` to target a self hosted Compiler Explorer instance. Godbolt shortlinks are public, so do not use this group for private snippets.
 
 ### SSH Runtime Configuration
 Remote SSH execution is configured with `"runtime": "ssh"` (or `"remote"`). By default, Lotus creates the remote workspace, writes the temp source file, runs the configured command, and removes the remote temp file through one `ssh` session. That avoids repeated password prompts and keeps stdin available for interactive programs.
