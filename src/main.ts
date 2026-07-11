@@ -28,17 +28,9 @@ import { resolveBlockHighlightLanguage } from "./languageHighlight";
 import { findBlockAtLine, normalizeLanguage, parseMarkdownCodeBlocks } from "./parser";
 import { getLanguageCapability } from "./languageCapabilities";
 import { findEnabledCommandLanguage, normalizeLanguageConfiguration } from "./languagePackages";
-import { NodeRunner } from "./runners/node";
 import { ObsidianContextRunner } from "./runners/obsidianContext";
 import { CustomLanguageRunner } from "./runners/custom";
-import { InterpretedRunner } from "./runners/interpreted";
-import { EbpfRunner } from "./runners/ebpf";
-import { LlvmRunner } from "./runners/llvm";
-import { ManagedCompiledRunner } from "./runners/managedCompiled";
-import { NativeCompiledRunner } from "./runners/nativeCompiled";
-import { OcamlRunner } from "./runners/ocaml";
-import { PythonRunner } from "./runners/python";
-import { ProofRunner } from "./runners/proof";
+import { createBuiltInRunners } from "./runners/builtIn";
 import { lotusRunnerRegistry } from "./runners/registry";
 import { DEFAULT_SETTINGS } from "./defaultSettings";
 import { lotusSettingTab, showExecutionDisabledNotice } from "./settings";
@@ -494,16 +486,8 @@ class lotusOutputWidget extends WidgetType {
 export default class lotusPlugin extends Plugin {
   settings: lotusPluginSettings = DEFAULT_SETTINGS;
   readonly registry = new lotusRunnerRegistry([
-    new PythonRunner(),
-    new NodeRunner(),
+    ...createBuiltInRunners(),
     new ObsidianContextRunner({ app: this.app, plugin: this }),
-    new OcamlRunner(),
-    new NativeCompiledRunner(),
-    new InterpretedRunner(),
-    new ManagedCompiledRunner(),
-    new EbpfRunner(),
-    new LlvmRunner(),
-    new ProofRunner(),
     new CustomLanguageRunner(),
   ]);
   // Exposed as public and readonly so the settings panel and modals can access container configurations and default language mapping helpers.

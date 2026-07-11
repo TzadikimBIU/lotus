@@ -16,15 +16,7 @@ import { resolveReferencedSource } from "../src/sourceExtract";
 import { runExternalSourcePreprocessorPipeline, type lotusExternalSourcePreprocessor } from "../src/sourcePreprocess";
 import { buildSourceReferenceHarness } from "../src/sourceHarness";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature } from "../src/signing";
-import { PythonRunner } from "../src/runners/python";
-import { NodeRunner } from "../src/runners/node";
-import { OcamlRunner } from "../src/runners/ocaml";
-import { NativeCompiledRunner } from "../src/runners/nativeCompiled";
-import { InterpretedRunner } from "../src/runners/interpreted";
-import { ManagedCompiledRunner } from "../src/runners/managedCompiled";
-import { EbpfRunner } from "../src/runners/ebpf";
-import { LlvmRunner } from "../src/runners/llvm";
-import { ProofRunner } from "../src/runners/proof";
+import { createBuiltInRunners } from "../src/runners/builtIn";
 import { CustomLanguageRunner } from "../src/runners/custom";
 import { lotusRunnerRegistry } from "../src/runners/registry";
 import { lotusContainerRunner } from "../src/execution/containerRunner";
@@ -85,15 +77,7 @@ const configRootDir = configDir.split("/")[0] ?? configDir;
 const pluginDir = `${configDir}/plugins/lotus`;
 const settings = await loadSettings(vaultDir, profile);
 const registry = new lotusRunnerRegistry([
-  new PythonRunner(),
-  new NodeRunner(),
-  new OcamlRunner(),
-  new NativeCompiledRunner(),
-  new InterpretedRunner(),
-  new ManagedCompiledRunner(),
-  new EbpfRunner(),
-  new LlvmRunner(),
-  new ProofRunner(),
+  ...createBuiltInRunners(),
   new CustomLanguageRunner(),
 ]);
 const containerRunner = new lotusContainerRunner({
