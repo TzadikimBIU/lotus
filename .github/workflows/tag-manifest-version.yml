@@ -64,3 +64,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "${VERSION}" "${GITHUB_SHA}"
           git push origin "${VERSION}"
+
+  trigger-release:
+    needs: tag-manifest-version
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
