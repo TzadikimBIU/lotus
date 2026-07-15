@@ -164,6 +164,7 @@ For more specialized setups, refer to the guides in the [docs/](docs/) directory
 - [Rich Display Contract](docs/display-contract.md): Emit SVG, raster images, Graphviz DOT, JSON, and text display records from runners and external processes.
 - [Execution Groups](docs/execution-groups.md): Run code blocks inside Docker/Podman containers, WSL distros, remote SSH nodes, or local QEMU virtual machines.
 - [Partial Source Extraction](docs/source-extraction.md): Run a specific symbol or line range from an external file, and generate function call harnesses.
+- [Note-scoped Code Packages](docs/code-packages.md): Compile C or C++ examples split across several fenced blocks in one note.
 - [eBPF Execution](docs/ebpf.md): Compile BPF programs, inspect ELF objects, and load probes safely.
 - [Hashing & Reproducibility](docs/reproducibility.md): Verify notes and code blocks against snapshots to guarantee document reproducibility.
 - [Observability, Logging, and Signing](docs/observability.md): Configure local/remote logs, redaction rules, log viewing, live input, and note signatures.

@@ -1,6 +1,6 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
-import { basename, extname, join, relative } from "path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "path";
 import { spawn } from "child_process";
 import type { lotusDisplayOutput, lotusDisplayRole, lotusRunArtifact, lotusRunResult, lotusStdinSession } from "../types";
 import { formatTimeoutMs, type lotusTimeoutMs } from "../utils/timeout";
@@ -42,6 +42,16 @@ export interface lotusTempSourceHandle {
   outputFile?: string;
 }
 
+export interface lotusTempSourceFileSpec {
+  path: string;
+  source: string;
+}
+
+export interface lotusTempSourceFilesHandle {
+  tempDir: string;
+  files: Map<string, string>;
+}
+
 export async function withNamedTempSourceFile<T>(
   fileName: string,
   source: string,
@@ -64,6 +74,30 @@ export async function withTempSourceFile<T>(
   callback: (handle: lotusTempSourceHandle) => Promise<T>,
 ): Promise<T> {
   return withNamedTempSourceFile(`snippet${fileExtension}`, source, callback);
+}
+
+export async function withTempSourceFiles<T>(
+  sources: readonly lotusTempSourceFileSpec[],
+  callback: (handle: lotusTempSourceFilesHandle) => Promise<T>,
+): Promise<T> {
+  const tempDir = await mkdtemp(join(tmpdir(), "lotus-"));
+  const files = new Map<string, string>();
+  const resolvedTempDir = resolve(tempDir);
+
+  try {
+    for (const source of sources) {
+      const tempFile = resolve(tempDir, ...source.path.split("/"));
+      if (!tempFile.startsWith(`${resolvedTempDir}${sep}`)) {
+        throw new Error(`temporary source path escapes its package directory: ${source.path}`);
+      }
+      await mkdir(dirname(tempFile), { recursive: true });
+      await writeFile(tempFile, normalizeExecutableSource(source.source), "utf8");
+      files.set(source.path, tempFile);
+    }
+    return await callback({ tempDir, files });
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 function normalizeExecutableSource(source: string): string {

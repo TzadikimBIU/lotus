@@ -14,12 +14,28 @@ export interface lotusCodeBlock {
   sourceLanguage: string;
   content: string;
   attributes: Record<string, string>;
+  codePackage?: lotusCodePackage;
   sourceReference?: lotusSourceReference;
   executionContext: lotusExecutionContextOverride;
   startLine: number;
   endLine: number;
   fenceStart: number;
   fenceEnd: number;
+}
+
+export interface lotusCodePackage {
+  name: string;
+  hash: string;
+  files: lotusCodePackageFile[];
+  errors: string[];
+}
+
+export interface lotusCodePackageFile {
+  path: string;
+  content: string;
+  ordinal: number;
+  language: lotusNormalizedLanguage;
+  sourceLanguage: string;
 }
 
 export interface lotusExecutionContextOverride {
