@@ -23,6 +23,7 @@ import { lotusContainerRunner } from "../src/execution/containerRunner";
 import { runProcess } from "../src/execution/processRunner";
 import { parseTimeoutMs } from "../src/utils/timeout";
 import { createSourceVisualizationDisplay, createStdoutVisualizationDisplay } from "../src/visualization/codeGraph";
+import { assertRunnableCodePackage } from "../src/codePackage";
 import type { lotusCodeBlock, lotusPluginSettings, lotusResolvedExecutionContext, lotusRunResult, lotusSourcePreview } from "../src/types";
 
 type SmokeProfile = "minimal" | "systems" | "proofs" | "ebpf" | "full";
@@ -99,6 +100,7 @@ for (const note of notes) {
     results.push(await runBlock(note, block));
   }
 }
+results.push(...await runCodePackageSmoke());
 results.push(...await runTransportSmoke());
 results.push(...await runSigningSmoke());
 
@@ -284,6 +286,169 @@ async function runSigningSmoke(): Promise<SmokeBlockResult[]> {
       }
     }),
   ];
+}
+
+async function runCodePackageSmoke(): Promise<SmokeBlockResult[]> {
+  if (profile !== "systems" && profile !== "full") {
+    return [];
+  }
+
+  return [
+    await runSyntheticSmoke("code-package-c-multifile", async () => {
+      const source = [
+        "```h lotus-code-package=answer lotus-code-file=include/answer.h",
+        "#ifndef ANSWER_H",
+        "#define ANSWER_H",
+        "int answer(void);",
+        "#endif",
+        "```",
+        "",
+        "```c lotus-code-package=answer lotus-code-file=answer.c",
+        "#include \"include/answer.h\"",
+        "int answer(void) { return 42; }",
+        "```",
+        "",
+        "```c lotus-code-package=answer lotus-code-file=main.c",
+        "#include <stdio.h>",
+        "#include \"include/answer.h\"",
+        "int main(void) {",
+        "  printf(\"%d\\n\", answer());",
+        "  return 0;",
+        "}",
+        "```",
+      ].join("\n");
+      const blocks = parseMarkdownCodeBlocks("Code Package Smoke.md", source, settings);
+      if (blocks.length !== 3 || blocks.some((block) => !block.codePackage)) {
+        throw new Error(`expected three packaged blocks, got ${blocks.length}`);
+      }
+      if (blocks.some((block) => block.sourceReference)) {
+        throw new Error("lotus-code-file was incorrectly parsed as a source reference");
+      }
+      const paths = blocks[0].codePackage!.files.map((file) => file.path).join(",");
+      if (paths !== "include/answer.h,answer.c,main.c") {
+        throw new Error(`unexpected package files: ${paths}`);
+      }
+
+      const controller = new AbortController();
+      for (const block of blocks) {
+        const runner = registry.getRunnerForBlock(block, settings);
+        if (!runner) {
+          throw new Error("no configured C runner for code package smoke");
+        }
+        const result = await runner.run(block, {
+          file: { path: "Code Package Smoke.md" } as never,
+          workingDirectory: vaultDir,
+          timeoutMs: 10_000,
+          signal: controller.signal,
+        }, settings);
+        if (!result.success || result.stdout.trim() !== "42") {
+          throw new Error(result.stderr || `code package returned ${JSON.stringify(result.stdout)}`);
+        }
+      }
+    }),
+    await runSyntheticSmoke("code-package-cpp-multifile", async () => {
+      const source = [
+        "```cpp lotus-code-package=answer-cpp lotus-code-file=answer.cc",
+        "int answer() { return 42; }",
+        "```",
+        "",
+        "```cpp lotus-code-package=answer-cpp lotus-code-file=main.cpp",
+        "#include <iostream>",
+        "int answer();",
+        "int main() { std::cout << answer() << '\\n'; }",
+        "```",
+      ].join("\n");
+      const blocks = parseMarkdownCodeBlocks("C++ Code Package Smoke.md", source, settings);
+      const block = blocks[1];
+      const runner = block ? registry.getRunnerForBlock(block, settings) : null;
+      if (!block || !runner) {
+        throw new Error("no configured C++ runner for code package smoke");
+      }
+      const result = await runner.run(block, {
+        file: { path: "C++ Code Package Smoke.md" } as never,
+        workingDirectory: vaultDir,
+        timeoutMs: 10_000,
+        signal: new AbortController().signal,
+      }, settings);
+      if (!result.success || result.stdout.trim() !== "42") {
+        throw new Error(result.stderr || `C++ code package returned ${JSON.stringify(result.stdout)}`);
+      }
+    }),
+    await runSyntheticSmoke("code-package-inferred-files-and-identity", async () => {
+      const source = [
+        "```h lotus-code-package=auto",
+        "int answer(void);",
+        "```",
+        "",
+        "```c lotus-code-package=auto",
+        "int answer(void) { return 42; }",
+        "```",
+      ].join("\n");
+      const blocks = parseMarkdownCodeBlocks("Inferred Package.md", source, settings);
+      const paths = blocks[0]?.codePackage?.files.map((file) => file.path).join(",");
+      if (paths !== "block-1.h,block-2.c") {
+        throw new Error(`unexpected inferred package files: ${paths ?? "(none)"}`);
+      }
+
+      const changed = parseMarkdownCodeBlocks("Inferred Package.md", source.replace("return 42", "return 43"), settings);
+      if (blocks.some((block, index) => block.id === changed[index]?.id)) {
+        throw new Error("a sibling package edit did not invalidate every package block id");
+      }
+
+      const otherNote = parseMarkdownCodeBlocks("Other Note.md", [
+        "```c lotus-code-package=auto",
+        "int main(void) { return 0; }",
+        "```",
+      ].join("\n"), settings);
+      if (otherNote[0]?.codePackage?.files.length !== 1) {
+        throw new Error("same-named packages leaked across notes");
+      }
+    }),
+    await runSyntheticSmoke("code-package-validation", async () => {
+      const duplicate = parseMarkdownCodeBlocks("Duplicate Package.md", [
+        "```c lotus-code-package=bad lotus-code-file=Main.c",
+        "int main(void) { return 0; }",
+        "```",
+        "```c lotus-code-package=bad lotus-code-file=main.c",
+        "int helper(void) { return 0; }",
+        "```",
+      ].join("\n"), settings)[0];
+      expectCodePackageError(duplicate, "filename \"main.c\" is used by blocks 1 and 2");
+
+      const unsafe = parseMarkdownCodeBlocks("Unsafe Package.md", [
+        "```c lotus-code-package=bad lotus-code-file=../main.c",
+        "int main(void) { return 0; }",
+        "```",
+      ].join("\n"), settings)[0];
+      expectCodePackageError(unsafe, ".. path segments aren't allowed");
+
+      const mixed = parseMarkdownCodeBlocks("Mixed Package.md", [
+        "```c lotus-code-package=bad",
+        "int c_helper(void) { return 0; }",
+        "```",
+        "```cpp lotus-code-package=bad",
+        "int main() { return 0; }",
+        "```",
+      ].join("\n"), settings)[0];
+      expectCodePackageError(mixed, "all blocks in a code package must use the same language");
+    }),
+  ];
+}
+
+function expectCodePackageError(block: lotusCodeBlock | undefined, expected: string): void {
+  if (!block) {
+    throw new Error("expected a parsed code package block");
+  }
+  try {
+    assertRunnableCodePackage(block);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes(expected)) {
+      return;
+    }
+    throw new Error(`expected package error containing ${JSON.stringify(expected)}, got ${JSON.stringify(message)}`);
+  }
+  throw new Error(`expected package error containing ${JSON.stringify(expected)}`);
 }
 
 async function runTransportSmoke(): Promise<SmokeBlockResult[]> {
@@ -759,6 +924,7 @@ function parseSmokeBoolean(value: string): boolean {
 }
 
 async function resolveExecutableBlock(note: NoteFile, block: lotusCodeBlock): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusSourcePreview; preprocessDescription?: string }> {
+  assertRunnableCodePackage(block);
   let executableBlock = block;
   let sourcePreview: lotusSourcePreview | undefined;
 

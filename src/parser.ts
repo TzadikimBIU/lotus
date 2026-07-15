@@ -2,6 +2,7 @@ import { shortHash } from "./utils/hash";
 import { findEnabledCommandLanguage, getEnabledCommandLanguages, getEnabledLanguageAliasMap } from "./languagePackages";
 import { parseTimeoutMs } from "./utils/timeout";
 import type { lotusCodeBlock, lotusNormalizedLanguage, lotusPluginSettings, lotusSourceReference } from "./types";
+import { attachCodePackages } from "./codePackage";
 
 const OUTPUT_START = /^<!--\s*lotus:output:start\s+id=([a-f0-9]+)\s*-->$/i;
 const OUTPUT_END = /^<!--\s*lotus:output:end\s*-->$/i;
@@ -123,6 +124,7 @@ export function parseMarkdownCodeBlocks(filePath: string, source: string, settin
     });
   }
 
+  attachCodePackages(blocks);
   return blocks;
 }
 

@@ -380,6 +380,9 @@ export class lotusContainerRunner {
   }
 
   async run(block: lotusCodeBlock, context: lotusRunContext, settings: lotusPluginSettings, groupName: string): Promise<lotusRunResult> {
+    if (block.codePackage) {
+      throw new Error(`code package ${JSON.stringify(block.codePackage.name)} requires native execution; set lotus-execution=native on its blocks.`);
+    }
     if (!isCompileContainerGroupAllowed(groupName)) {
       throw new Error(`Container group ${groupName} is not included in this Lotus build.`);
     }

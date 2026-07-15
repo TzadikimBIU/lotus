@@ -46,6 +46,7 @@ import { addSyntaxLanguageClass, highlightCodeElement, normalizeSyntaxLanguage }
 import { splitCommandLine } from "./utils/command";
 import { sha256Hash } from "./utils/hash";
 import { formatTimeoutLabel, formatTimeoutMs } from "./utils/timeout";
+import { assertRunnableCodePackage } from "./codePackage";
 import { createOpenSshSignature, createPassphraseSignature, createRsaSignature, readSignatureRecord, verifyOpenSshSignature, verifyPassphraseSignature, verifyRsaSignature, type lotusSignatureRecord } from "./signing";
 import {
   CODE_BLOCK_HASHES_FRONTMATTER_KEY,
@@ -2874,6 +2875,7 @@ export default class lotusPlugin extends Plugin {
   }
 
   private async resolveExecutableBlock(file: TFile, block: lotusCodeBlock, signal?: AbortSignal): Promise<{ block: lotusCodeBlock; sourcePreview?: lotusStoredOutput["sourcePreview"]; preprocessDescription?: string }> {
+    assertRunnableCodePackage(block);
     let executableBlock = block;
     let sourcePreview: lotusStoredOutput["sourcePreview"] | undefined;
     const shouldShowPreview = (this.settings.extractedSourcePreviewMode || "collapsed") !== "hidden";
